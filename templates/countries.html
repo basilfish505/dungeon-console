@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Countries of the World</title>
+    <style>
+        body {
+            background-color: #f0f2f5;
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+        }
+
+        h1 {
+            color: #1a237e;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .countries-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 20px;
+            padding: 20px;
+        }
+
+        .country-card {
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            transition: transform 0.2s;
+        }
+
+        .country-card:hover {
+            transform: translateY(-5px);
+        }
+
+        .country-name {
+            font-size: 1.2em;
+            font-weight: bold;
+            margin-bottom: 10px;
+            color: #1a237e;
+        }
+
+        .country-info {
+            color: #555;
+            font-size: 0.9em;
+        }
+
+        .flag {
+            width: 100%;
+            height: 150px;
+            object-fit: cover;
+            border-radius: 5px;
+            margin-bottom: 15px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Countries of the World</h1>
+    
+    <div class="countries-grid">
+        {% for country in countries %}
+        <div class="country-card">
+            <img class="flag" src="{{ country.flags.png }}" alt="{{ country.name.common }} flag">
+            <div class="country-name">{{ country.name.common }}</div>
+            <div class="country-info">
+                <p>Capital: {{ country.capital[0] if country.capital else 'N/A' }}</p>
+                <p>Region: {{ country.region }}</p>
+                <p>Population: {{ "{:,}".format(country.population) }}</p>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</body>
+</html> 
