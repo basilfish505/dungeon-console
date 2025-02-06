@@ -1,4 +1,4 @@
-from simpleFlask import app
+from countriesDisplay import app
 
 if __name__ == "__main__":
     app.run() 
