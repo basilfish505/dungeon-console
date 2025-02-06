@@ -1,84 +1,157 @@
 <!DOCTYPE html>
 <html>
 <head>
+    <title>Simple Dungeon Crawler</title>
     <style>
         body {
-            font-family: monospace;
+            background-color: #2c3e50;
             display: flex;
             flex-direction: column;
             align-items: center;
-            background-color: #1a1a1a;
-            color: #fff;
+            font-family: Arial, sans-serif;
+            color: white;
         }
-        .dungeon {
+
+        .grid-container {
             display: grid;
-            grid-template-columns: repeat(10, 40px);
-            gap: 1px;
-            background-color: #333;
+            grid-template-columns: repeat(10, 50px);
+            grid-template-rows: repeat(10, 50px);
+            gap: 2px;
+            background-color: #34495e;
             padding: 10px;
+            border-radius: 10px;
+            box-shadow: 0 0 20px rgba(0,0,0,0.5);
             margin: 20px;
         }
-        .cell {
-            width: 40px;
-            height: 40px;
-            background-color: #222;
+
+        .grid-item {
+            background-color: #3498db;
+            border-radius: 5px;
             display: flex;
             justify-content: center;
             align-items: center;
-            font-size: 24px;
+            font-size: 30px;
+            transition: all 0.3s ease;
         }
+
         .wall {
-            background-color: #666;
+            background-color: #7f8c8d;
+            box-shadow: inset 0 0 10px rgba(0,0,0,0.5);
         }
-        .status {
-            margin: 20px;
-            padding: 10px;
-            background-color: #333;
-            border-radius: 5px;
+
+        .player {
+            background-color: #2ecc71;
+            animation: pulse 2s infinite;
         }
+
+        .monster {
+            background-color: #e74c3c;
+            animation: wobble 1s infinite;
+        }
+
+        .treasure {
+            background-color: #f1c40f;
+            animation: sparkle 1s infinite;
+        }
+
         .message {
-            margin: 20px;
-            padding: 10px;
-            background-color: #444;
+            background-color: #34495e;
+            padding: 15px;
             border-radius: 5px;
-            color: #ffd700;
+            margin: 20px;
+            font-size: 18px;
         }
+
+        .stats {
+            background-color: #34495e;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 10px;
+            display: flex;
+            gap: 20px;
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.1); }
+            100% { transform: scale(1); }
+        }
+
+        @keyframes wobble {
+            0% { transform: rotate(0deg); }
+            25% { transform: rotate(5deg); }
+            75% { transform: rotate(-5deg); }
+            100% { transform: rotate(0deg); }
+        }
+
+        @keyframes sparkle {
+            0% { opacity: 0.5; }
+            50% { opacity: 1; }
+            100% { opacity: 0.5; }
+        }
+
         .game-over {
             position: fixed;
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%);
-            background-color: rgba(255, 0, 0, 0.8);
-            padding: 20px;
+            background-color: rgba(0,0,0,0.8);
+            padding: 30px;
             border-radius: 10px;
             font-size: 24px;
+            text-align: center;
+        }
+
+        button {
+            background-color: #3498db;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            color: white;
+            font-size: 16px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+            margin: 5px;
+        }
+
+        button:hover {
+            background-color: #2980b9;
+        }
+
+        .controls {
+            margin: 20px;
+            text-align: center;
         }
     </style>
 </head>
 <body>
-    <div class="status">
-        HP: {{ player.hp }} | Attack: {{ player.attack }}
-    </div>
+    <h1>Dungeon Crawler</h1>
     
-    <div class="message">
-        {{ message }}
+    <div class="stats">
+        <div>HP: {{ player.hp }}</div>
+        <div>Attack: {{ player.attack }}</div>
     </div>
-    
-    <div class="dungeon">
-        {% for row in range(10) %}
-            {% for col in range(10) %}
-                <div class="cell {% if dungeon[row][col] == '#' %}wall{% endif %}">
-                    {% if player.x == col and player.y == row %}
-                        🧙
+
+    <div class="message">{{ message }}</div>
+
+    <div class="grid-container">
+        {% for y in range(10) %}
+            {% for x in range(10) %}
+                <div class="grid-item 
+                    {% if dungeon[y][x] == '#' %}wall{% endif %}
+                    {% if player.x == x and player.y == y %}player{% endif %}
+                    {% if treasure.x == x and treasure.y == y %}treasure{% endif %}
+                    {% for monster in monsters %}
+                        {% if monster.x == x and monster.y == y %}monster{% endif %}
+                    {% endfor %}
+                ">
+                    {% if dungeon[y][x] == '#' %}🧱
+                    {% elif player.x == x and player.y == y %}🦸
+                    {% elif treasure.x == x and treasure.y == y %}💎
                     {% else %}
                         {% for monster in monsters %}
-                            {% if monster.x == col and monster.y == row and monster.hp > 0 %}
-                                {{ monster.symbol }}
-                            {% endif %}
+                            {% if monster.x == x and monster.y == y %}{{ monster.symbol }}{% endif %}
                         {% endfor %}
-                        {% if dungeon[row][col] == '#' %}
-                            ⬛
-                        {% endif %}
                     {% endif %}
                 </div>
             {% endfor %}
@@ -87,51 +160,30 @@
 
     {% if game_over %}
     <div class="game-over">
-        Game Over! Click anywhere to restart.
+        {{ message }}<br>
+        <button onclick="window.location.href='/'">Play Again</button>
     </div>
     {% endif %}
 
+    <div class="controls">
+        <button onclick="window.location.href='/move/up'">⬆️</button><br>
+        <button onclick="window.location.href='/move/left'">⬅️</button>
+        <button onclick="window.location.href='/move/right'">➡️</button><br>
+        <button onclick="window.location.href='/move/down'">⬇️</button>
+    </div>
+
     <script>
         document.addEventListener('keydown', function(event) {
-            if ({{ game_over|tojson }}) {
-                window.location.href = '/';
-                return;
-            }
-            
-            let direction = null;
-            switch(event.key) {
-                case 'ArrowUp':
-                case 'w':
-                case 'W':
-                    direction = 'up';
-                    break;
-                case 'ArrowDown':
-                case 's':
-                case 'S':
-                    direction = 'down';
-                    break;
-                case 'ArrowLeft':
-                case 'a':
-                case 'A':
-                    direction = 'left';
-                    break;
-                case 'ArrowRight':
-                case 'd':
-                case 'D':
-                    direction = 'right';
-                    break;
-            }
-            
-            if (direction) {
-                window.location.href = '/move/' + direction;
+            if (event.key === 'ArrowUp' || event.key === 'w') {
+                window.location.href = '/move/up';
+            } else if (event.key === 'ArrowDown' || event.key === 's') {
+                window.location.href = '/move/down';
+            } else if (event.key === 'ArrowLeft' || event.key === 'a') {
+                window.location.href = '/move/left';
+            } else if (event.key === 'ArrowRight' || event.key === 'd') {
+                window.location.href = '/move/right';
             }
         });
-
-        {% if game_over %}
-        document.addEventListener('click', function() {
-            window.location.href = '/';
-        });
-        {% endif %}
     </script>
 </body>
 </html> 
