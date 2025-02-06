@@ -33,7 +33,7 @@ def home():
             y = random.randint(1, 8)
             # Only place monster if position is empty (not a wall)
             if dungeon[y][x] == ' ':
-                monsters.append({'x': x, 'y': y, 'hp': 10, 'attack': 3, 'symbol': '👾'})
+                monsters.append({'x': x, 'y': y, 'hp': 15, 'attack': 3, 'symbol': 'X'})
                 break
     
     session['monsters'] = monsters
@@ -128,4 +128,4 @@ def move(direction):
                          game_over=session['game_over'])
 
 if __name__ == '__main__':
-    app.run()  # Remove debug=True for production 
+    app.run(debug=True)  # Add debug=True for development 
