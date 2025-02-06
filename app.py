@@ -27,7 +27,7 @@ def home():
     
     # Create monsters
     monsters = []
-    for _ in range(3):  # Create 3 monsters
+    for _ in range(4):  # Create 4 monsters
         while True:
             x = random.randint(1, 8)
             y = random.randint(1, 8)
