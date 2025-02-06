@@ -24,10 +24,19 @@ def home():
     dungeon = create_dungeon()
     session['dungeon'] = dungeon
     session['player'] = {'x': 0, 'y': 0, 'hp': 20, 'attack': 5}
-    session['monsters'] = [
-        {'x': random.randint(1, 8), 'y': random.randint(1, 8), 'hp': 10, 'attack': 3, 'symbol': '👾'}
-        for _ in range(3)  # Create 3 monsters
-    ]
+    
+    # Create monsters ensuring they don't spawn on walls
+    monsters = []
+    for _ in range(3):  # Create 3 monsters
+        while True:
+            x = random.randint(1, 8)
+            y = random.randint(1, 8)
+            # Only place monster if position is empty (not a wall)
+            if dungeon[y][x] == ' ':
+                monsters.append({'x': x, 'y': y, 'hp': 10, 'attack': 3, 'symbol': '👾'})
+                break
+    
+    session['monsters'] = monsters
     session['game_over'] = False
     session['message'] = "Welcome to the dungeon!"
     
