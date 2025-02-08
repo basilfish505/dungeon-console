@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Console Dungeon Crawler</title>
+    <style>
+        body {
+            background-color: black;
+            color: #00ff00;
+            font-family: 'Courier New', monospace;
+            margin: 20px;
+        }
+        #game-container {
+            width: 800px;
+            margin: 0 auto;
+        }
+        #map-display {
+            white-space: pre;
+            font-size: 20px;
+            line-height: 1;
+            margin-bottom: 20px;
+        }
+        #message-log {
+            border: 1px solid #00ff00;
+            padding: 10px;
+            margin-bottom: 20px;
+            height: 100px;
+            overflow-y: auto;
+        }
+        #stats {
+            margin-bottom: 20px;
+        }
+        .blink {
+            animation: blink 1s infinite;
+        }
+        @keyframes blink {
+            50% { opacity: 0; }
+        }
+        .key {
+            border: 1px solid #00ff00;
+            padding: 5px 10px;
+            margin: 5px;
+            display: inline-block;
+        }
+    </style>
+</head>
+<body>
+    <div id="game-container">
+        <div id="stats">
+            Health: <span id="health">100</span> | Gold: <span id="gold">0</span>
+        </div>
+        <div id="map-display"></div>
+        <div id="message-log"></div>
+        <div id="controls">
+            Movement: 
+            <span class="key">W</span>
+            <span class="key">A</span>
+            <span class="key">S</span>
+            <span class="key">D</span>
+        </div>
+    </div>
+
+    <script>
+        let lastKeyTime = 0;
+        const MOVE_DELAY = 100; // Milliseconds between moves
+
+        function updateGame(data) {
+            if (data.game_over) {
+                document.getElementById('map-display').innerHTML = 'GAME OVER';
+                return;
+            }
+
+            // Update map
+            let mapDisplay = '';
+            for (let row of data.map) {
+                mapDisplay += row.join('') + '\n';
+            }
+            document.getElementById('map-display').innerHTML = mapDisplay;
+
+            // Update messages
+            let messageLog = document.getElementById('message-log');
+            messageLog.innerHTML = data.messages.join('<br>');
+            messageLog.scrollTop = messageLog.scrollHeight;
+
+            // Update stats
+            document.getElementById('health').textContent = data.health;
+            document.getElementById('gold').textContent = data.gold;
+        }
+
+        function move(direction) {
+            const currentTime = Date.now();
+            if (currentTime - lastKeyTime < MOVE_DELAY) return;
+            lastKeyTime = currentTime;
+
+            fetch(`/move/${direction}`)
+                .then(response => response.json())
+                .then(data => updateGame(data));
+        }
+
+        document.addEventListener('keydown', (event) => {
+            const key = event.key.toLowerCase();
+            if (['w', 'a', 's', 'd'].includes(key)) {
+                move(key);
+            }
+        });
+
+        // Initial game state
+        move('start');
+    </script>
+</body>
+</html> 
