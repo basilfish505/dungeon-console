@@ -36,6 +36,10 @@ class GameState:
         return game_map
 
     def move_player(self, direction):
+        # If health is already 0, don't allow any more moves
+        if self.health <= 0:
+            return False
+            
         new_pos = self.player_pos.copy()
         
         if direction == 'w':
@@ -87,22 +91,33 @@ def home():
 
 @app.route('/move/<direction>')
 def move(direction):
-    if game_state.move_player(direction):
-        # Keep only last 5 messages
-        game_state.messages = game_state.messages[-5:]
-        
-        # Create visible map (showing only near player)
-        visible_map = [row[:] for row in game_state.game_map]
-        visible_map[game_state.player_pos[0]][game_state.player_pos[1]] = '@'
-        
+    global game_state
+    
+    if not game_state.move_player(direction):
+        # Reset the game when player dies
+        game_state = GameState()
         return jsonify({
-            'map': visible_map,
+            'game_over': True,
+            'map': game_state.game_map,
             'messages': game_state.messages,
             'health': game_state.health,
             'gold': game_state.gold
         })
-    else:
-        return jsonify({'game_over': True})
+    
+    # Keep only last 5 messages
+    game_state.messages = game_state.messages[-5:]
+    
+    # Create visible map (showing only near player)
+    visible_map = [row[:] for row in game_state.game_map]
+    visible_map[game_state.player_pos[0]][game_state.player_pos[1]] = '@'
+    
+    return jsonify({
+        'map': visible_map,
+        'messages': game_state.messages,
+        'health': game_state.health,
+        'gold': game_state.gold,
+        'game_over': False
+    })
 
 if __name__ == '__main__':
     app.run(debug=True, port=5001) 
