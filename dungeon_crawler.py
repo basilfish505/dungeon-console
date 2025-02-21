@@ -6,7 +6,7 @@ app = Flask(__name__)
 # Game state
 class GameState:
     def __init__(self):
-        self.map_size = 40
+        self.map_size = 20
         self.player_pos = [1, 1]
         self.game_map = self.generate_map()
         self.messages = ["Welcome to the dungeon! Use WASD to move."]
@@ -20,7 +20,7 @@ class GameState:
         # Create paths
         for i in range(1, self.map_size-1):
             for j in range(1, self.map_size-1):
-                if random.random() > 0.3:  # 70% chance of being a path
+                if random.random() > 0.1:  # 90% chance of being a path
                     game_map[i][j] = '.'
                     
                     # Sometimes add items or monsters
@@ -105,4 +105,4 @@ def move(direction):
         return jsonify({'game_over': True})
 
 if __name__ == '__main__':
-    app.run(debug=True) 
+    app.run(debug=True, port=5001) 
