@@ -16,7 +16,7 @@ class GameState:
 
     def generate_map(self):
         # Create empty map with walls
-        game_map = [['#' for _ in range(self.map_size)] for _ in range(self.map_size+2)]
+        game_map = [['#' for _ in range(self.map_size)] for _ in range(self.map_size)]
         
         # Create paths
         for i in range(1, self.map_size-1):
