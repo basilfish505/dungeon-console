@@ -1,5 +1,6 @@
 from flask import Flask, render_template, request, jsonify
 import random
+import os
 
 app = Flask(__name__)
 
@@ -15,7 +16,7 @@ class GameState:
 
     def generate_map(self):
         # Create empty map with walls
-        game_map = [['#' for _ in range(self.map_size)] for _ in range(self.map_size)]
+        game_map = [['#' for _ in range(self.map_size)] for _ in range(self.map_size+1)]
         
         # Create paths
         for i in range(1, self.map_size-1):
@@ -120,4 +121,4 @@ def move(direction):
     })
 
 if __name__ == '__main__':
-    app.run(debug=True, port=5001) 
+    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5001))) 
