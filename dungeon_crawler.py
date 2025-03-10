@@ -7,7 +7,7 @@ app = Flask(__name__)
 # Game state
 class GameState:
     def __init__(self):
-        self.map_size = 20
+        self.map_size = 25
         self.player_pos = [1, 1]
         self.game_map = self.generate_map()
         self.messages = ["Welcome to the dungeon! Use WASD to move."]
@@ -16,7 +16,7 @@ class GameState:
 
     def generate_map(self):
         # Create empty map with walls
-        game_map = [['#' for _ in range(self.map_size)] for _ in range(self.map_size+1)]
+        game_map = [['#' for _ in range(self.map_size)] for _ in range(self.map_size+2)]
         
         # Create paths
         for i in range(1, self.map_size-1):
