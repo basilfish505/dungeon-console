@@ -153,6 +153,217 @@ class GameState:
                 row.append(work_map[y][x])
             game_map.append(row)
         
+        # After creating the basic cave but before adding internal rocks:
+        
+        # 1. Identify perimeter walls by marking them
+        # First create a copy of the map to mark perimeter walls
+        marked_map = [row[:] for row in game_map]
+        
+        # Find all floor tiles that are adjacent to the outer void
+        for y in range(self.map_height):
+            for x in range(self.map_width):
+                if game_map[y][x] == '#':
+                    # Check if this wall is adjacent to the map edge
+                    is_perimeter = False
+                    if (y == 0 or y == self.map_height-1 or 
+                        x == 0 or x == self.map_width-1):
+                        is_perimeter = True
+                    
+                    # Also check if it's adjacent to a space character (void)
+                    for dy in [-1, 0, 1]:
+                        for dx in [-1, 0, 1]:
+                            ny, nx = y + dy, x + dx
+                            if (0 <= ny < self.map_height and 
+                                0 <= nx < self.map_width and 
+                                game_map[ny][nx] == ' '):
+                                is_perimeter = True
+                    
+                    if is_perimeter:
+                        marked_map[y][x] = 'P'  # Mark as perimeter
+        
+        # 2. Create hollow rock formations
+        # Large rock formations
+        num_large_formations = random.randint(3, 7)
+        for _ in range(num_large_formations):
+            # Place centers away from edges
+            center_y = random.randint(self.map_height//4, self.map_height*3//4)
+            center_x = random.randint(self.map_width//4, self.map_width*3//4)
+            
+            # Skip if too close to perimeter
+            too_close = False
+            for dy in range(-4, 5):
+                for dx in range(-4, 5):
+                    ny, nx = center_y + dy, center_x + dx
+                    if (0 <= ny < self.map_height and 
+                        0 <= nx < self.map_width and 
+                        marked_map[ny][nx] == 'P'):
+                        too_close = True
+                        break
+                if too_close:
+                    break
+            
+            if too_close:
+                continue
+            
+            # Outer and inner radius
+            outer_radius = random.randint(3, 5)
+            inner_radius = max(1, outer_radius - random.randint(1, 2))
+            
+            # First create a temporary map of this formation
+            formation = {}
+            
+            # Create the outer shape
+            for y in range(center_y - outer_radius, center_y + outer_radius + 1):
+                for x in range(center_x - outer_radius, center_x + outer_radius + 1):
+                    if (0 <= y < self.map_height and 
+                        0 <= x < self.map_width and 
+                        game_map[y][x] == '.'):
+                        
+                        # Check if placing this rock would connect to perimeter
+                        would_connect = False
+                        for dy in [-1, 0, 1]:
+                            for dx in [-1, 0, 1]:
+                                ny, nx = y + dy, x + dx
+                                if (0 <= ny < self.map_height and 
+                                    0 <= nx < self.map_width and 
+                                    marked_map[ny][nx] == 'P'):
+                                    would_connect = True
+                        
+                        if would_connect:
+                            continue
+                        
+                        # Determine if this point is part of the formation
+                        dist = ((y - center_y)**2 + (x - center_x)**2)**0.5
+                        noise = random.uniform(-0.8, 0.8)
+                        if dist + noise < outer_radius:
+                            formation[(y, x)] = '#'
+            
+            # Now hollow out the inside
+            for y in range(center_y - inner_radius, center_y + inner_radius + 1):
+                for x in range(center_x - inner_radius, center_x + inner_radius + 1):
+                    if (y, x) in formation:
+                        dist = ((y - center_y)**2 + (x - center_x)**2)**0.5
+                        noise = random.uniform(-0.5, 0.5)
+                        if dist + noise < inner_radius:
+                            formation[(y, x)] = '.'  # Hollow center
+            
+            # Apply the formation to the map
+            for (y, x), cell in formation.items():
+                game_map[y][x] = cell
+                if cell == '#':
+                    marked_map[y][x] = 'I'  # Mark as internal rock
+        
+        # Medium rock formations (also hollow)
+        num_medium_formations = random.randint(5, 10)
+        for _ in range(num_medium_formations):
+            center_y = random.randint(3, self.map_height - 4)
+            center_x = random.randint(3, self.map_width - 4)
+            
+            # Skip if too close to perimeter or other rocks
+            too_close = False
+            for dy in range(-3, 4):
+                for dx in range(-3, 4):
+                    ny, nx = center_y + dy, center_x + dx
+                    if (0 <= ny < self.map_height and 
+                        0 <= nx < self.map_width and 
+                        (marked_map[ny][nx] == 'P' or marked_map[ny][nx] == 'I')):
+                        too_close = True
+                        break
+                if too_close:
+                    break
+            
+            if too_close:
+                continue
+            
+            # Create hollow medium formation
+            outer_radius = random.randint(2, 3)
+            inner_radius = max(1, outer_radius - 1)
+            
+            formation = {}
+            
+            # Create outer shape
+            for y in range(center_y - outer_radius, center_y + outer_radius + 1):
+                for x in range(center_x - outer_radius, center_x + outer_radius + 1):
+                    if (0 <= y < self.map_height and 
+                        0 <= x < self.map_width and 
+                        game_map[y][x] == '.'):
+                        
+                        # Check perimeter separation
+                        if any(marked_map[y+dy][x+dx] == 'P' 
+                               for dy in [-1, 0, 1] 
+                               for dx in [-1, 0, 1] 
+                               if 0 <= y+dy < self.map_height and 
+                                  0 <= x+dx < self.map_width):
+                            continue
+                        
+                        dist = ((y - center_y)**2 + (x - center_x)**2)**0.5
+                        noise = random.uniform(-0.4, 0.4)
+                        if dist + noise < outer_radius:
+                            formation[(y, x)] = '#'
+            
+            # Hollow out center
+            for y in range(center_y - inner_radius, center_y + inner_radius + 1):
+                for x in range(center_x - inner_radius, center_x + inner_radius + 1):
+                    if (y, x) in formation:
+                        dist = ((y - center_y)**2 + (x - center_x)**2)**0.5
+                        if dist < inner_radius:
+                            formation[(y, x)] = '.'
+            
+            # Apply to map
+            for (y, x), cell in formation.items():
+                game_map[y][x] = cell
+                if cell == '#':
+                    marked_map[y][x] = 'I'
+        
+        # Small individual rocks (these stay solid)
+        num_small_rocks = random.randint(15, 25)
+        for _ in range(num_small_rocks):
+            y = random.randint(2, self.map_height - 3)
+            x = random.randint(2, self.map_width - 3)
+            
+            # Only place if not adjacent to perimeter or other rocks
+            if (game_map[y][x] == '.' and
+                not any((marked_map[y+dy][x+dx] == 'P' or marked_map[y+dy][x+dx] == 'I')
+                        for dy in [-1, 0, 1] 
+                        for dx in [-1, 0, 1] 
+                        if 0 <= y+dy < self.map_height and 
+                           0 <= x+dx < self.map_width)):
+                
+                game_map[y][x] = '#'
+                marked_map[y][x] = 'I'
+        
+        # 4. Ensure the map remains navigable
+        # Start by making a copy of the map for the flood fill
+        flood_map = [row[:] for row in game_map]
+        
+        # Choose a random floor tile as the start point
+        start_y, start_x = None, None
+        for y in range(self.map_height):
+            for x in range(self.map_width):
+                if game_map[y][x] == '.':
+                    start_y, start_x = y, x
+                    break
+            if start_y is not None:
+                break
+        
+        # Flood fill from the start point
+        if start_y is not None:
+            to_fill = [(start_y, start_x)]
+            while to_fill:
+                y, x = to_fill.pop(0)
+                if 0 <= y < self.map_height and 0 <= x < self.map_width and flood_map[y][x] == '.':
+                    flood_map[y][x] = 'F'  # Marked as filled
+                    for dy, dx in [(0,1), (1,0), (0,-1), (-1,0)]:
+                        to_fill.append((y + dy, x + dx))
+        
+        # Find any floor tiles that couldn't be reached and turn them into walls
+        # This ensures no disconnected areas
+        for y in range(self.map_height):
+            for x in range(self.map_width):
+                if game_map[y][x] == '.' and flood_map[y][x] != 'F':
+                    game_map[y][x] = '#'  # Unreachable floor becomes wall
+        
+        # Now place the player in a safe spot with enough open space
         # Place player in a safe spot
         player_placed = False
         for attempt in range(100):
