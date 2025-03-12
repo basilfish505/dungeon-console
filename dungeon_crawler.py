@@ -7,7 +7,7 @@ app = Flask(__name__)
 # Game state
 class GameState:
     def __init__(self):
-        self.map_size = 25
+        self.map_size = 30
         self.player_pos = [1, 1]
         self.game_map = self.generate_map()
         self.messages = ["Welcome to the dungeon! Use WASD to move."]
