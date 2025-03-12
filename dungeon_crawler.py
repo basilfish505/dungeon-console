@@ -13,6 +13,7 @@ class GameState:
         self.player_pos = [1, 1]
         self.current_level = 0  # Start at level 0
         self.levels = {}  # Store multiple levels
+        self.monsters = []  # Will store monster positions [y, x] for each level
         
         # Create empty structure for first level
         self.levels[0] = {
@@ -355,18 +356,27 @@ class GameState:
                 if player_placed:
                     break
         
+        # Track monster positions
+        level_monsters = []
+        
         # Add monsters, gold and health potions
         for y in range(self.map_height):
             for x in range(self.map_width):
                 if game_map[y][x] == '.':
                     roll = random.random()
                     if [y, x] != self.player_pos:  # Don't place on player
-                        if roll < 0.05:  # Reduced monster frequency
-                            game_map[y][x] = 'M'  # Monster
-                        elif roll < 0.10:  # Reduced item frequency
+                        if roll < 0.05:  # Monster
+                            game_map[y][x] = 'M'  # Show monster on map
+                            level_monsters.append([y, x])  # Store monster position
+                        elif roll < 0.10:
                             game_map[y][x] = 'G'  # Gold
-                        elif roll < 0.12:  # Reduced item frequency
+                        elif roll < 0.12:
                             game_map[y][x] = 'H'  # Health potion
+        
+        # Store monsters for this level
+        if self.current_level in self.levels:
+            self.levels[self.current_level]['monsters'] = level_monsters
+            self.monsters = level_monsters
         
         # Add stairs down to the next level - pick a remote location
         stairs_placed = False
@@ -419,8 +429,8 @@ class GameState:
         # Save current level information
         self.levels[self.current_level]['map'] = self.game_map
         
-        # Create new level
-        self.current_level += 1
+        # Create new level (DESCEND = DECREASE level number)
+        self.current_level -= 1  # Changed from += 1 to -= 1
         
         # Check if we've already visited this level
         if self.current_level in self.levels:
@@ -433,13 +443,14 @@ class GameState:
             if self.levels[self.current_level]['stairs_up_pos']:
                 self.player_pos = self.levels[self.current_level]['stairs_up_pos'][:]
                 
-            self.messages.append(f"You returned to level {self.current_level + 1}!")
+            self.messages.append(f"You returned to level {self.current_level}!")  # No +1 adjustment
         else:
             # Important: Create the level structure BEFORE generating the map
             self.levels[self.current_level] = {
                 'map': None,  # Will be set after generation
                 'stairs_down_pos': None,
-                'stairs_up_pos': None
+                'stairs_up_pos': None,
+                'monsters': []  # Add monsters list
             }
             
             # Generate new level
@@ -482,15 +493,20 @@ class GameState:
             # Store the new map
             self.levels[self.current_level]['map'] = new_map
             self.game_map = new_map
-            self.messages.append(f"You descended to level {self.current_level + 1}!")
+            self.messages.append(f"You descended to level {self.current_level}!")  # No +1 adjustment
+
+        # Update current monsters list
+        self.monsters = self.levels[self.current_level]['monsters']
+        
+        return self.game_map
 
     def return_to_previous_level(self):
-        if self.current_level > 0:
+        if self.current_level < 0:  # Changed from > 0 to < 0
             # Save current level data
             self.levels[self.current_level]['map'] = self.game_map
             
-            # Move up a level
-            self.current_level -= 1
+            # Move up a level (ASCEND = INCREASE level number)
+            self.current_level += 1  # Changed from -= 1 to += 1
             
             # Restore previous level
             self.game_map = self.levels[self.current_level]['map']
@@ -501,9 +517,80 @@ class GameState:
             if self.levels[self.current_level]['stairs_down_pos']:
                 self.player_pos = self.levels[self.current_level]['stairs_down_pos'][:]
             
-            self.messages.append(f"You ascended to level {self.current_level + 1}!")
+            self.messages.append(f"You ascended to level {self.current_level}!")  # No +1 adjustment
+            
+            # Update monsters list for the level we're returning to
+            self.monsters = self.levels[self.current_level]['monsters']
+            
             return True
         return False
+
+    def move_monsters(self):
+        # Move each monster in a random direction
+        monsters_to_remove = []
+        
+        for i, monster_pos in enumerate(self.monsters):
+            # Try to move in a random direction
+            directions = [(-1, 0), (1, 0), (0, -1), (0, 1)]  # Up, down, left, right
+            random.shuffle(directions)
+            
+            for dy, dx in directions:
+                new_y = monster_pos[0] + dy
+                new_x = monster_pos[1] + dx
+                
+                # Check if move is valid (not a wall or stairs)
+                if (0 <= new_y < self.map_height and 
+                    0 <= new_x < self.map_width and 
+                    self.game_map[new_y][new_x] != '#' and
+                    self.game_map[new_y][new_x] != '⌄' and
+                    self.game_map[new_y][new_x] != '⌃'):
+                    
+                    # Check if monster would hit player
+                    if [new_y, new_x] == self.player_pos:
+                        # Attack player
+                        damage = random.randint(5, 15)
+                        self.health -= damage
+                        self.messages.append(f"A monster attacks you! Took {damage} damage!")
+                        
+                        if self.health <= 0:
+                            self.messages.append("Game Over! You died!")
+                            return False
+                        
+                        # Monster stays in place after attacking
+                        break
+                    
+                    # Check for collision with other monsters (optional)
+                    if any(m[0] == new_y and m[1] == new_x for m in self.monsters):
+                        continue  # Try another direction
+                    
+                    # Move monster
+                    # Clear old position
+                    self.game_map[monster_pos[0]][monster_pos[1]] = '.'
+                    
+                    # If new position has an item, monster destroys it
+                    if self.game_map[new_y][new_x] in ['.', 'G', 'H']:
+                        # Update monster position
+                        monster_pos[0] = new_y
+                        monster_pos[1] = new_x
+                        self.game_map[new_y][new_x] = 'M'
+                        break
+            
+            # If monster was on stairs and moved, ensure stairs remain visible
+            # Check if monster was on stairs up
+            if (self.levels[self.current_level]['stairs_up_pos'] and 
+                monster_pos[0] == self.levels[self.current_level]['stairs_up_pos'][0] and
+                monster_pos[1] == self.levels[self.current_level]['stairs_up_pos'][1] and
+                self.game_map[monster_pos[0]][monster_pos[1]] == '.'):
+                self.game_map[monster_pos[0]][monster_pos[1]] = '⌃'
+                
+            # Check if monster was on stairs down
+            elif (self.levels[self.current_level]['stairs_down_pos'] and
+                 monster_pos[0] == self.levels[self.current_level]['stairs_down_pos'][0] and
+                 monster_pos[1] == self.levels[self.current_level]['stairs_down_pos'][1] and
+                 self.game_map[monster_pos[0]][monster_pos[1]] == '.'):
+                self.game_map[monster_pos[0]][monster_pos[1]] = '⌄'
+        
+        return True
 
     def move_player(self, direction):
         if self.health <= 0:
@@ -589,6 +676,11 @@ class GameState:
                 # Update player position
                 self.player_pos = new_pos
             
+            # Move monsters after player moves (if player didn't use stairs)
+            if tile != '⌄' and tile != '⌃':
+                if not self.move_monsters():
+                    return False  # Player died from monster attack
+        
         return True
 
 game_state = GameState()
@@ -619,14 +711,14 @@ def move(direction):
     visible_map = [row[:] for row in game_state.game_map]
     visible_map[game_state.player_pos[0]][game_state.player_pos[1]] = '@'
     
-    # Add current level info to the JSON response
+    # Update the JSON response
     return jsonify({
         'map': visible_map,
         'messages': game_state.messages,
         'health': game_state.health,
         'gold': game_state.gold,
         'game_over': False,
-        'current_level': game_state.current_level + 1  # Display as level 1, 2, 3, etc.
+        'current_level': game_state.current_level  # Remove the +1 to show actual level value
     })
 
 if __name__ == '__main__':
