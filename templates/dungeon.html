@@ -18,6 +18,11 @@
             font-size: 20px;
             line-height: 1;
             margin-bottom: 20px;
+            display: inline-block;
+            background-color: black;
+            padding: 0;
+            border: none;
+            font-family: 'Courier New', monospace;
         }
         #message-log {
             border: 1px solid #00ff00;
@@ -40,6 +45,9 @@
             padding: 5px 10px;
             margin: 5px;
             display: inline-block;
+        }
+        .hero {
+            color: yellow;
         }
     </style>
 </head>
@@ -69,10 +77,22 @@
                 return;
             }
 
-            // Update map
+            // Create a map display that ONLY includes real map elements
             let mapDisplay = '';
             for (let row of data.map) {
-                mapDisplay += row.join('') + '\n';
+                let rowText = '';
+                for (let cell of row) {
+                    // Only display actual map cells, not empty space
+                    if (cell === ' ') {
+                        rowText += '&nbsp;'; // Use non-breaking space instead
+                    } else if (cell === '@') {
+                        // Wrap the player character in a span with hero class
+                        rowText += '<span class="hero">@</span>';
+                    } else {
+                        rowText += cell;
+                    }
+                }
+                mapDisplay += rowText + '<br>';
             }
             document.getElementById('map-display').innerHTML = mapDisplay;
 
