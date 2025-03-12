@@ -11,7 +11,23 @@ class GameState:
         self.map_width = 0  # Will be set by generate_map
         self.map_height = 0  # Will be set by generate_map
         self.player_pos = [1, 1]
-        self.game_map = self.generate_map()
+        self.current_level = 0  # Start at level 0
+        self.levels = {}  # Store multiple levels
+        
+        # Create empty structure for first level
+        self.levels[0] = {
+            'map': None,  # Will be set after generation
+            'stairs_down_pos': None,
+            'stairs_up_pos': None
+        }
+        
+        # Generate the first level map
+        first_map = self.generate_map()
+        
+        # Now store the generated map
+        self.levels[0]['map'] = first_map
+        self.game_map = first_map
+        
         self.messages = ["Welcome to the dungeon! Use WASD to move."]
         self.health = 100
         self.gold = 0
@@ -153,23 +169,18 @@ class GameState:
                 row.append(work_map[y][x])
             game_map.append(row)
         
-        # After creating the basic cave but before adding internal rocks:
-        
-        # 1. Identify perimeter walls by marking them
-        # First create a copy of the map to mark perimeter walls
+        # After creating the basic cave, identify perimeter walls for rocks
         marked_map = [row[:] for row in game_map]
-        
-        # Find all floor tiles that are adjacent to the outer void
         for y in range(self.map_height):
             for x in range(self.map_width):
                 if game_map[y][x] == '#':
-                    # Check if this wall is adjacent to the map edge
+                    # Check if this wall is adjacent to the map edge or void
                     is_perimeter = False
                     if (y == 0 or y == self.map_height-1 or 
                         x == 0 or x == self.map_width-1):
                         is_perimeter = True
                     
-                    # Also check if it's adjacent to a space character (void)
+                    # Also check for adjacent void
                     for dy in [-1, 0, 1]:
                         for dx in [-1, 0, 1]:
                             ny, nx = y + dy, x + dx
@@ -181,11 +192,10 @@ class GameState:
                     if is_perimeter:
                         marked_map[y][x] = 'P'  # Mark as perimeter
         
-        # 2. Create hollow rock formations
-        # Large rock formations
-        num_large_formations = random.randint(3, 7)
+        # Add internal rocks - but much fewer!
+        # Large hollow rock formations (2-4)
+        num_large_formations = random.randint(2, 4)
         for _ in range(num_large_formations):
-            # Place centers away from edges
             center_y = random.randint(self.map_height//4, self.map_height*3//4)
             center_x = random.randint(self.map_width//4, self.map_width*3//4)
             
@@ -199,109 +209,26 @@ class GameState:
                         marked_map[ny][nx] == 'P'):
                         too_close = True
                         break
-                if too_close:
-                    break
-            
             if too_close:
                 continue
             
-            # Outer and inner radius
-            outer_radius = random.randint(3, 5)
-            inner_radius = max(1, outer_radius - random.randint(1, 2))
-            
-            # First create a temporary map of this formation
-            formation = {}
-            
-            # Create the outer shape
-            for y in range(center_y - outer_radius, center_y + outer_radius + 1):
-                for x in range(center_x - outer_radius, center_x + outer_radius + 1):
-                    if (0 <= y < self.map_height and 
-                        0 <= x < self.map_width and 
-                        game_map[y][x] == '.'):
-                        
-                        # Check if placing this rock would connect to perimeter
-                        would_connect = False
-                        for dy in [-1, 0, 1]:
-                            for dx in [-1, 0, 1]:
-                                ny, nx = y + dy, x + dx
-                                if (0 <= ny < self.map_height and 
-                                    0 <= nx < self.map_width and 
-                                    marked_map[ny][nx] == 'P'):
-                                    would_connect = True
-                        
-                        if would_connect:
-                            continue
-                        
-                        # Determine if this point is part of the formation
-                        dist = ((y - center_y)**2 + (x - center_x)**2)**0.5
-                        noise = random.uniform(-0.8, 0.8)
-                        if dist + noise < outer_radius:
-                            formation[(y, x)] = '#'
-            
-            # Now hollow out the inside
-            for y in range(center_y - inner_radius, center_y + inner_radius + 1):
-                for x in range(center_x - inner_radius, center_x + inner_radius + 1):
-                    if (y, x) in formation:
-                        dist = ((y - center_y)**2 + (x - center_x)**2)**0.5
-                        noise = random.uniform(-0.5, 0.5)
-                        if dist + noise < inner_radius:
-                            formation[(y, x)] = '.'  # Hollow center
-            
-            # Apply the formation to the map
-            for (y, x), cell in formation.items():
-                game_map[y][x] = cell
-                if cell == '#':
-                    marked_map[y][x] = 'I'  # Mark as internal rock
-        
-        # Medium rock formations (also hollow)
-        num_medium_formations = random.randint(5, 10)
-        for _ in range(num_medium_formations):
-            center_y = random.randint(3, self.map_height - 4)
-            center_x = random.randint(3, self.map_width - 4)
-            
-            # Skip if too close to perimeter or other rocks
-            too_close = False
-            for dy in range(-3, 4):
-                for dx in range(-3, 4):
-                    ny, nx = center_y + dy, center_x + dx
-                    if (0 <= ny < self.map_height and 
-                        0 <= nx < self.map_width and 
-                        (marked_map[ny][nx] == 'P' or marked_map[ny][nx] == 'I')):
-                        too_close = True
-                        break
-                if too_close:
-                    break
-            
-            if too_close:
-                continue
-            
-            # Create hollow medium formation
-            outer_radius = random.randint(2, 3)
+            outer_radius = random.randint(2, 4)
             inner_radius = max(1, outer_radius - 1)
             
+            # Create the formation
             formation = {}
-            
-            # Create outer shape
             for y in range(center_y - outer_radius, center_y + outer_radius + 1):
                 for x in range(center_x - outer_radius, center_x + outer_radius + 1):
                     if (0 <= y < self.map_height and 
                         0 <= x < self.map_width and 
                         game_map[y][x] == '.'):
                         
-                        # Check perimeter separation
-                        if any(marked_map[y+dy][x+dx] == 'P' 
-                               for dy in [-1, 0, 1] 
-                               for dx in [-1, 0, 1] 
-                               if 0 <= y+dy < self.map_height and 
-                                  0 <= x+dx < self.map_width):
-                            continue
-                        
                         dist = ((y - center_y)**2 + (x - center_x)**2)**0.5
-                        noise = random.uniform(-0.4, 0.4)
+                        noise = random.uniform(-0.6, 0.6)
                         if dist + noise < outer_radius:
                             formation[(y, x)] = '#'
             
-            # Hollow out center
+            # Hollow out the center
             for y in range(center_y - inner_radius, center_y + inner_radius + 1):
                 for x in range(center_x - inner_radius, center_x + inner_radius + 1):
                     if (y, x) in formation:
@@ -315,13 +242,44 @@ class GameState:
                 if cell == '#':
                     marked_map[y][x] = 'I'
         
-        # Small individual rocks (these stay solid)
-        num_small_rocks = random.randint(15, 25)
+        # Medium rock formations (3-5)
+        num_medium_formations = random.randint(3, 5)
+        for _ in range(num_medium_formations):
+            center_y = random.randint(3, self.map_height - 4)
+            center_x = random.randint(3, self.map_width - 4)
+            
+            # Skip if too close to existing rocks
+            too_close = False
+            for dy in range(-3, 4):
+                for dx in range(-3, 4):
+                    ny, nx = center_y + dy, center_x + dx
+                    if (0 <= ny < self.map_height and 
+                        0 <= nx < self.map_width and 
+                        (marked_map[ny][nx] == 'P' or marked_map[ny][nx] == 'I')):
+                        too_close = True
+                        break
+            if too_close:
+                continue
+            
+            # Create medium formation
+            radius = random.randint(1, 2)
+            for y in range(center_y - radius, center_y + radius + 1):
+                for x in range(center_x - radius, center_x + radius + 1):
+                    if (0 <= y < self.map_height and 
+                        0 <= x < self.map_width and 
+                        game_map[y][x] == '.'):
+                        
+                        dist = ((y - center_y)**2 + (x - center_x)**2)**0.5
+                        if dist < radius + random.uniform(-0.3, 0.3):
+                            game_map[y][x] = '#'
+                            marked_map[y][x] = 'I'
+        
+        # Individual rocks (10-15)
+        num_small_rocks = random.randint(10, 15)
         for _ in range(num_small_rocks):
             y = random.randint(2, self.map_height - 3)
             x = random.randint(2, self.map_width - 3)
             
-            # Only place if not adjacent to perimeter or other rocks
             if (game_map[y][x] == '.' and
                 not any((marked_map[y+dy][x+dx] == 'P' or marked_map[y+dy][x+dx] == 'I')
                         for dy in [-1, 0, 1] 
@@ -332,11 +290,10 @@ class GameState:
                 game_map[y][x] = '#'
                 marked_map[y][x] = 'I'
         
-        # 4. Ensure the map remains navigable
-        # Start by making a copy of the map for the flood fill
+        # Flood fill to ensure map is navigable
         flood_map = [row[:] for row in game_map]
         
-        # Choose a random floor tile as the start point
+        # Find a random floor tile as start
         start_y, start_x = None, None
         for y in range(self.map_height):
             for x in range(self.map_width):
@@ -346,7 +303,7 @@ class GameState:
             if start_y is not None:
                 break
         
-        # Flood fill from the start point
+        # Flood fill
         if start_y is not None:
             to_fill = [(start_y, start_x)]
             while to_fill:
@@ -356,22 +313,19 @@ class GameState:
                     for dy, dx in [(0,1), (1,0), (0,-1), (-1,0)]:
                         to_fill.append((y + dy, x + dx))
         
-        # Find any floor tiles that couldn't be reached and turn them into walls
-        # This ensures no disconnected areas
+        # Remove any disconnected areas
         for y in range(self.map_height):
             for x in range(self.map_width):
                 if game_map[y][x] == '.' and flood_map[y][x] != 'F':
-                    game_map[y][x] = '#'  # Unreachable floor becomes wall
+                    game_map[y][x] = '#'
         
-        # Now place the player in a safe spot with enough open space
-        # Place player in a safe spot
+        # Place player
         player_placed = False
         for attempt in range(100):
-            y = random.randint(self.map_height // 4, self.map_height * 3 // 4)
-            x = random.randint(self.map_width // 4, self.map_width * 3 // 4)
+            y = random.randint(self.map_height//4, self.map_height*3//4)
+            x = random.randint(self.map_width//4, self.map_width*3//4)
             
-            if 0 <= y < self.map_height and 0 <= x < self.map_width and game_map[y][x] == '.':
-                # Check for open space around
+            if game_map[y][x] == '.':
                 open_count = 0
                 for dy in [-1, 0, 1]:
                     for dx in [-1, 0, 1]:
@@ -387,16 +341,19 @@ class GameState:
         
         # Fallback player position
         if not player_placed:
-            # Find center-ish point
-            center_y = self.map_height // 2
-            center_x = self.map_width // 2
-            # Clear area around it
-            for dy in [-1, 0, 1]:
-                for dx in [-1, 0, 1]:
-                    ny, nx = center_y + dy, center_x + dx
-                    if 0 <= ny < self.map_height and 0 <= nx < self.map_width:
-                        game_map[ny][nx] = '.'
-            self.player_pos = [center_y, center_x]
+            for y in range(self.map_height):
+                for x in range(self.map_width):
+                    if game_map[y][x] == '.':
+                        self.player_pos = [y, x]
+                        for dy in [-1, 0, 1]:
+                            for dx in [-1, 0, 1]:
+                                ny, nx = y + dy, x + dx
+                                if 0 <= ny < self.map_height and 0 <= nx < self.map_width:
+                                    game_map[ny][nx] = '.'
+                        player_placed = True
+                        break
+                if player_placed:
+                    break
         
         # Add monsters, gold and health potions
         for y in range(self.map_height):
@@ -404,17 +361,151 @@ class GameState:
                 if game_map[y][x] == '.':
                     roll = random.random()
                     if [y, x] != self.player_pos:  # Don't place on player
-                        if roll < 0.08:
+                        if roll < 0.05:  # Reduced monster frequency
                             game_map[y][x] = 'M'  # Monster
-                        elif roll < 0.15:
+                        elif roll < 0.10:  # Reduced item frequency
                             game_map[y][x] = 'G'  # Gold
-                        elif roll < 0.18:
+                        elif roll < 0.12:  # Reduced item frequency
                             game_map[y][x] = 'H'  # Health potion
+        
+        # Add stairs down to the next level - pick a remote location
+        stairs_placed = False
+        # First try to place stairs far from player
+        candidate_spots = []
+        for y in range(self.map_height):
+            for x in range(self.map_width):
+                if game_map[y][x] == '.':
+                    player_distance = ((y - self.player_pos[0])**2 + (x - self.player_pos[1])**2)**0.5
+                    if player_distance > self.map_height/3:  # Must be reasonably far
+                        open_space = sum(1 for dy in [-1, 0, 1] for dx in [-1, 0, 1]
+                                        if 0 <= y+dy < self.map_height and 0 <= x+dx < self.map_width
+                                        and game_map[y+dy][x+dx] == '.')
+                        if open_space >= 5:  # Must have open space around
+                            candidate_spots.append((y, x, player_distance))
+        
+        # Sort by distance from player (farthest first)
+        candidate_spots.sort(key=lambda spot: -spot[2])
+        
+        # Place stairs at a good spot
+        for y, x, _ in candidate_spots[:5]:  # Try the 5 best spots
+            game_map[y][x] = '⌄'  # Down stairs
+            
+            # Store stairs location
+            if self.current_level in self.levels:
+                self.levels[self.current_level]['stairs_down_pos'] = [y, x]
+                
+            stairs_placed = True
+            break
+        
+        # If still not placed, try anywhere
+        if not stairs_placed:
+            for y in range(self.map_height):
+                for x in range(self.map_width):
+                    if game_map[y][x] == '.' and [y, x] != self.player_pos:
+                        game_map[y][x] = '⌄'
+                        
+                        # Store stairs location
+                        if self.current_level in self.levels:
+                            self.levels[self.current_level]['stairs_down_pos'] = [y, x]
+                            
+                        stairs_placed = True
+                        break
+                if stairs_placed:
+                    break
         
         return game_map
 
+    def create_new_level(self):
+        # Save current level information
+        self.levels[self.current_level]['map'] = self.game_map
+        
+        # Create new level
+        self.current_level += 1
+        
+        # Check if we've already visited this level
+        if self.current_level in self.levels:
+            # Restore existing level
+            self.game_map = self.levels[self.current_level]['map']
+            self.map_height = len(self.game_map)
+            self.map_width = len(self.game_map[0])
+            
+            # Place player at the stairs up position
+            if self.levels[self.current_level]['stairs_up_pos']:
+                self.player_pos = self.levels[self.current_level]['stairs_up_pos'][:]
+                
+            self.messages.append(f"You returned to level {self.current_level + 1}!")
+        else:
+            # Important: Create the level structure BEFORE generating the map
+            self.levels[self.current_level] = {
+                'map': None,  # Will be set after generation
+                'stairs_down_pos': None,
+                'stairs_up_pos': None
+            }
+            
+            # Generate new level
+            self.map_width = 0  # Reset so generate_map creates new dimensions
+            self.map_height = 0
+            new_map = self.generate_map()
+            
+            # Find a good spot for stairs up (away from stairs down)
+            stairs_up_placed = False
+            for attempt in range(100):
+                y = random.randint(4, self.map_height - 5)
+                x = random.randint(4, self.map_width - 5)
+                
+                if new_map[y][x] == '.':
+                    # Check for open space
+                    open_space = sum(1 for dy in [-1, 0, 1] for dx in [-1, 0, 1]
+                                   if 0 <= y+dy < self.map_height and 0 <= x+dx < self.map_width
+                                   and new_map[y+dy][x+dx] == '.')
+                    
+                    if open_space >= 6:
+                        new_map[y][x] = '⌃'  # Place up stairs
+                        self.player_pos = [y, x]  # Player starts here
+                        self.levels[self.current_level]['stairs_up_pos'] = [y, x]
+                        stairs_up_placed = True
+                        break
+            
+            # Fallback
+            if not stairs_up_placed:
+                for y in range(self.map_height):
+                    for x in range(self.map_width):
+                        if new_map[y][x] == '.':
+                            new_map[y][x] = '⌃'  # Place up stairs
+                            self.player_pos = [y, x]
+                            self.levels[self.current_level]['stairs_up_pos'] = [y, x]
+                            stairs_up_placed = True
+                            break
+                        if stairs_up_placed:
+                            break
+            
+            # Store the new map
+            self.levels[self.current_level]['map'] = new_map
+            self.game_map = new_map
+            self.messages.append(f"You descended to level {self.current_level + 1}!")
+
+    def return_to_previous_level(self):
+        if self.current_level > 0:
+            # Save current level data
+            self.levels[self.current_level]['map'] = self.game_map
+            
+            # Move up a level
+            self.current_level -= 1
+            
+            # Restore previous level
+            self.game_map = self.levels[self.current_level]['map']
+            self.map_height = len(self.game_map)
+            self.map_width = len(self.game_map[0])
+            
+            # Place player at stairs down location
+            if self.levels[self.current_level]['stairs_down_pos']:
+                self.player_pos = self.levels[self.current_level]['stairs_down_pos'][:]
+            
+            self.messages.append(f"You ascended to level {self.current_level + 1}!")
+            return True
+        return False
+
     def move_player(self, direction):
-        # If health is already 0, don't allow any more moves
         if self.health <= 0:
             return False
             
@@ -428,13 +519,16 @@ class GameState:
             new_pos[1] -= 1
         elif direction == 'd':
             new_pos[1] += 1
+        elif direction == 'start':
+            # Just return current state
+            return True
 
         # Check if move is valid
         if (0 <= new_pos[0] < self.map_height and 
             0 <= new_pos[1] < self.map_width and 
             self.game_map[new_pos[0]][new_pos[1]] != '#'):
             
-            # Handle what's in the new position
+            # What's in the new position
             tile = self.game_map[new_pos[0]][new_pos[1]]
             
             if tile == 'M':
@@ -444,20 +538,56 @@ class GameState:
                 if self.health <= 0:
                     self.messages.append("Game Over! You died!")
                     return False
+                self.game_map[new_pos[0]][new_pos[1]] = '.'
             
             elif tile == 'G':
                 gold_amount = random.randint(10, 30)
                 self.gold += gold_amount
                 self.messages.append(f"You found {gold_amount} gold!")
+                self.game_map[new_pos[0]][new_pos[1]] = '.'
             
             elif tile == 'H':
                 heal_amount = random.randint(20, 40)
                 self.health = min(100, self.health + heal_amount)
                 self.messages.append(f"You found a health potion! Healed {heal_amount} HP!")
+                self.game_map[new_pos[0]][new_pos[1]] = '.'
 
-            # Clear the tile and move player
-            self.game_map[new_pos[0]][new_pos[1]] = '.'
-            self.player_pos = new_pos
+            elif tile == '⌄':  # Down stairs
+                # Create new level - don't modify current tile
+                self.create_new_level()
+                return True
+                
+            elif tile == '⌃':  # Up stairs
+                # Return to previous level - don't modify current tile
+                self.return_to_previous_level()
+                return True
+            
+            # For normal floor movement
+            if tile == '.':
+                # Update the player's previous position
+                old_y, old_x = self.player_pos
+                
+                # Handle special cases for previous position
+                # Check if leaving stairs up
+                if (self.levels[self.current_level]['stairs_up_pos'] and 
+                    old_y == self.levels[self.current_level]['stairs_up_pos'][0] and
+                    old_x == self.levels[self.current_level]['stairs_up_pos'][1]):
+                    # Player was on up stairs, don't clear them
+                    pass  # The up stairs remain
+                
+                # Check if leaving stairs down
+                elif (self.levels[self.current_level]['stairs_down_pos'] and
+                     old_y == self.levels[self.current_level]['stairs_down_pos'][0] and
+                     old_x == self.levels[self.current_level]['stairs_down_pos'][1]):
+                    # Player was on down stairs, don't clear them
+                    pass  # The down stairs remain
+                
+                else:
+                    # Normal case - clear old position
+                    self.game_map[old_y][old_x] = '.'
+                
+                # Update player position
+                self.player_pos = new_pos
             
         return True
 
@@ -489,13 +619,14 @@ def move(direction):
     visible_map = [row[:] for row in game_state.game_map]
     visible_map[game_state.player_pos[0]][game_state.player_pos[1]] = '@'
     
-    # Important: Don't pad the map with empty space
+    # Add current level info to the JSON response
     return jsonify({
         'map': visible_map,
         'messages': game_state.messages,
         'health': game_state.health,
         'gold': game_state.gold,
-        'game_over': False
+        'game_over': False,
+        'current_level': game_state.current_level + 1  # Display as level 1, 2, 3, etc.
     })
 
 if __name__ == '__main__':

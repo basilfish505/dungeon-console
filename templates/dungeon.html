@@ -49,12 +49,16 @@
         .hero {
             color: cyan;
         }
+        .stairs {
+            color: red;
+            font-weight: bold;
+        }
     </style>
 </head>
 <body>
     <div id="game-container">
         <div id="stats">
-            Health: <span id="health">100</span> | Gold: <span id="gold">0</span>
+            Health: <span id="health">100</span> | Gold: <span id="gold">0</span> | Level: <span id="level">1</span>
         </div>
         <div id="map-display"></div>
         <div id="message-log"></div>
@@ -88,6 +92,9 @@
                     } else if (cell === '@') {
                         // Wrap the player character in a span with hero class
                         rowText += '<span class="hero">@</span>';
+                    } else if (cell === '⌄' || cell === '⌃') {
+                        // Wrap stairs in a span with stairs class
+                        rowText += '<span class="stairs">' + cell + '</span>';
                     } else {
                         rowText += cell;
                     }
@@ -101,9 +108,10 @@
             messageLog.innerHTML = data.messages.join('<br>');
             messageLog.scrollTop = messageLog.scrollHeight;
 
-            // Update stats
+            // Update stats including level
             document.getElementById('health').textContent = data.health;
             document.getElementById('gold').textContent = data.gold;
+            document.getElementById('level').textContent = data.current_level;
         }
 
         function move(direction) {
