@@ -10,8 +10,17 @@
             margin: 20px;
         }
         #game-container {
-            width: 800px;
+            width: 1200px;
             margin: 0 auto;
+            display: flex;
+            gap: 20px;
+        }
+        .game-left {
+            flex: 0 0 800px;
+        }
+        .game-right {
+            flex: 1;
+            padding: 10px;
         }
         #map-display {
             white-space: pre;
@@ -34,11 +43,24 @@
         #stats {
             margin-bottom: 20px;
         }
-        .blink {
-            animation: blink 1s infinite;
+        .combat-info {
+            border: 1px solid #00ff00;
+            padding: 10px;
+            margin-bottom: 20px;
+            display: none;  /* Hidden by default */
         }
-        @keyframes blink {
-            50% { opacity: 0; }
+        .combat-options {
+            margin-top: 10px;
+            line-height: 1.8;
+            font-family: 'Courier New', monospace;
+        }
+        .combat-option {
+            color: #00ff00;
+            cursor: pointer;
+            white-space: pre;  /* This preserves spaces */
+        }
+        .combat-option:hover {
+            color: yellow;
         }
         .key {
             border: 1px solid #00ff00;
@@ -57,17 +79,31 @@
 </head>
 <body>
     <div id="game-container">
-        <div id="stats">
-            Health: <span id="health">100</span> | Gold: <span id="gold">0</span> | Level: <span id="level">1</span>
+        <div class="game-left">
+            <div id="stats">
+                Health: <span id="health">100</span> | Gold: <span id="gold">0</span> | Level: <span id="level">1</span>
+            </div>
+            <div id="map-display"></div>
+            <div id="message-log"></div>
+            <div id="controls">
+                Movement: 
+                <span class="key">W</span>
+                <span class="key">A</span>
+                <span class="key">S</span>
+                <span class="key">D</span>
+            </div>
         </div>
-        <div id="map-display"></div>
-        <div id="message-log"></div>
-        <div id="controls">
-            Movement: 
-            <span class="key">W</span>
-            <span class="key">A</span>
-            <span class="key">S</span>
-            <span class="key">D</span>
+        <div class="game-right">
+            <div id="combat-info" class="combat-info">
+                <h3>Combat</h3>
+                <div id="monster-stats"></div>
+                <div class="combat-options">
+                    <div class="combat-option">&lt;A&gt;ttack - Strike the enemy</div>
+                    <div class="combat-option">&lt;S&gt;pell - Cast a spell</div>
+                    <div class="combat-option">&lt;I&gt;tem - Use an item</div>
+                    <div class="combat-option">&lt;F&gt;lee - Try to escape</div>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -86,14 +122,11 @@
             for (let row of data.map) {
                 let rowText = '';
                 for (let cell of row) {
-                    // Only display actual map cells, not empty space
                     if (cell === ' ') {
-                        rowText += '&nbsp;'; // Use non-breaking space instead
+                        rowText += '&nbsp;';
                     } else if (cell === '@') {
-                        // Wrap the player character in a span with hero class
                         rowText += '<span class="hero">@</span>';
                     } else if (cell === '⌄' || cell === '⌃') {
-                        // Wrap stairs in a span with stairs class
                         rowText += '<span class="stairs">' + cell + '</span>';
                     } else {
                         rowText += cell;
@@ -105,13 +138,28 @@
 
             // Update messages
             let messageLog = document.getElementById('message-log');
-            messageLog.innerHTML = data.messages.join('<br>');
-            messageLog.scrollTop = messageLog.scrollHeight;
+            messageLog.innerHTML = data.messages.reverse().join('<br>');
+            messageLog.scrollTop = 0;
 
-            // Update stats including level
+            // Update stats
             document.getElementById('health').textContent = data.health;
             document.getElementById('gold').textContent = data.gold;
             document.getElementById('level').textContent = data.current_level;
+
+            // Update combat info
+            const combatInfo = document.getElementById('combat-info');
+            const monsterStats = document.getElementById('monster-stats');
+            
+            if (data.in_combat && data.monster) {
+                combatInfo.style.display = 'block';
+                monsterStats.innerHTML = `
+                    Fighting: ${data.monster.name}<br>
+                    Monster HP: ${data.monster.hp}
+                `;
+            } else {
+                combatInfo.style.display = 'none';
+                monsterStats.innerHTML = '';
+            }
         }
 
         function move(direction) {
@@ -124,10 +172,42 @@
                 .then(data => updateGame(data));
         }
 
+        function combatAction(action) {
+            fetch(`/combat/${action}`)
+                .then(response => response.json())
+                .then(data => updateGame(data));
+        }
+
         document.addEventListener('keydown', (event) => {
             const key = event.key.toLowerCase();
-            if (['w', 'a', 's', 'd'].includes(key)) {
-                move(key);
+            
+            // Get combat info element
+            const combatInfo = document.getElementById('combat-info');
+            const inCombat = combatInfo.style.display === 'block';
+            
+            if (inCombat) {
+                // Combat controls
+                switch(key) {
+                    case 'a':
+                        combatAction('attack');
+                        break;
+                    case 'f':
+                        combatAction('flee');
+                        break;
+                    case 's':
+                        combatAction('spell');
+                        break;
+                    case 'i':
+                        combatAction('item');
+                        break;
+                }
+                event.preventDefault();
+                return;
+            } else {
+                // Movement controls
+                if (['w', 'a', 's', 'd'].includes(key)) {
+                    move(key);
+                }
             }
         });
 

@@ -32,6 +32,8 @@ class GameState:
         self.messages = ["Welcome to the dungeon! Use WASD to move."]
         self.health = 100
         self.gold = 0
+        self.in_combat = False
+        self.current_monster = None
 
     def generate_map(self):
         # Start with a much larger work area
@@ -596,6 +598,11 @@ class GameState:
         if self.health <= 0:
             return False
             
+        # If in combat, don't allow movement
+        if self.in_combat:
+            self.messages.append("You can't move while in combat!")
+            return True
+
         new_pos = self.player_pos.copy()
         
         if direction == 'w':
@@ -619,13 +626,8 @@ class GameState:
             tile = self.game_map[new_pos[0]][new_pos[1]]
             
             if tile == 'M':
-                damage = random.randint(10, 20)
-                self.health -= damage
-                self.messages.append(f"You fought a monster! Took {damage} damage!")
-                if self.health <= 0:
-                    self.messages.append("Game Over! You died!")
-                    return False
-                self.game_map[new_pos[0]][new_pos[1]] = '.'
+                # Instead of immediate damage, initiate combat
+                return self.initiate_combat(new_pos)
             
             elif tile == 'G':
                 gold_amount = random.randint(10, 30)
@@ -683,6 +685,16 @@ class GameState:
         
         return True
 
+    def initiate_combat(self, monster_pos):
+        self.in_combat = True
+        self.current_monster = {
+            'hp': random.randint(30, 50),
+            'name': 'Goblin',  # You can randomize monster types later
+            'position': monster_pos
+        }
+        self.messages.append(f"You encountered a {self.current_monster['name']}!")
+        return True
+
 game_state = GameState()
 
 @app.route('/')
@@ -718,7 +730,73 @@ def move(direction):
         'health': game_state.health,
         'gold': game_state.gold,
         'game_over': False,
-        'current_level': game_state.current_level  # Remove the +1 to show actual level value
+        'current_level': game_state.current_level,
+        'in_combat': game_state.in_combat,
+        'monster': game_state.current_monster if game_state.in_combat else None
+    })
+
+@app.route('/combat/<action>')
+def combat_action(action):
+    global game_state
+    if not game_state.in_combat:
+        return jsonify({'error': 'Not in combat'})
+
+    if action == 'attack':
+        # Player attacks
+        damage = random.randint(8, 15)
+        game_state.current_monster['hp'] -= damage
+        game_state.messages.append(f"You hit the {game_state.current_monster['name']} for {damage} damage!")
+
+        # Check if monster died
+        if game_state.current_monster['hp'] <= 0:
+            game_state.messages.append(f"You defeated the {game_state.current_monster['name']}!")
+            game_state.in_combat = False
+            monster_pos = game_state.current_monster['position']
+            game_state.game_map[monster_pos[0]][monster_pos[1]] = '.'
+            game_state.current_monster = None
+        else:
+            # Monster attacks back
+            monster_damage = random.randint(5, 12)
+            game_state.health -= monster_damage
+            game_state.messages.append(f"The {game_state.current_monster['name']} hits you for {monster_damage} damage!")
+
+    elif action == 'flee':
+        if random.random() < 0.6:  # 60% chance to flee
+            game_state.messages.append("You successfully fled from combat!")
+            game_state.in_combat = False
+            game_state.current_monster = None
+        else:
+            game_state.messages.append("Failed to flee!")
+            # Monster gets a free attack
+            monster_damage = random.randint(5, 12)
+            game_state.health -= monster_damage
+            game_state.messages.append(f"The {game_state.current_monster['name']} hits you for {monster_damage} damage!")
+
+    # Check for player death
+    if game_state.health <= 0:
+        game_state.messages.append("Game Over! You died!")
+        game_state = GameState()
+        return jsonify({
+            'game_over': True,
+            'map': game_state.game_map,
+            'messages': game_state.messages,
+            'health': game_state.health,
+            'gold': game_state.gold
+        })
+
+    # Update the move route to include combat state
+    visible_map = [row[:] for row in game_state.game_map]
+    visible_map[game_state.player_pos[0]][game_state.player_pos[1]] = '@'
+    
+    return jsonify({
+        'map': visible_map,
+        'messages': game_state.messages,
+        'health': game_state.health,
+        'gold': game_state.gold,
+        'game_over': False,
+        'current_level': game_state.current_level,
+        'in_combat': game_state.in_combat,
+        'monster': game_state.current_monster if game_state.in_combat else None
     })
 
 if __name__ == '__main__':
