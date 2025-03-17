@@ -367,12 +367,12 @@ class GameState:
                 if game_map[y][x] == '.':
                     roll = random.random()
                     if [y, x] != self.player_pos:  # Don't place on player
-                        if roll < 0.05:  # Monster
+                        if roll < 0.02:  # Monster - 2% chance (changed from 0.05)
                             game_map[y][x] = 'M'  # Show monster on map
                             level_monsters.append([y, x])  # Store monster position
-                        elif roll < 0.10:
+                        elif roll < 0.10:  # Gold (8% chance)
                             game_map[y][x] = 'G'  # Gold
-                        elif roll < 0.12:
+                        elif roll < 0.12:  # Health potion (2% chance)
                             game_map[y][x] = 'H'  # Health potion
         
         # Store monsters for this level
@@ -529,9 +529,7 @@ class GameState:
 
     def move_monsters(self):
         # Move each monster in a random direction
-        monsters_to_remove = []
-        
-        for i, monster_pos in enumerate(self.monsters):
+        for monster_pos in self.monsters[:]:  # Create a copy of the list to iterate over
             # Try to move in a random direction
             directions = [(-1, 0), (1, 0), (0, -1), (0, 1)]  # Up, down, left, right
             random.shuffle(directions)
@@ -549,47 +547,29 @@ class GameState:
                     
                     # Check if monster would hit player
                     if [new_y, new_x] == self.player_pos:
-                        # Attack player
-                        damage = random.randint(5, 15)
-                        self.health -= damage
-                        self.messages.append(f"A monster attacks you! Took {damage} damage!")
-                        
-                        if self.health <= 0:
-                            self.messages.append("Game Over! You died!")
-                            return False
-                        
-                        # Monster stays in place after attacking
-                        break
+                        # Initiate combat instead of immediate damage
+                        self.initiate_combat(monster_pos)
+                        return True
                     
-                    # Check for collision with other monsters (optional)
+                    # Check for collision with other monsters
                     if any(m[0] == new_y and m[1] == new_x for m in self.monsters):
                         continue  # Try another direction
                     
                     # Move monster
-                    # Clear old position
-                    self.game_map[monster_pos[0]][monster_pos[1]] = '.'
-                    
-                    # If new position has an item, monster destroys it
-                    if self.game_map[new_y][new_x] in ['.', 'G', 'H']:
-                        # Update monster position
-                        monster_pos[0] = new_y
-                        monster_pos[1] = new_x
-                        self.game_map[new_y][new_x] = 'M'
-                        break
+                    self.game_map[monster_pos[0]][monster_pos[1]] = '.'  # Clear old position
+                    self.game_map[new_y][new_x] = 'M'  # Set new position
+                    monster_pos[0] = new_y  # Update monster position in list
+                    monster_pos[1] = new_x
+                    break  # Stop trying directions after successful move
             
             # If monster was on stairs and moved, ensure stairs remain visible
-            # Check if monster was on stairs up
             if (self.levels[self.current_level]['stairs_up_pos'] and 
                 monster_pos[0] == self.levels[self.current_level]['stairs_up_pos'][0] and
-                monster_pos[1] == self.levels[self.current_level]['stairs_up_pos'][1] and
-                self.game_map[monster_pos[0]][monster_pos[1]] == '.'):
+                monster_pos[1] == self.levels[self.current_level]['stairs_up_pos'][1]):
                 self.game_map[monster_pos[0]][monster_pos[1]] = '⌃'
-                
-            # Check if monster was on stairs down
             elif (self.levels[self.current_level]['stairs_down_pos'] and
-                 monster_pos[0] == self.levels[self.current_level]['stairs_down_pos'][0] and
-                 monster_pos[1] == self.levels[self.current_level]['stairs_down_pos'][1] and
-                 self.game_map[monster_pos[0]][monster_pos[1]] == '.'):
+                  monster_pos[0] == self.levels[self.current_level]['stairs_down_pos'][0] and
+                  monster_pos[1] == self.levels[self.current_level]['stairs_down_pos'][1]):
                 self.game_map[monster_pos[0]][monster_pos[1]] = '⌄'
         
         return True
@@ -753,6 +733,11 @@ def combat_action(action):
             game_state.in_combat = False
             monster_pos = game_state.current_monster['position']
             game_state.game_map[monster_pos[0]][monster_pos[1]] = '.'
+            
+            # Remove monster from the monsters list
+            if monster_pos in game_state.monsters:
+                game_state.monsters.remove(monster_pos)
+            
             game_state.current_monster = None
         else:
             # Monster attacks back
