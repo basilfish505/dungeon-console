@@ -42,6 +42,20 @@
         }
         #stats {
             margin-bottom: 20px;
+            padding: 10px;
+            border: 1px solid #00ff00;
+            font-family: 'Courier New', monospace;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .game-title {
+            font-weight: bold;
+            font-size: 1.2em;
+        }
+        .stats-group {
+            display: flex;
+            gap: 20px;  /* Space between stats */
         }
         .combat-info {
             border: 1px solid #00ff00;
@@ -133,7 +147,12 @@
     <div id="game-container">
         <div class="game-left">
             <div id="stats">
-                Health: <span id="health">100</span> | Gold: <span id="gold">0</span> | Level: <span id="level">1</span>
+                <span class="game-title">PERMAQUEST</span>
+                <div class="stats-group">
+                    Health: <span id="health">100</span> | 
+                    Gold: <span id="gold">0</span> | 
+                    Depth: <span id="level">1</span>
+                </div>
             </div>
             <div id="map-display"></div>
             <div id="message-log"></div>
