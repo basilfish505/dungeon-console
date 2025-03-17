@@ -745,6 +745,20 @@ def combat_action(action):
             game_state.health -= monster_damage
             game_state.messages.append(f"The {game_state.current_monster['name']} hits you for {monster_damage} damage!")
 
+    elif action == 'spell':
+        game_state.messages.append("You have no spells to cast!")
+        # Monster still gets to attack
+        monster_damage = random.randint(5, 12)
+        game_state.health -= monster_damage
+        game_state.messages.append(f"The {game_state.current_monster['name']} hits you for {monster_damage} damage!")
+
+    elif action == 'item':
+        game_state.messages.append("You have no items to use!")
+        # Monster still gets to attack
+        monster_damage = random.randint(5, 12)
+        game_state.health -= monster_damage
+        game_state.messages.append(f"The {game_state.current_monster['name']} hits you for {monster_damage} damage!")
+
     elif action == 'flee':
         if random.random() < 0.6:  # 60% chance to flee
             game_state.messages.append("You successfully fled from combat!")
