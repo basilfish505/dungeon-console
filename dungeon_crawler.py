@@ -157,7 +157,7 @@ class GameStateDisplay:
         total_players = len(self.game_state.players)
         active_players = len(self.game_state.active_players)
         return [
-            ["Players (Active Now):", f"{total_players} ({active_players})", "", ""]
+            ["Players (Active):", f"{total_players} ({active_players})", "", ""]
         ]
 
 @app.route('/')
