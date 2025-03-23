@@ -150,15 +150,25 @@
 
     <div id="player-properties">
         <div class="properties-grid">
-            <span class="property-label">Name:</span>
             <span class="property-value" id="player-name-display">-</span>
+            <span class="property-value" id="player-hp">-</span>
+            <span class="property-label">MP:</span>
+            <span class="property-value" id="player-mp">-</span>
+
             <span class="property-label">LVL:</span>
             <span class="property-value" id="player-level">1</span>
-
-            <span class="property-label">HP:</span>
-            <span class="property-value" id="player-hp">-</span>
             <span class="property-label">XP:</span>
             <span class="property-value" id="player-xp">0</span>
+
+            <span class="blank-row"></span>
+            <span class="blank-row"></span>
+            <span class="blank-row"></span>
+            <span class="blank-row"></span>
+
+            <span class="blank-row"></span>
+            <span class="blank-row"></span>
+            <span class="blank-row"></span>
+            <span class="blank-row"></span>
 
             <span class="property-label">STR:</span>
             <span class="property-value" id="player-str">-</span>
@@ -172,6 +182,8 @@
 
             <span class="property-label">DEX:</span>
             <span class="property-value" id="player-dex">-</span>
+            <span class="property-label">AGI:</span>
+            <span class="property-value" id="player-agi">-</span>
         </div>
     </div>
 
@@ -205,6 +217,8 @@
                 document.getElementById('player-chr').textContent = data.player.chr;
                 document.getElementById('player-dex').textContent = data.player.dex;
                 document.getElementById('player-hp').textContent = data.player.hp;
+                document.getElementById('player-mp').textContent = data.player.mp;
+                document.getElementById('player-agi').textContent = data.player.agi;
             }
         });
 
