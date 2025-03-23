@@ -110,12 +110,17 @@ def handle_move(direction):
 
 def get_game_state(current_player_id):
     visible_map = [row[:] for row in game_state.game_map]
+    
+    # First place all other players as 'P'
     for pid, player in game_state.players.items():
-        pos = player['pos']
-        if pid == current_player_id:
-            visible_map[pos[0]][pos[1]] = '@'  # Current player
-        else:
-            visible_map[pos[0]][pos[1]] = 'P'  # Other players
+        if pid != current_player_id:  # Place other players first
+            pos = player['pos']
+            visible_map[pos[0]][pos[1]] = 'P'
+    
+    # Then place current player as '@' if they exist
+    if current_player_id and current_player_id in game_state.players:
+        pos = game_state.players[current_player_id]['pos']
+        visible_map[pos[0]][pos[1]] = '@'
     
     return {
         'map': visible_map,
