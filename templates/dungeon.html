@@ -127,8 +127,11 @@
             display: grid;
             grid-template-columns: repeat(3, 60px);
             gap: 10px;
-            margin-top: 20px;
+            margin-top: -160px;  /* Increased from -120px to -160px to move buttons higher */
+            margin-bottom: 20px;
             justify-content: center;
+            position: relative;
+            z-index: 1;
         }
         
         .mobile-btn {
@@ -192,14 +195,6 @@
                 </div>
             </div>
             <div id="map-display"></div>
-            <div id="message-log"></div>
-            <div id="controls">
-                Movement: 
-                <span class="key">W</span>
-                <span class="key">A</span>
-                <span class="key">S</span>
-                <span class="key">D</span>
-            </div>
             <div class="mobile-controls">
                 <div></div>
                 <div class="mobile-btn" onclick="move('w')">W</div>
@@ -208,6 +203,7 @@
                 <div class="mobile-btn" onclick="move('s')">S</div>
                 <div class="mobile-btn" onclick="move('d')">D</div>
             </div>
+            <div id="message-log"></div>
         </div>
         <div class="game-right">
             <div id="combat-info" class="combat-info">
