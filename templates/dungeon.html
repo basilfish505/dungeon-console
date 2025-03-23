@@ -42,7 +42,7 @@
             justify-content: end;
             position: relative;
             z-index: 1;
-            margin-right: 2px;  /* Changed from -8px to -4px to move slightly left */
+            margin-right: 2px;  
         }
 
         .mobile-btn {
@@ -92,6 +92,39 @@
         *::-webkit-scrollbar {        /* Chrome, Safari and Opera */
             display: none;
         }
+
+        /* Add these styles */
+        #player-properties {
+            margin-top: 15px;
+            font-size: 12px;
+            font-family: monospace;
+            width: 33%;
+        }
+
+        .properties-grid {
+            display: grid;
+            grid-template-columns: auto auto auto auto;
+            gap: 0;
+            line-height: 1;
+        }
+
+        .property-label {
+            color: #00ff00;
+            padding-right: 4px;
+        }
+
+        .property-value {
+            color: #00ff00;
+            padding-right: 8px;
+        }
+
+        .top-row {
+            grid-column: span 4;
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 0;  /* Remove bottom margin */
+            padding-bottom: 0;  /* Remove padding */
+        }
     </style>
 </head>
 <body>
@@ -115,6 +148,33 @@
     
     <div id="message-log"></div>
 
+    <div id="player-properties">
+        <div class="properties-grid">
+            <span class="property-label">Name:</span>
+            <span class="property-value" id="player-name-display">-</span>
+            <span class="property-label">LVL:</span>
+            <span class="property-value" id="player-level">1</span>
+
+            <span class="property-label">HP:</span>
+            <span class="property-value" id="player-hp">-</span>
+            <span class="property-label">XP:</span>
+            <span class="property-value" id="player-xp">0</span>
+
+            <span class="property-label">STR:</span>
+            <span class="property-value" id="player-str">-</span>
+            <span class="property-label">INT:</span>
+            <span class="property-value" id="player-int">-</span>
+
+            <span class="property-label">WIS:</span>
+            <span class="property-value" id="player-wis">-</span>
+            <span class="property-label">CHR:</span>
+            <span class="property-value" id="player-chr">-</span>
+
+            <span class="property-label">DEX:</span>
+            <span class="property-value" id="player-dex">-</span>
+        </div>
+    </div>
+
     <script>
         var socket = io();
         
@@ -133,6 +193,19 @@
 
         socket.on('game_state', function(data) {
             document.getElementById('map-display').textContent = data.map.map(row => row.join('')).join('\n');
+            
+            // Update player properties if they exist
+            if (data.player) {
+                document.getElementById('player-name-display').textContent = data.player.id;
+                document.getElementById('player-level').textContent = data.player.level;
+                document.getElementById('player-xp').textContent = data.player.xp;
+                document.getElementById('player-str').textContent = data.player.str;
+                document.getElementById('player-int').textContent = data.player.int;
+                document.getElementById('player-wis').textContent = data.player.wis;
+                document.getElementById('player-chr').textContent = data.player.chr;
+                document.getElementById('player-dex').textContent = data.player.dex;
+                document.getElementById('player-hp').textContent = data.player.hp;
+            }
         });
 
         document.addEventListener('keydown', function(event) {

@@ -2,7 +2,7 @@ import eventlet
 eventlet.monkey_patch()
 
 from flask import Flask, render_template, session
-from flask_socketio import SocketIO, emit
+from flask_socketio import SocketIO, emit, join_room
 import random
 import os
 
@@ -14,8 +14,32 @@ socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')
 class Player:
     def __init__(self, player_id, position):
         self.id = player_id
-        self.pos = position  # [y, x] position
+        self.pos = position
+        self.level = 1
+        self.xp = 0
+        # New HP properties
+        self.mhp = random.randint(10, 20)  # Max HP between 10-20
+        self.hp = self.mhp                  # Current HP starts at max
+        # Other stats
+        self.str = random.randint(1, 10)
+        self.int = random.randint(1, 10)
+        self.wis = random.randint(1, 10)
+        self.chr = random.randint(1, 10)
+        self.dex = random.randint(1, 10)
     
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'level': self.level,
+            'xp': self.xp,
+            'hp': f"{self.hp}/{self.mhp}",  # Format as "current/max"
+            'str': self.str,
+            'int': self.int,
+            'wis': self.wis,
+            'chr': self.chr,
+            'dex': self.dex
+        }
+
     def move(self, direction):
         new_pos = self.pos.copy()
         if direction == 'w':
@@ -56,17 +80,16 @@ class GameState:
             x = random.randint(1, self.map_size-2)
             y = random.randint(1, self.map_size-2)
             if self.game_map[y][x] == '.':
-                # Check if position is not occupied by another player
-                if not any(p['pos'] == [y, x] for p in self.players.values()):
+                # Updated to use Player object's pos attribute
+                if not any(p.pos == [y, x] for p in self.players.values()):
                     return [y, x]
 
     def add_player(self, player_id):
         if player_id not in self.players:
-            # Only create new player data if they've never played before
-            self.players[player_id] = {
-                'pos': self.find_random_start(),
-                'id': player_id
-            }
+            # Create new Player object with random stats
+            position = self.find_random_start()
+            new_player = Player(player_id, position)  # This will generate random stats for each new player
+            self.players[player_id] = new_player
         # Mark player as active
         self.active_players[player_id] = self.players[player_id]
         return self.players[player_id]
@@ -81,24 +104,15 @@ class GameState:
             return False
 
         player = self.players[player_id]
-        new_pos = player['pos'].copy()
-        
-        if direction == 'w':
-            new_pos[0] -= 1
-        elif direction == 's':
-            new_pos[0] += 1
-        elif direction == 'a':
-            new_pos[1] -= 1
-        elif direction == 'd':
-            new_pos[1] += 1
+        new_pos = player.move(direction)  # Use Player's move method
 
         # Check if move is valid and spot is not occupied by ANY player
         if (0 <= new_pos[0] < self.map_size and 
             0 <= new_pos[1] < self.map_size and 
             self.game_map[new_pos[0]][new_pos[1]] != '#' and
-            not any(p['pos'] == new_pos for p in self.players.values())):
+            not any(p.pos == new_pos for p in self.players.values())):
             
-            player['pos'] = new_pos
+            player.pos = new_pos
             return True
         return False
 
@@ -106,15 +120,21 @@ class GameState:
     def get_game_state(self, current_player_id):
         visible_map = [row[:] for row in self.game_map]
         
-        # Show all players (active and inactive) as "@"
-        for pid, player in self.players.items():
-            pos = player['pos']
+        # Show all players as "@"
+        for player in self.players.values():
+            pos = player.pos
             visible_map[pos[0]][pos[1]] = '@'
+        
+        # Include current player's data if they exist
+        player_data = None
+        if current_player_id and current_player_id in self.players:
+            player_data = self.players[current_player_id].to_dict()
         
         return {
             'map': visible_map,
             'messages': self.messages,
-            'players': len(self.active_players)  # Only count active players
+            'players': len(self.active_players),
+            'player': player_data
         }
 
 # Create game state and generate map immediately when server starts
@@ -132,13 +152,16 @@ def handle_connect():
 @socketio.on('select_id')
 def handle_select_id(player_id):
     if player_id in game_state.active_players:
-        # ID is currently in use
         emit('id_taken', {'message': 'That name is currently in use!'})
     else:
-        # Either resume existing player or create new one
         session['player_id'] = player_id
         game_state.add_player(player_id)
-        emit('game_state', get_game_state(player_id), broadcast=True)
+        # Join the player's room
+        join_room(player_id)
+        # Update all players
+        for pid in game_state.players:
+            if pid in game_state.active_players:
+                emit('game_state', game_state.get_game_state(pid), room=pid)
 
 @socketio.on('disconnect')
 def handle_disconnect():
@@ -149,26 +172,13 @@ def handle_disconnect():
 
 @socketio.on('move')
 def handle_move(direction):
-    player_id = session.get('player_id')
-    if player_id and game_state.move_player(player_id, direction):
-        # Send the base game state with an additional field for the client to handle
-        game_state_data = game_state.get_game_state(None)  # Get base state
-        game_state_data['viewer_id'] = player_id  # Add viewer ID
-        emit('game_state', game_state_data, broadcast=True)
-
-def get_game_state(current_player_id):
-    visible_map = [row[:] for row in game_state.game_map]
-    
-    # Show all players (active and inactive) as "@"
-    for pid, player in game_state.players.items():
-        pos = player['pos']
-        visible_map[pos[0]][pos[1]] = '@'
-    
-    return {
-        'map': visible_map,
-        'messages': game_state.messages,
-        'players': len(game_state.active_players)  # Only count active players
-    }
+    moving_player_id = session.get('player_id')
+    if moving_player_id and game_state.move_player(moving_player_id, direction):
+        # Update everyone's view, but include each player's own data
+        for pid in game_state.players:
+            state = game_state.get_game_state(pid)
+            if pid in game_state.active_players:  # Only send to connected players
+                emit('game_state', state, room=pid)
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
