@@ -8,18 +8,29 @@ app = Flask(__name__)
 class GameState:
     def __init__(self):
         self.map_size = 20
-        self.player_pos = [1, 1]
         self.game_map = self.generate_map()
+        self.player_pos = self.find_random_start()
         self.messages = ["Welcome to the dungeon! Use WASD to move."]
+
+    def find_random_start(self):
+        while True:
+            # Random position (avoiding edges)
+            x = random.randint(1, self.map_size-2)
+            y = random.randint(1, self.map_size-2)
+            if self.game_map[y][x] == '.':
+                return [y, x]
 
     def generate_map(self):
         # Create empty map with walls
         game_map = [['#' for _ in range(self.map_size)] for _ in range(self.map_size)]
         
-        # Create simple empty box
+        # Create simple empty box with random boulders
         for i in range(1, self.map_size-1):
             for j in range(1, self.map_size-1):
-                game_map[i][j] = '.'
+                if random.random() < 0.03:  # 3% chance of boulder
+                    game_map[i][j] = '#'
+                else:
+                    game_map[i][j] = '.'
 
         return game_map
 
@@ -71,4 +82,11 @@ def move(direction):
     })
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5001))) 
+    if os.environ.get('FLASK_ENV') == 'production':
+        app.run(host='0.0.0.0', 
+                port=int(os.environ.get('PORT', 5001)),
+                debug=False)
+    else:
+        app.run(host='0.0.0.0', 
+                port=int(os.environ.get('PORT', 5001)),
+                debug=True) 
