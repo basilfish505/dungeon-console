@@ -32,23 +32,23 @@ class Player:
 class GameState:
     def __init__(self):
         self.map_size = 20
-        self.players = {}  # Will now store Player objects instead of dictionaries
+        self.game_map = None
+        self.players = {}         # Will now store ALL players, active and inactive
+        self.active_players = {}  # New dict to track who is currently connected
         self.messages = ["Welcome to the dungeon! Use WASD to move."]
-        self.game_map = self.generate_map()
+        self.generate_map()
 
     def generate_map(self):
         # Create empty map with walls
-        game_map = [['#' for _ in range(self.map_size)] for _ in range(self.map_size)]
+        self.game_map = [['#' for _ in range(self.map_size)] for _ in range(self.map_size)]
         
         # Create simple empty box with random boulders
         for i in range(1, self.map_size-1):
             for j in range(1, self.map_size-1):
                 if random.random() < 0.03:  # 3% chance of boulder
-                    game_map[i][j] = '#'
+                    self.game_map[i][j] = '#'
                 else:
-                    game_map[i][j] = '.'
-
-        return game_map
+                    self.game_map[i][j] = '.'
 
     def find_random_start(self):
         while True:
@@ -57,32 +57,48 @@ class GameState:
             y = random.randint(1, self.map_size-2)
             if self.game_map[y][x] == '.':
                 # Check if position is not occupied by another player
-                if not any(p.pos == [y, x] for p in self.players.values()):
+                if not any(p['pos'] == [y, x] for p in self.players.values()):
                     return [y, x]
 
     def add_player(self, player_id):
-        position = self.find_random_start()
-        self.players[player_id] = Player(player_id, position)
+        if player_id not in self.players:
+            # Only create new player data if they've never played before
+            self.players[player_id] = {
+                'pos': self.find_random_start(),
+                'id': player_id
+            }
+        # Mark player as active
+        self.active_players[player_id] = self.players[player_id]
         return self.players[player_id]
 
     def remove_player(self, player_id):
-        if player_id in self.players:
-            del self.players[player_id]
+        # Only remove from active players, keep their data in self.players
+        if player_id in self.active_players:
+            del self.active_players[player_id]
 
     def move_player(self, player_id, direction):
         if player_id not in self.players:
             return False
 
         player = self.players[player_id]
-        new_pos = player.move(direction)
+        new_pos = player['pos'].copy()
+        
+        if direction == 'w':
+            new_pos[0] -= 1
+        elif direction == 's':
+            new_pos[0] += 1
+        elif direction == 'a':
+            new_pos[1] -= 1
+        elif direction == 'd':
+            new_pos[1] += 1
 
-        # Check if move is valid and spot is not occupied by another player
+        # Check if move is valid and spot is not occupied by ANY player
         if (0 <= new_pos[0] < self.map_size and 
             0 <= new_pos[1] < self.map_size and 
             self.game_map[new_pos[0]][new_pos[1]] != '#' and
-            not any(p.pos == new_pos for p in self.players.values())):
+            not any(p['pos'] == new_pos for p in self.players.values())):
             
-            player.pos = new_pos
+            player['pos'] = new_pos
             return True
         return False
 
@@ -90,14 +106,15 @@ class GameState:
     def get_game_state(self, current_player_id):
         visible_map = [row[:] for row in self.game_map]
         
-        # Show all players as "@"
-        for player in self.players.values():
-            visible_map[player.pos[0]][player.pos[1]] = '@'
+        # Show all players (active and inactive) as "@"
+        for pid, player in self.players.items():
+            pos = player['pos']
+            visible_map[pos[0]][pos[1]] = '@'
         
         return {
             'map': visible_map,
             'messages': self.messages,
-            'players': len(self.players)
+            'players': len(self.active_players)  # Only count active players
         }
 
 # Create game state and generate map immediately when server starts
@@ -114,14 +131,14 @@ def handle_connect():
 
 @socketio.on('select_id')
 def handle_select_id(player_id):
-    if player_id in game_state.players:
-        # ID already taken
-        emit('id_taken', {'message': 'That name is already taken!'})
+    if player_id in game_state.active_players:
+        # ID is currently in use
+        emit('id_taken', {'message': 'That name is currently in use!'})
     else:
-        # ID is available, add player to game
+        # Either resume existing player or create new one
         session['player_id'] = player_id
         game_state.add_player(player_id)
-        emit('game_state', game_state.get_game_state(player_id), broadcast=True)
+        emit('game_state', get_game_state(player_id), broadcast=True)
 
 @socketio.on('disconnect')
 def handle_disconnect():
@@ -142,7 +159,7 @@ def handle_move(direction):
 def get_game_state(current_player_id):
     visible_map = [row[:] for row in game_state.game_map]
     
-    # Show all players as "@"
+    # Show all players (active and inactive) as "@"
     for pid, player in game_state.players.items():
         pos = player['pos']
         visible_map[pos[0]][pos[1]] = '@'
@@ -150,7 +167,7 @@ def get_game_state(current_player_id):
     return {
         'map': visible_map,
         'messages': game_state.messages,
-        'players': len(game_state.players)
+        'players': len(game_state.active_players)  # Only count active players
     }
 
 if __name__ == '__main__':
