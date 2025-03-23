@@ -8,7 +8,7 @@ import os
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'your-secret-key-here'
-socketio = SocketIO(app, cors_allowed_origins="*")
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')
 
 # Game state
 class GameState:
@@ -126,7 +126,15 @@ def get_game_state(current_player_id):
     }
 
 if __name__ == '__main__':
-    socketio.run(app, 
-                host='127.0.0.1',
-                port=5000,
-                debug=True) 
+    port = int(os.environ.get('PORT', 5000))
+    if os.environ.get('RENDER'):  # Check if we're on Render
+        socketio.run(app, 
+                    host='0.0.0.0',
+                    port=port,
+                    debug=False,
+                    use_reloader=False)
+    else:
+        socketio.run(app, 
+                    host='127.0.0.1',
+                    port=port,
+                    debug=True) 
