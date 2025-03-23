@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Dungeon Game</title>
+    <title>PermaQuest</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
     <style>
@@ -125,6 +125,38 @@
             margin-bottom: 0;  /* Remove bottom margin */
             padding-bottom: 0;  /* Remove padding */
         }
+
+        .info-box {
+            border: 1px solid #00ff00;
+            padding: 8px;
+            margin-top: 15px;
+            font-size: 12px;
+            font-family: monospace;
+            width: 33%;
+        }
+
+        /* Update the CSS for #game-info */
+        #game-info {
+            margin-top: 15px;
+            font-size: 12px;
+            font-family: monospace;
+            width: 100%;
+            max-width: 600px;
+            text-align: center;  /* Center the container */
+        }
+
+        #game-info .properties-grid {
+            display: inline-grid;
+            grid-template-columns: minmax(auto, 154px) auto auto auto;  /* Increased from 144px to 154px */
+            gap: 0;
+            line-height: 1;
+            padding: 8px;
+            text-align: left;
+        }
+
+        #game-info span:first-child {
+            white-space: nowrap;  /* Prevent label from wrapping */
+        }
     </style>
 </head>
 <body>
@@ -187,6 +219,12 @@
         </div>
     </div>
 
+    <div id="game-info">
+        <div class="properties-grid">
+            <!-- Game state information will be displayed here -->
+        </div>
+    </div>
+
     <script>
         var socket = io();
         
@@ -219,6 +257,21 @@
                 document.getElementById('player-hp').textContent = data.player.hp;
                 document.getElementById('player-mp').textContent = data.player.mp;
                 document.getElementById('player-agi').textContent = data.player.agi;
+            }
+
+            // Update game info display
+            if (data.game_info) {
+                const gameInfoDiv = document.getElementById('game-info').querySelector('.properties-grid');
+                gameInfoDiv.innerHTML = ''; // Clear existing content
+                
+                data.game_info.forEach(row => {
+                    row.forEach(cell => {
+                        const span = document.createElement('span');
+                        span.className = 'property-value';
+                        span.textContent = cell;
+                        gameInfoDiv.appendChild(span);
+                    });
+                });
             }
         });
 

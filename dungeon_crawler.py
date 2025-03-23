@@ -135,15 +135,30 @@ class GameState:
         if current_player_id and current_player_id in self.players:
             player_data = self.players[current_player_id].to_dict()
         
+        # Create game state display
+        game_info_display = GameStateDisplay(self).get_display()
+        
         return {
             'map': visible_map,
             'messages': self.messages,
             'players': len(self.active_players),
-            'player': player_data
+            'player': player_data,
+            'game_info': game_info_display  # Add the new display data
         }
 
 # Create game state and generate map immediately when server starts
 game_state = GameState()  # This will generate the map right away
+
+class GameStateDisplay:
+    def __init__(self, game_state):
+        self.game_state = game_state
+
+    def get_display(self):
+        total_players = len(self.game_state.players)
+        active_players = len(self.game_state.active_players)
+        return [
+            ["Players (Active Now):", f"{total_players} ({active_players})", "", ""]
+        ]
 
 @app.route('/')
 def home():
