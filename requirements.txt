@@ -1,4 +1,6 @@
-Flask==2.0.1
-requests==2.31.0
-gunicorn==20.1.0
-Werkzeug==2.0.1 
+Flask
+flask-socketio
+python-socketio
+simple-websocket
+gunicorn
+eventlet>=0.24.1 
