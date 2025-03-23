@@ -1,3 +1,6 @@
+import eventlet
+eventlet.monkey_patch()
+
 from flask import Flask, render_template, session
 from flask_socketio import SocketIO, emit
 import random
@@ -107,12 +110,14 @@ def handle_move(direction):
 
 def get_game_state(current_player_id):
     visible_map = [row[:] for row in game_state.game_map]
+    # Place all players as 'P' first
     for pid, player in game_state.players.items():
         pos = player['pos']
-        if pid == current_player_id:
-            visible_map[pos[0]][pos[1]] = '@'  # Current player
-        else:
-            visible_map[pos[0]][pos[1]] = 'P'  # Other players
+        visible_map[pos[0]][pos[1]] = 'P'
+    # Then place current player as '@' (overwrites the 'P' at their position)
+    if current_player_id in game_state.players:
+        pos = game_state.players[current_player_id]['pos']
+        visible_map[pos[0]][pos[1]] = '@'
     
     return {
         'map': visible_map,
