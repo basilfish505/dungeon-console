@@ -106,20 +106,17 @@ def handle_disconnect():
 def handle_move(direction):
     player_id = session.get('player_id')
     if player_id and game_state.move_player(player_id, direction):
-        emit('game_state', get_game_state(player_id), broadcast=True)
+        # Send the base game state with an additional field for the client to handle
+        game_state_data = get_game_state(None)  # Get base state
+        game_state_data['viewer_id'] = player_id  # Add viewer ID
+        emit('game_state', game_state_data, broadcast=True)
 
 def get_game_state(current_player_id):
     visible_map = [row[:] for row in game_state.game_map]
     
-    # First place all other players as 'P'
+    # Show all players as "@"
     for pid, player in game_state.players.items():
-        if pid != current_player_id:  # Place other players first
-            pos = player['pos']
-            visible_map[pos[0]][pos[1]] = 'P'
-    
-    # Then place current player as '@' if they exist
-    if current_player_id and current_player_id in game_state.players:
-        pos = game_state.players[current_player_id]['pos']
+        pos = player['pos']
         visible_map[pos[0]][pos[1]] = '@'
     
     return {
@@ -129,13 +126,7 @@ def get_game_state(current_player_id):
     }
 
 if __name__ == '__main__':
-    if os.environ.get('FLASK_ENV') == 'production':
-        socketio.run(app, 
-                    host='0.0.0.0',
-                    port=int(os.environ.get('PORT', 5001)),
-                    debug=False)
-    else:
-        socketio.run(app, 
-                    host='0.0.0.0',
-                    port=int(os.environ.get('PORT', 5001)),
-                    debug=True) 
+    socketio.run(app, 
+                host='127.0.0.1',
+                port=5000,
+                debug=True) 
