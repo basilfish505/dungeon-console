@@ -157,6 +157,51 @@
         #game-info span:first-child {
             white-space: nowrap;  /* Prevent label from wrapping */
         }
+
+        #combat-box {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background-color: black;
+            border: 1px solid #00ff00;
+            padding: 20px;
+            color: #00ff00;
+            text-align: center;
+            z-index: 1000;
+        }
+
+        #combat-controls {
+            margin: 10px 0;
+        }
+
+        #combat-controls button {
+            background-color: black;
+            color: #00ff00;
+            border: 1px solid #00ff00;
+            padding: 5px 10px;
+            margin: 0 5px;
+            cursor: pointer;
+        }
+
+        #combat-controls button:disabled {
+            color: #004400;
+            border-color: #004400;
+            cursor: not-allowed;
+        }
+
+        #combat-message {
+            margin-top: 10px;
+            font-style: italic;
+        }
+
+        /* Add style for death message */
+        .death-message {
+            color: #ff0000;
+            text-align: center;
+            font-size: 1.5em;
+            margin: 20px 0;
+        }
     </style>
 </head>
 <body>
@@ -225,6 +270,18 @@
         </div>
     </div>
 
+    <div id="combat-box" style="display: none;">
+        <h3>Combat with <span id="opponent-name"></span></h3>
+        <p>Opponent HP: <span id="opponent-hp"></span></p>
+        <div id="combat-controls">
+            <button id="attack-btn" onclick="sendCombatAction('attack')">Attack</button>
+            <button disabled>Spell</button>
+            <button disabled>Item</button>
+            <button disabled>Run</button>
+        </div>
+        <p id="combat-message"></p>
+    </div>
+
     <script>
         var socket = io();
         
@@ -290,6 +347,71 @@
             lastKeyTime = currentTime;
             socket.emit('move', direction);
         }
+
+        socket.on('combat_update', function(data) {
+            const combatBox = document.getElementById('combat-box');
+            const combatMessage = document.getElementById('combat-message');
+            const messageLog = document.getElementById('message-log');
+            
+            if (data.type === 'combat_start') {
+                combatBox.style.display = 'block';
+                document.getElementById('opponent-name').textContent = data.opponent_id;
+                document.getElementById('opponent-hp').textContent = data.opponent_hp;
+                combatMessage.textContent = data.your_turn ? 'Your turn!' : 'Opponent\'s turn...';
+            }
+            else if (data.type === 'combat_action') {
+                if (data.damage_dealt) {
+                    combatMessage.textContent = `You dealt ${data.damage_dealt} damage!`;
+                    document.getElementById('opponent-hp').textContent = data.opponent_hp;
+                } else if (data.damage_taken) {
+                    combatMessage.textContent = `You took ${data.damage_taken} damage!`;
+                }
+            }
+            else if (data.type === 'combat_end') {
+                combatBox.style.display = 'none';
+                
+                // Add the appropriate battle result message to message log
+                if (data.message) {
+                    if (data.message === "Thou art dead.") {
+                        // Hide mobile controls
+                        document.querySelector('.mobile-controls').style.display = 'none';
+                    }
+                    messageLog.innerHTML += `<div>${data.message}</div>`;
+                }
+                
+                // Auto-scroll message log to bottom
+                messageLog.scrollTop = messageLog.scrollHeight;
+            }
+        });
+
+        function sendCombatAction(action) {
+            socket.emit('combat_action', { action: action });
+        }
+
+        // Add new socket handler for player death
+        socket.on('player_died', function() {
+            // Hide combat box if it's still showing
+            document.getElementById('combat-box').style.display = 'none';
+            
+            // Clear the map display
+            document.getElementById('map-display').textContent = '';
+            
+            // Clear player properties
+            document.getElementById('player-properties').style.display = 'none';
+            
+            // Hide mobile controls
+            document.querySelector('.mobile-controls').style.display = 'none';
+            
+            // Show death message in standard format
+            const messageLog = document.getElementById('message-log');
+            messageLog.innerHTML = '<div>Thou art dead.</div>';
+            
+            // Optional: Show a rejoin button
+            document.getElementById('player-login').style.display = 'block';
+            
+            // Disconnect from the server
+            socket.disconnect();
+        });
     </script>
 </body>
 </html> 
