@@ -1,7 +1,8 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Console Dungeon Crawler</title>
+    <title>Multiplayer Dungeon</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
     <style>
         body {
             background-color: black;
@@ -185,14 +186,31 @@
             </div>
         </div>
     </div>
+    <div id="players"></div>
 
     <script>
+        const socket = io();
+        
+        socket.on('game_state', (state) => {
+            document.getElementById('map-display').textContent = 
+                state.map.map(row => row.join('')).join('\n');
+            document.getElementById('players').textContent = 
+                `Players online: ${state.players}`;
+        });
+
+        document.addEventListener('keydown', (event) => {
+            const key = event.key.toLowerCase();
+            if (['w', 'a', 's', 'd'].includes(key)) {
+                socket.emit('move', key);
+            }
+        });
+
         let lastKeyTime = 0;
         const MOVE_DELAY = 100; // Milliseconds between moves
 
         function updateGame(data) {
             if (data.game_over) {
-                document.getElementById('map-display').innerHTML = 'GAME OVER';
+                document.getElementById('map-display').textContent = 'GAME OVER';
                 return;
             }
 
@@ -217,7 +235,7 @@
 
             // Update messages
             let messageLog = document.getElementById('message-log');
-            messageLog.innerHTML = data.messages.reverse().join('<br>');
+            messageLog.textContent = data.messages.reverse().join('\n');
             messageLog.scrollTop = 0;
 
             // Update stats
@@ -231,13 +249,13 @@
             
             if (data.in_combat && data.monster) {
                 combatInfo.style.display = 'block';
-                monsterStats.innerHTML = `
+                monsterStats.textContent = `
                     Fighting: ${data.monster.name}<br>
                     Monster HP: ${data.monster.hp}
                 `;
             } else {
                 combatInfo.style.display = 'none';
-                monsterStats.innerHTML = '';
+                monsterStats.textContent = '';
             }
         }
 
@@ -246,52 +264,12 @@
             if (currentTime - lastKeyTime < MOVE_DELAY) return;
             lastKeyTime = currentTime;
 
-            fetch(`/move/${direction}`)
-                .then(response => response.json())
-                .then(data => updateGame(data));
+            socket.emit('move', direction);
         }
 
         function combatAction(action) {
-            fetch(`/combat/${action}`)
-                .then(response => response.json())
-                .then(data => updateGame(data));
+            socket.emit('combat', action);
         }
-
-        document.addEventListener('keydown', (event) => {
-            const key = event.key.toLowerCase();
-            
-            // Get combat info element
-            const combatInfo = document.getElementById('combat-info');
-            const inCombat = combatInfo.style.display === 'block';
-            
-            if (inCombat) {
-                // Combat controls
-                switch(key) {
-                    case 'a':
-                        combatAction('attack');
-                        break;
-                    case 'f':
-                        combatAction('flee');
-                        break;
-                    case 's':
-                        combatAction('spell');
-                        break;
-                    case 'i':
-                        combatAction('item');
-                        break;
-                }
-                event.preventDefault();
-                return;
-            } else {
-                // Movement controls
-                if (['w', 'a', 's', 'd'].includes(key)) {
-                    move(key);
-                }
-            }
-        });
-
-        // Initial game state
-        move('start');
 
         // Add touch event handling
         document.addEventListener('touchstart', function(e) {
