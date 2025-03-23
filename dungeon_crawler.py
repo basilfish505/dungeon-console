@@ -100,8 +100,8 @@ class GameState:
             'players': len(self.players)
         }
 
-# Create game state and generate map immediately
-game_state = GameState()
+# Create game state and generate map immediately when server starts
+game_state = GameState()  # This will generate the map right away
 
 @app.route('/')
 def home():
@@ -109,10 +109,19 @@ def home():
 
 @socketio.on('connect')
 def handle_connect():
-    player_id = str(random.randint(1000, 9999))
-    session['player_id'] = player_id
-    game_state.add_player(player_id)
-    emit('game_state', game_state.get_game_state(player_id), broadcast=True)
+    # Just send the initial map without adding a player
+    emit('game_state', game_state.get_game_state(None))
+
+@socketio.on('select_id')
+def handle_select_id(player_id):
+    if player_id in game_state.players:
+        # ID already taken
+        emit('id_taken', {'message': 'That name is already taken!'})
+    else:
+        # ID is available, add player to game
+        session['player_id'] = player_id
+        game_state.add_player(player_id)
+        emit('game_state', game_state.get_game_state(player_id), broadcast=True)
 
 @socketio.on('disconnect')
 def handle_disconnect():
@@ -129,6 +138,20 @@ def handle_move(direction):
         game_state_data = game_state.get_game_state(None)  # Get base state
         game_state_data['viewer_id'] = player_id  # Add viewer ID
         emit('game_state', game_state_data, broadcast=True)
+
+def get_game_state(current_player_id):
+    visible_map = [row[:] for row in game_state.game_map]
+    
+    # Show all players as "@"
+    for pid, player in game_state.players.items():
+        pos = player['pos']
+        visible_map[pos[0]][pos[1]] = '@'
+    
+    return {
+        'map': visible_map,
+        'messages': game_state.messages,
+        'players': len(game_state.players)
+    }
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))

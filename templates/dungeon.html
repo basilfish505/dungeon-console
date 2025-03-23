@@ -1,14 +1,45 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Multiplayer Dungeon</title>
+    <title>Dungeon Game</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
     <style>
         body {
             background-color: black;
             color: #00ff00;
-            font-family: 'Courier New', monospace;
+            font-family: monospace;
+        }
+        #game {
+            white-space: pre;
+            color: #00ff00;
+        }
+        #player-login {
             margin: 20px;
+            font-family: monospace;
+            color: #00ff00;
+        }
+        input {
+            background-color: black;
+            color: #00ff00;
+            border: 1px solid #00ff00;
+            font-family: monospace;
+            padding: 5px;
+            margin: 5px;
+        }
+        button {
+            background-color: black;
+            color: #00ff00;
+            border: 1px solid #00ff00;
+            font-family: monospace;
+            padding: 5px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #00ff00;
+            color: black;
+        }
+        #players {
+            color: #00ff00;
         }
         #game-container {
             width: 1200px;
@@ -145,6 +176,11 @@
     </style>
 </head>
 <body>
+    <div id="player-login">
+        Enter name: <input type="text" id="player-name" />
+        <button onclick="submitName()">Join</button>
+    </div>
+
     <div id="game-container">
         <div class="game-left">
             <div id="stats">
@@ -189,19 +225,29 @@
     <div id="players"></div>
 
     <script>
-        const socket = io();
+        var socket = io();
         
-        socket.on('game_state', (state) => {
-            document.getElementById('map-display').textContent = 
-                state.map.map(row => row.join('')).join('\n');
-            document.getElementById('players').textContent = 
-                `Players online: ${state.players}`;
+        function submitName() {
+            const name = document.getElementById('player-name').value.trim();
+            if (name) {
+                socket.emit('select_id', name);
+                document.getElementById('player-login').style.display = 'none';
+            }
+        }
+
+        socket.on('id_taken', function(data) {
+            alert(data.message);
+            document.getElementById('player-login').style.display = 'block';
         });
 
-        document.addEventListener('keydown', (event) => {
-            const key = event.key.toLowerCase();
-            if (['w', 'a', 's', 'd'].includes(key)) {
-                socket.emit('move', key);
+        socket.on('game_state', function(data) {
+            document.getElementById('map-display').textContent = data.map.map(row => row.join('')).join('\n');
+            document.getElementById('players').textContent = 'Players online: ' + data.players;
+        });
+
+        document.addEventListener('keydown', function(event) {
+            if (['w', 'a', 's', 'd'].includes(event.key)) {
+                socket.emit('move', event.key);
             }
         });
 
