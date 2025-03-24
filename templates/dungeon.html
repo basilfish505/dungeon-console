@@ -71,17 +71,23 @@
         }
 
         #player-login {
-            margin-bottom: 15px;
+            color: #00ff00;
+            font-family: monospace;
             text-align: center;
+            margin-top: 20px;
         }
 
-        input, button {
+        #player-login input, #player-login button {
             background-color: black;
             color: #00ff00;
             border: 1px solid #00ff00;
             font-family: monospace;
             padding: 5px;
-            font-size: 14px;
+            margin: 5px;
+        }
+
+        #player-login button:hover {
+            background-color: #003300;
         }
 
         /* Optional: Hide scrollbars for all elements */
@@ -159,7 +165,7 @@
         }
 
         #combat-box {
-            position: fixed;
+            position: absolute;
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%);
@@ -169,6 +175,8 @@
             color: #00ff00;
             text-align: center;
             z-index: 1000;
+            margin-top: -100px;
+            width: 300px;
         }
 
         #combat-controls {
@@ -180,7 +188,7 @@
             color: #00ff00;
             border: 1px solid #00ff00;
             padding: 5px 10px;
-            margin: 0 5px;
+            margin: 5px;
             cursor: pointer;
         }
 
@@ -192,7 +200,6 @@
 
         #combat-message {
             margin-top: 10px;
-            font-style: italic;
         }
 
         /* Add style for death message */
@@ -206,7 +213,7 @@
 </head>
 <body>
     <div id="player-login">
-        Enter name: <input type="text" id="player-name" />
+        What be thy name? <input type="text" id="player-name" />
         <button onclick="submitName()">Join</button>
     </div>
 
@@ -274,7 +281,7 @@
         <h3>Combat with <span id="opponent-name"></span></h3>
         <p>Opponent HP: <span id="opponent-hp"></span></p>
         <div id="combat-controls">
-            <button id="attack-btn" onclick="sendCombatAction('attack')">Attack</button>
+            <button onclick="sendCombatAction('attack')">Attack</button>
             <button disabled>Spell</button>
             <button disabled>Item</button>
             <button disabled>Run</button>
@@ -285,11 +292,29 @@
     <script>
         var socket = io();
         
+        // When the page loads, hide everything except the login prompt
+        window.onload = function() {
+            // Hide all game elements initially
+            document.getElementById('header').style.display = 'none';
+            document.getElementById('map-display').style.display = 'none';
+            document.querySelector('.mobile-controls').style.display = 'none';
+            document.getElementById('message-log').style.display = 'none';
+            document.getElementById('player-properties').style.display = 'none';
+            document.getElementById('combat-box').style.display = 'none';
+        };
+
+        // Update the submit name function to show game elements after joining
         function submitName() {
             const name = document.getElementById('player-name').value.trim();
             if (name) {
                 socket.emit('select_id', name);
                 document.getElementById('player-login').style.display = 'none';
+                // Show all game elements
+                document.getElementById('header').style.display = 'block';
+                document.getElementById('map-display').style.display = 'block';
+                document.querySelector('.mobile-controls').style.display = 'grid';
+                document.getElementById('message-log').style.display = 'block';
+                document.getElementById('player-properties').style.display = 'block';
             }
         }
 
@@ -402,12 +427,12 @@
             // Hide mobile controls
             document.querySelector('.mobile-controls').style.display = 'none';
             
+            // Hide player login prompt
+            document.getElementById('player-login').style.display = 'none';
+            
             // Show death message in standard format
             const messageLog = document.getElementById('message-log');
             messageLog.innerHTML = '<div>Thou art dead.</div>';
-            
-            // Optional: Show a rejoin button
-            document.getElementById('player-login').style.display = 'block';
             
             // Disconnect from the server
             socket.disconnect();
