@@ -63,10 +63,10 @@ class GameState:
     def __init__(self):
         self.map_size = 20
         self.game_map = None
-        self.players = {}         # Will now store ALL players, active and inactive
-        self.active_players = {}  # New dict to track who is currently connected
+        self.players = {}
+        self.active_players = {}
+        self.player_messages = {}  # New: dictionary to store messages per player
         self.active_combats = {}  # Add this line
-        self.messages = ["Welcome to the dungeon! Use WASD to move."]
         self.generate_map()
 
     def generate_map(self):
@@ -95,16 +95,32 @@ class GameState:
         if player_id not in self.players:
             # Create new Player object with random stats
             position = self.find_random_start()
-            new_player = Player(player_id, position)  # This will generate random stats for each new player
+            new_player = Player(player_id, position)
             self.players[player_id] = new_player
+            # Initialize player's message list
+            self.player_messages[player_id] = []
+            # Add welcome message only to this player's messages
+            self.add_player_message(player_id, f"Welcome, {player_id}, to the realm of PermaQuest. Thy quest begins, and glory or ruin lies ahead.")
+        
         # Mark player as active
         self.active_players[player_id] = self.players[player_id]
         return self.players[player_id]
 
     def remove_player(self, player_id):
-        # Only remove from active players, keep their data in self.players
         if player_id in self.active_players:
             del self.active_players[player_id]
+            # Don't delete messages in case they reconnect
+            # del self.player_messages[player_id]
+
+    def add_player_message(self, player_id, message):
+        """Add a message to a specific player's message list"""
+        if player_id in self.player_messages:
+            self.player_messages[player_id].append(message)
+
+    def add_global_message(self, message):
+        """Add a message to all active players' message lists"""
+        for player_id in self.active_players:
+            self.add_player_message(player_id, message)
 
     def move_player(self, player_id, direction):
         if player_id not in self.players:
@@ -136,9 +152,10 @@ class GameState:
         attacker = self.players[attacker_id]
         defender = self.players[defender_id]
         
-        # Set combat flags
-        attacker.in_combat = True
-        defender.in_combat = True
+        # Add combat messages to both participants
+        combat_message = f"{attacker.id} engages {defender.id} in combat!"
+        self.add_player_message(attacker_id, combat_message)
+        self.add_player_message(defender_id, combat_message)
         
         # Create combat state
         combat_state = {
@@ -149,6 +166,7 @@ class GameState:
         }
         
         # Store combat state
+        self.active_combats = getattr(self, 'active_combats', {})
         self.active_combats[attacker_id] = combat_state
         self.active_combats[defender_id] = combat_state
         
@@ -168,6 +186,10 @@ class GameState:
             'your_turn': False
         }
         emit('combat_update', combat_info, room=defender_id)
+        
+        # Send updated game state to all players to see the combat message
+        for pid in self.active_players:
+            emit('game_state', self.get_game_state(pid), room=pid)
 
     # Update get_game_state to work with Player objects
     def get_game_state(self, current_player_id):
@@ -183,15 +205,15 @@ class GameState:
         if current_player_id and current_player_id in self.players:
             player_data = self.players[current_player_id].to_dict()
         
-        # Create game state display
-        game_info_display = GameStateDisplay(self).get_display()
+        # Get player-specific messages
+        player_messages = self.player_messages.get(current_player_id, []) if current_player_id else []
         
         return {
             'map': visible_map,
-            'messages': self.messages,
+            'messages': player_messages,
             'players': len(self.active_players),
             'player': player_data,
-            'game_info': game_info_display  # Add the new display data
+            'game_info': GameStateDisplay(self).get_display()
         }
 
 # Create game state and generate map immediately when server starts
@@ -281,8 +303,12 @@ def handle_combat_action(data):
             attacker.in_combat = False
             defender.in_combat = False
             
-            # Add death announcement to game state messages
-            game_state.messages.append(f"{defender.id} has been slain by {attacker.id}!")
+            # Add death message to both players
+            game_state.add_player_message(player_id, "You are victorious in battle!")
+            game_state.add_player_message(defender_id, "Thou art dead.")
+            
+            # Add global message about the death
+            game_state.add_global_message(f"{defender.id} has been slain by {attacker.id}!")
             
             # Send separate end messages to winner and loser
             winner_data = {
@@ -322,6 +348,10 @@ def handle_combat_action(data):
         else:
             # Combat continues - switch turns
             combat['current_turn'] = defender_id
+            
+            # Add damage messages to respective players
+            game_state.add_player_message(player_id, f"....You deal {damage} damage!")
+            game_state.add_player_message(defender_id, f"....You take {damage} damage!")
             
             # Send combat updates
             attacker_update = {

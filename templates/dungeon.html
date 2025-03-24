@@ -66,8 +66,9 @@
             border: 1px solid #00ff00;
             padding: 8px;
             height: 80px;
-            overflow: hidden;  /* Remove scroll, hide overflow */
-            font-size: 14px;
+            overflow: hidden;
+            font-size: 10px;  /* Reduced from 12px to 10px */
+            font-family: monospace;
         }
 
         #player-login {
@@ -325,6 +326,13 @@
 
         socket.on('game_state', function(data) {
             document.getElementById('map-display').textContent = data.map.map(row => row.join('')).join('\n');
+            
+            // Update message log with game state messages
+            if (data.messages && data.messages.length > 0) {
+                const messageLog = document.getElementById('message-log');
+                messageLog.innerHTML = data.messages.map(msg => `<div>${msg}</div>`).join('');
+                messageLog.scrollTop = messageLog.scrollHeight;
+            }
             
             // Update player properties if they exist
             if (data.player) {
