@@ -67,19 +67,53 @@ class CombatSystem:
             defender_id = combat['defender'] if player_id == combat['attacker'] else combat['attacker']
             defender = self.game_state.players[defender_id]
             
-            # Calculate and apply damage
-            damage = random.randint(1, 8)
-            defender.hp -= damage
+            # Check if defender has a block active
+            blocked = False
+            if 'defend_status' in combat and combat['defend_status'].get(defender_id, False):
+                # 50% chance to block
+                if random.random() < 0.5:
+                    blocked = True
+                    # Reset defend status after use
+                    combat['defend_status'][defender_id] = False
+                    # Add block message
+                    self.game_state.add_player_message(player_id, f"....Your blow is thwarted by {defender.id}'s skillful guard!")
+                    self.game_state.add_player_message(defender_id, f"....{attacker.id}'s blow is thwarted by your skillful guard!")
             
-            # Add damage messages
-            self.game_state.add_player_message(player_id, f"....You deal {damage} damage to {defender.id}!")
-            self.game_state.add_player_message(defender_id, f"....You take {damage} damage from {attacker.id}!")
+            if not blocked:
+                # Calculate and apply damage
+                damage = random.randint(1, 8)
+                defender.hp -= damage
+                
+                # Add damage messages
+                self.game_state.add_player_message(player_id, f"....You deal {damage} damage to {defender.id}!")
+                self.game_state.add_player_message(defender_id, f"....You take {damage} damage from {attacker.id}!")
+                
+                # Check for death
+                if defender.hp <= 0:
+                    self._handle_player_death(player_id, defender_id)
+                    return
             
-            # Check for death
-            if defender.hp <= 0:
-                self._handle_player_death(player_id, defender_id)
-            else:
-                self._continue_combat(player_id, defender_id, damage)
+            # Combat continues
+            self._continue_combat(player_id, defender_id, 0 if blocked else damage, blocked)
+        
+        elif action == 'defend':
+            # Set defend status for this player
+            attacker = self.game_state.players[player_id]
+            defender_id = combat['defender'] if player_id == combat['attacker'] else combat['attacker']
+            
+            # Initialize defend_status if it doesn't exist
+            if 'defend_status' not in combat:
+                combat['defend_status'] = {}
+            
+            # Set this player's defend status to active
+            combat['defend_status'][player_id] = True
+            
+            # Add message about defensive stance
+            self.game_state.add_player_message(player_id, f"....You take a defensive stance.")
+            self.game_state.add_player_message(defender_id, f"....{attacker.id} takes a defensive stance.")
+            
+            # Continue to next turn
+            self._continue_combat(player_id, defender_id, 0, False, "defense")
     
     def _handle_player_death(self, winner_id, loser_id):
         """Handle a player's death in combat"""
@@ -133,28 +167,66 @@ class CombatSystem:
         for pid in self.game_state.active_players:
             emit('game_state', self.game_state.get_game_state(pid), room=pid)
     
-    def _continue_combat(self, attacker_id, defender_id, damage):
+    def _continue_combat(self, attacker_id, defender_id, damage, blocked=False, action_type="attack"):
         """Continue combat after an action"""
+        attacker = self.game_state.players[attacker_id]
         defender = self.game_state.players[defender_id]
         combat = self.game_state.active_combats[attacker_id]
         
         # Switch turns
         combat['current_turn'] = defender_id
         
-        # Send updates
-        attacker_update = {
-            'type': 'combat_action',
-            'damage_dealt': damage,
-            'opponent_hp': defender.hp,
-            'your_turn': False,
-            'message': "Your foe weighs their next move..."
-        }
-        defender_update = {
-            'type': 'combat_action',
-            'damage_taken': damage,
-            'your_hp': defender.hp,
-            'your_turn': True
-        }
+        # Prepare updates based on action
+        if action_type == "attack":
+            if blocked:
+                attacker_update = {
+                    'type': 'combat_action',
+                    'action': 'attack',
+                    'blocked': True,
+                    'opponent_id': defender.id,
+                    'opponent_hp': defender.hp,
+                    'your_turn': False
+                }
+                defender_update = {
+                    'type': 'combat_action',
+                    'action': 'defend',
+                    'blocked': True,
+                    'opponent_id': attacker.id,
+                    'your_hp': defender.hp,
+                    'your_turn': True
+                }
+            else:
+                attacker_update = {
+                    'type': 'combat_action',
+                    'action': 'attack',
+                    'damage_dealt': damage,
+                    'opponent_id': defender.id,
+                    'opponent_hp': defender.hp,
+                    'your_turn': False
+                }
+                defender_update = {
+                    'type': 'combat_action',
+                    'action': 'attack',
+                    'damage_taken': damage,
+                    'opponent_id': attacker.id,
+                    'your_hp': defender.hp,
+                    'your_turn': True
+                }
+        elif action_type == "defense":
+            attacker_update = {
+                'type': 'combat_action',
+                'action': 'defend',
+                'previous_action': 'defend',  # Mark that player just defended
+                'opponent_id': defender.id,
+                'your_turn': False
+            }
+            defender_update = {
+                'type': 'combat_action',
+                'action': 'turn',  # Not a real action, just your turn
+                'previous_action': 'defend',  # Mark that opponent just defended
+                'opponent_id': attacker.id,
+                'your_turn': True
+            }
         
         # Send updates and game states
         emit('combat_update', attacker_update, room=attacker_id)
