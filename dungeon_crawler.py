@@ -5,21 +5,21 @@ from flask import Flask, render_template, session
 from flask_socketio import SocketIO, emit, join_room
 import random
 import os
-from player import Player  # Add this import
+from player import Player
+from combat import CombatSystem
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'your-secret-key-here'
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')
 
-# Then modify GameState class
 class GameState:
     def __init__(self):
         self.map_size = 20
         self.game_map = None
         self.players = {}
         self.active_players = {}
-        self.player_messages = {}  # New: dictionary to store messages per player
-        self.active_combats = {}  # Add this line
+        self.player_messages = {}  # Dictionary to store messages per player
+        self.active_combats = {}  # Dictionary to track active combat states
         self.generate_map()
 
     def generate_map(self):
@@ -63,7 +63,6 @@ class GameState:
         if player_id in self.active_players:
             del self.active_players[player_id]
             # Don't delete messages in case they reconnect
-            # del self.player_messages[player_id]
 
     def add_player_message(self, player_id, message):
         """Add a message to a specific player's message list"""
@@ -92,57 +91,14 @@ class GameState:
                 if (other_id != player_id and 
                     other_player.pos == new_pos and 
                     other_id in self.active_players):
-                    # Initiate combat
-                    self.start_combat(player_id, other_id)
+                    # Initiate combat using combat system
+                    combat_system.start_combat(player_id, other_id)
                     return True
 
             # If no combat, complete the move
             player.pos = new_pos
             return True
         return False
-
-    def start_combat(self, attacker_id, defender_id):
-        attacker = self.players[attacker_id]
-        defender = self.players[defender_id]
-        
-        # Add combat messages to both participants
-        combat_message = f"{attacker.id} engages {defender.id} in combat!"
-        self.add_player_message(attacker_id, combat_message)
-        self.add_player_message(defender_id, combat_message)
-        
-        # Create combat state
-        combat_state = {
-            'attacker': attacker_id,
-            'defender': defender_id,
-            'current_turn': attacker_id,
-            'status': 'active'
-        }
-        
-        # Store combat state
-        self.active_combats = getattr(self, 'active_combats', {})
-        self.active_combats[attacker_id] = combat_state
-        self.active_combats[defender_id] = combat_state
-        
-        # Send combat initiation to both players
-        combat_info = {
-            'type': 'combat_start',
-            'opponent_id': defender_id,
-            'opponent_hp': defender.hp,
-            'your_turn': True
-        }
-        emit('combat_update', combat_info, room=attacker_id)
-        
-        combat_info = {
-            'type': 'combat_start',
-            'opponent_id': attacker_id,
-            'opponent_hp': attacker.hp,
-            'your_turn': False
-        }
-        emit('combat_update', combat_info, room=defender_id)
-        
-        # Send updated game state to all players to see the combat message
-        for pid in self.active_players:
-            emit('game_state', self.get_game_state(pid), room=pid)
 
     # Update get_game_state to work with Player objects
     def get_game_state(self, current_player_id):
@@ -169,8 +125,9 @@ class GameState:
             'game_info': GameStateDisplay(self).get_display()
         }
 
-# Create game state and generate map immediately when server starts
-game_state = GameState()  # This will generate the map right away
+# Create game state and combat system
+game_state = GameState()
+combat_system = CombatSystem(game_state)
 
 class GameStateDisplay:
     def __init__(self, game_state):
@@ -231,101 +188,7 @@ def handle_move(direction):
 @socketio.on('combat_action')
 def handle_combat_action(data):
     player_id = session.get('player_id')
-    if not player_id or player_id not in game_state.active_combats:
-        return
-    
-    combat = game_state.active_combats[player_id]
-    if combat['current_turn'] != player_id:
-        return
-    
-    if data['action'] == 'attack':
-        attacker = game_state.players[player_id]
-        defender_id = combat['defender'] if player_id == combat['attacker'] else combat['attacker']
-        defender = game_state.players[defender_id]
-        
-        # Calculate and apply damage
-        damage = random.randint(1, 8)
-        defender.hp -= damage
-        
-        # Check for death
-        if defender.hp <= 0:
-            defender.hp = 0
-            combat['status'] = 'ended'
-            
-            # Clear combat flags
-            attacker.in_combat = False
-            defender.in_combat = False
-            
-            # Add death message to both players
-            game_state.add_player_message(player_id, "You are victorious in battle!")
-            game_state.add_player_message(defender_id, "Thou art dead.")
-            
-            # Add global message about the death
-            game_state.add_global_message(f"{defender.id} has been slain by {attacker.id}!")
-            
-            # Send separate end messages to winner and loser
-            winner_data = {
-                'type': 'combat_end',
-                'winner': player_id,
-                'loser': defender_id,
-                'message': "You are victorious in battle!"
-            }
-            
-            loser_data = {
-                'type': 'combat_end',
-                'winner': player_id,
-                'loser': defender_id,
-                'message': "Thou art dead."
-            }
-            
-            # Send appropriate messages to each player
-            emit('combat_update', winner_data, room=player_id)
-            emit('combat_update', loser_data, room=defender_id)
-            
-            # Remove defeated player from the game
-            if defender_id in game_state.active_players:
-                del game_state.active_players[defender_id]
-            if defender_id in game_state.players:
-                del game_state.players[defender_id]
-            
-            # Clean up combat state
-            del game_state.active_combats[player_id]
-            del game_state.active_combats[defender_id]
-            
-            # Disconnect the defeated player
-            emit('player_died', room=defender_id)
-            
-            # Update game state for all remaining players
-            for pid in game_state.active_players:
-                emit('game_state', game_state.get_game_state(pid), room=pid)
-        else:
-            # Combat continues - switch turns
-            combat['current_turn'] = defender_id
-            
-            # Add damage messages to respective players
-            game_state.add_player_message(player_id, f"....You deal {damage} damage!")
-            game_state.add_player_message(defender_id, f"....You take {damage} damage!")
-            
-            # Send combat updates
-            attacker_update = {
-                'type': 'combat_action',
-                'damage_dealt': damage,
-                'opponent_hp': defender.hp,
-                'your_turn': False
-            }
-            defender_update = {
-                'type': 'combat_action',
-                'damage_taken': damage,
-                'your_hp': defender.hp,
-                'your_turn': True
-            }
-            
-            # Send combat updates and game states to both players
-            emit('combat_update', attacker_update, room=player_id)
-            emit('game_state', game_state.get_game_state(player_id), room=player_id)
-            
-            emit('combat_update', defender_update, room=defender_id)
-            emit('game_state', game_state.get_game_state(defender_id), room=defender_id)
+    combat_system.process_action(player_id, data['action'])
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
