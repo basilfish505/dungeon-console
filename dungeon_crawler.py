@@ -8,13 +8,18 @@ import os
 from player import Player
 from combat import CombatSystem
 
+# Constants
+MAP_SIZE = 20
+BOULDER_PROBABILITY = 0.03
+SECRET_KEY = 'your-secret-key-here'
+
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'your-secret-key-here'
+app.config['SECRET_KEY'] = SECRET_KEY
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')
 
 class GameState:
     def __init__(self):
-        self.map_size = 20
+        self.map_size = MAP_SIZE
         self.game_map = None
         self.players = {}
         self.active_players = {}
@@ -23,26 +28,28 @@ class GameState:
         self.generate_map()
 
     def generate_map(self):
-        # Create empty map with walls
-        self.game_map = [['#' for _ in range(self.map_size)] for _ in range(self.map_size)]
-        
-        # Create simple empty box with random boulders
+        self.game_map = self.create_empty_map_with_walls()
+        self.populate_map_with_boulders()
+
+    def create_empty_map_with_walls(self):
+        return [['#' for _ in range(self.map_size)] for _ in range(self.map_size)]
+
+    def populate_map_with_boulders(self):
         for i in range(1, self.map_size-1):
             for j in range(1, self.map_size-1):
-                if random.random() < 0.03:  # 3% chance of boulder
-                    self.game_map[i][j] = '#'
-                else:
-                    self.game_map[i][j] = '.'
+                self.game_map[i][j] = '#' if random.random() < BOULDER_PROBABILITY else '.'
 
     def find_random_start(self):
         while True:
-            # Random position (avoiding edges)
-            x = random.randint(1, self.map_size-2)
-            y = random.randint(1, self.map_size-2)
-            if self.game_map[y][x] == '.':
-                # Updated to use Player object's pos attribute
-                if not any(p.pos == [y, x] for p in self.players.values()):
-                    return [y, x]
+            x, y = self.get_random_position()
+            if self.is_position_free(x, y):
+                return [y, x]
+
+    def get_random_position(self):
+        return random.randint(1, self.map_size-2), random.randint(1, self.map_size-2)
+
+    def is_position_free(self, x, y):
+        return self.game_map[y][x] == '.' and not any(p.pos == [y, x] for p in self.players.values())
 
     def add_player(self, player_id):
         if player_id not in self.players:
@@ -81,23 +88,25 @@ class GameState:
         player = self.players[player_id]
         new_pos = player.move(direction)
 
-        # Check if move is valid (within bounds and not a wall)
-        if (0 <= new_pos[0] < self.map_size and 
-            0 <= new_pos[1] < self.map_size and 
-            self.game_map[new_pos[0]][new_pos[1]] != '#'):
-            
-            # Check if there's another player at the new position
-            for other_id, other_player in self.players.items():
-                if (other_id != player_id and 
-                    other_player.pos == new_pos and 
-                    other_id in self.active_players):
-                    # Initiate combat using combat system
-                    combat_system.start_combat(player_id, other_id)
-                    return True
-
-            # If no combat, complete the move
+        if self.is_valid_move(new_pos):
+            if self.is_combat_scenario(player_id, new_pos):
+                return True
             player.pos = new_pos
             return True
+        return False
+
+    def is_valid_move(self, new_pos):
+        return (0 <= new_pos[0] < self.map_size and 
+                0 <= new_pos[1] < self.map_size and 
+                self.game_map[new_pos[0]][new_pos[1]] != '#')
+
+    def is_combat_scenario(self, player_id, new_pos):
+        for other_id, other_player in self.players.items():
+            if (other_id != player_id and 
+                other_player.pos == new_pos and 
+                other_id in self.active_players):
+                combat_system.start_combat(player_id, other_id)
+                return True
         return False
 
     # Update get_game_state to work with Player objects
