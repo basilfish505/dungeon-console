@@ -210,6 +210,13 @@
             font-size: 1.5em;
             margin: 20px 0;
         }
+
+        /* Add to your existing styles */
+        #combat-controls button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            background-color: #001100;
+        }
     </style>
 </head>
 <body>
@@ -282,10 +289,10 @@
         <h3>Combat with <span id="opponent-name"></span></h3>
         <p>Opponent HP: <span id="opponent-hp"></span></p>
         <div id="combat-controls">
-            <button onclick="sendCombatAction('attack')">Attack</button>
-            <button disabled>Spell</button>
-            <button disabled>Item</button>
-            <button disabled>Run</button>
+            <button id="attack-btn" onclick="sendCombatAction('attack')">Attack</button>
+            <button id="spell-btn" onclick="sendCombatAction('spell')">Spell</button>
+            <button id="item-btn" onclick="sendCombatAction('item')">Item</button>
+            <button id="run-btn" onclick="sendCombatAction('run')">Run</button>
         </div>
         <p id="combat-message"></p>
     </div>
@@ -384,36 +391,67 @@
         socket.on('combat_update', function(data) {
             const combatBox = document.getElementById('combat-box');
             const combatMessage = document.getElementById('combat-message');
-            const messageLog = document.getElementById('message-log');
+            const attackBtn = document.getElementById('attack-btn');
+            const spellBtn = document.getElementById('spell-btn');
+            const itemBtn = document.getElementById('item-btn');
+            const runBtn = document.getElementById('run-btn');
+            
+            // Function to disable/enable combat buttons based on turn
+            function updateCombatButtons(isYourTurn) {
+                if (isYourTurn) {
+                    // It's your turn - enable attack, disable others
+                    attackBtn.disabled = false;
+                    spellBtn.disabled = true;
+                    itemBtn.disabled = true;
+                    runBtn.disabled = true;
+                } else {
+                    // It's opponent's turn - disable all buttons
+                    attackBtn.disabled = true;
+                    spellBtn.disabled = true;
+                    itemBtn.disabled = true;
+                    runBtn.disabled = true;
+                }
+            }
             
             if (data.type === 'combat_start') {
                 combatBox.style.display = 'block';
                 document.getElementById('opponent-name').textContent = data.opponent_id;
                 document.getElementById('opponent-hp').textContent = data.opponent_hp;
-                combatMessage.textContent = data.your_turn ? 'Your turn!' : 'Opponent\'s turn...';
+                
+                // Set button state based on whose turn it is
+                updateCombatButtons(data.your_turn);
+                
+                combatMessage.textContent = data.your_turn ? 'Your turn!' : 'Your foe weighs their next move...';
             }
             else if (data.type === 'combat_action') {
                 if (data.damage_dealt) {
-                    combatMessage.textContent = `You dealt ${data.damage_dealt} damage!`;
-                    document.getElementById('opponent-hp').textContent = data.opponent_hp;
+                    combatMessage.textContent = `You deal ${data.damage_dealt} damage to ${data.opponent_id}!`;
                 } else if (data.damage_taken) {
-                    combatMessage.textContent = `You took ${data.damage_taken} damage!`;
+                    combatMessage.textContent = `You take ${data.damage_taken} damage from your opponent!`;
                 }
+                
+                // If there's a specific message (like "Your foe weighs...")
+                if (data.message) {
+                    combatMessage.textContent = data.message;
+                }
+                
+                // Update HP display if applicable
+                if (data.opponent_hp) {
+                    document.getElementById('opponent-hp').textContent = data.opponent_hp;
+                }
+                
+                // Set button state based on whose turn it is
+                updateCombatButtons(data.your_turn);
             }
             else if (data.type === 'combat_end') {
                 combatBox.style.display = 'none';
                 
                 // Add the appropriate battle result message to message log
                 if (data.message) {
-                    if (data.message === "Thou art dead.") {
-                        // Hide mobile controls
-                        document.querySelector('.mobile-controls').style.display = 'none';
-                    }
+                    const messageLog = document.getElementById('message-log');
                     messageLog.innerHTML += `<div>${data.message}</div>`;
+                    messageLog.scrollTop = messageLog.scrollHeight;
                 }
-                
-                // Auto-scroll message log to bottom
-                messageLog.scrollTop = messageLog.scrollHeight;
             }
         });
 

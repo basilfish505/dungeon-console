@@ -72,8 +72,8 @@ class CombatSystem:
             defender.hp -= damage
             
             # Add damage messages
-            self.game_state.add_player_message(player_id, f"....You deal {damage} damage!")
-            self.game_state.add_player_message(defender_id, f"....You take {damage} damage!")
+            self.game_state.add_player_message(player_id, f"....You deal {damage} damage to {defender.id}!")
+            self.game_state.add_player_message(defender_id, f"....You take {damage} damage from {attacker.id}!")
             
             # Check for death
             if defender.hp <= 0:
@@ -146,7 +146,8 @@ class CombatSystem:
             'type': 'combat_action',
             'damage_dealt': damage,
             'opponent_hp': defender.hp,
-            'your_turn': False
+            'your_turn': False,
+            'message': "Your foe weighs their next move..."
         }
         defender_update = {
             'type': 'combat_action',
