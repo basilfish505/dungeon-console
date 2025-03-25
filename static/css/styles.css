@@ -1,0 +1,219 @@
+body {
+    background-color: black;
+    color: #00ff00;
+    font-family: monospace;
+    margin: 10px;
+    max-width: 600px;  /* Narrower max width */
+    margin-left: auto;
+    margin-right: auto;
+}
+
+#header {
+    border: 1px solid #00ff00;
+    padding: 8px;
+    margin-bottom: 15px;
+    font-size: 1.1em;
+    font-weight: bold;
+    text-align: center;
+}
+
+#map-display {
+    white-space: pre;
+    font-size: 16px;
+    line-height: 1;
+    margin-bottom: 15px;
+    font-family: monospace;
+    overflow: hidden;  /* Remove scroll, hide overflow */
+}
+
+.mobile-controls {
+    display: grid;
+    grid-template-columns: repeat(3, 50px);
+    gap: 8px;
+    margin-top: -140px;
+    margin-bottom: 15px;
+    justify-content: end;
+    position: relative;
+    z-index: 1;
+    margin-right: 2px;  
+}
+
+.mobile-btn {
+    width: 50px;  /* Smaller buttons */
+    height: 50px;
+    background-color: #003300;
+    border: 2px solid #00ff00;
+    color: #00ff00;
+    font-size: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+}
+
+.mobile-btn:active {
+    background-color: #006600;
+}
+
+#message-log {
+    border: 1px solid #00ff00;
+    padding: 8px;
+    height: 80px;
+    overflow: hidden;
+    font-size: 10px;  /* Reduced from 12px to 10px */
+    font-family: monospace;
+}
+
+#player-login {
+    color: #00ff00;
+    font-family: monospace;
+    text-align: center;
+    margin-top: 20px;
+}
+
+#player-login input, #player-login button {
+    background-color: black;
+    color: #00ff00;
+    border: 1px solid #00ff00;
+    font-family: monospace;
+    padding: 5px;
+    margin: 5px;
+}
+
+#player-login button:hover {
+    background-color: #003300;
+}
+
+/* Optional: Hide scrollbars for all elements */
+* {
+    -ms-overflow-style: none;  /* IE and Edge */
+    scrollbar-width: none;     /* Firefox */
+}
+*::-webkit-scrollbar {        /* Chrome, Safari and Opera */
+    display: none;
+}
+
+/* Add these styles */
+#player-properties {
+    margin-top: 15px;
+    font-size: 12px;
+    font-family: monospace;
+    width: 33%;
+}
+
+.properties-grid {
+    display: grid;
+    grid-template-columns: auto auto auto auto;
+    gap: 0;
+    line-height: 1;
+}
+
+.property-label {
+    color: #00ff00;
+    padding-right: 4px;
+}
+
+.property-value {
+    color: #00ff00;
+    padding-right: 8px;
+}
+
+.top-row {
+    grid-column: span 4;
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 0;  /* Remove bottom margin */
+    padding-bottom: 0;  /* Remove padding */
+}
+
+.info-box {
+    border: 1px solid #00ff00;
+    padding: 8px;
+    margin-top: 15px;
+    font-size: 12px;
+    font-family: monospace;
+    width: 33%;
+}
+
+/* Update the CSS for #game-info */
+#game-info {
+    margin-top: 15px;
+    font-size: 12px;
+    font-family: monospace;
+    width: 100%;
+    max-width: 600px;
+    text-align: center;  /* Center the container */
+}
+
+#game-info .properties-grid {
+    display: inline-grid;
+    grid-template-columns: minmax(auto, 154px) auto auto auto;  /* Increased from 144px to 154px */
+    gap: 0;
+    line-height: 1;
+    padding: 8px;
+    text-align: left;
+}
+
+#game-info span:first-child {
+    white-space: nowrap;  /* Prevent label from wrapping */
+}
+
+#combat-box {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background-color: black;
+    border: 1px solid #00ff00;
+    padding: 20px;
+    color: #00ff00;
+    text-align: center;
+    z-index: 1000;
+    margin-top: -100px;
+    width: 300px;
+}
+
+#combat-controls {
+    margin: 10px 0;
+}
+
+#combat-controls button {
+    background-color: black;
+    color: #00ff00;
+    border: 1px solid #00ff00;
+    padding: 5px 10px;
+    margin: 5px;
+    cursor: pointer;
+}
+
+#combat-controls button:disabled {
+    color: #004400;
+    border-color: #004400;
+    cursor: not-allowed;
+}
+
+#combat-message-container {
+    margin-top: 10px;
+    min-height: 60px;  /* Ensure space for messages */
+}
+
+#opponent-thinking {
+    color: #00aa00;  /* Slightly different color for opponent thinking text */
+    margin-top: 15px;
+    font-style: italic;
+}
+
+/* Add style for death message */
+.death-message {
+    color: #ff0000;
+    text-align: center;
+    font-size: 1.5em;
+    margin: 20px 0;
+}
+
+/* Add to your existing styles */
+#combat-controls button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    background-color: #001100;
+}

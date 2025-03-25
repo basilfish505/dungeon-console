@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>PermaQuest</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+</head>
+<body>
+    <div id="player-login">
+        What be thy name? <input type="text" id="player-name" />
+        <button id="join-btn">Join</button>
+    </div>
+
+    <div id="header">PERMAQUEST</div>
+    
+    <div id="map-display"></div>
+    
+    <div class="mobile-controls">
+        <div></div>
+        <div class="mobile-btn" data-direction="w">W</div>
+        <div></div>
+        <div class="mobile-btn" data-direction="a">A</div>
+        <div class="mobile-btn" data-direction="s">S</div>
+        <div class="mobile-btn" data-direction="d">D</div>
+    </div>
+    
+    <div id="message-log"></div>
+
+    <div id="player-properties">
+        <div class="properties-grid">
+            <span class="property-value" id="player-name-display">-</span>
+            <span class="property-value" id="player-hp">-</span>
+            <span class="property-label">MP:</span>
+            <span class="property-value" id="player-mp">-</span>
+
+            <span class="property-label">LVL:</span>
+            <span class="property-value" id="player-level">1</span>
+            <span class="property-label">XP:</span>
+            <span class="property-value" id="player-xp">0</span>
+
+            <span class="blank-row"></span>
+            <span class="blank-row"></span>
+            <span class="blank-row"></span>
+            <span class="blank-row"></span>
+
+            <span class="blank-row"></span>
+            <span class="blank-row"></span>
+            <span class="blank-row"></span>
+            <span class="blank-row"></span>
+
+            <span class="property-label">STR:</span>
+            <span class="property-value" id="player-str">-</span>
+            <span class="property-label">INT:</span>
+            <span class="property-value" id="player-int">-</span>
+
+            <span class="property-label">WIS:</span>
+            <span class="property-value" id="player-wis">-</span>
+            <span class="property-label">CHR:</span>
+            <span class="property-value" id="player-chr">-</span>
+
+            <span class="property-label">DEX:</span>
+            <span class="property-value" id="player-dex">-</span>
+            <span class="property-label">AGI:</span>
+            <span class="property-value" id="player-agi">-</span>
+        </div>
+    </div>
+
+    <div id="game-info">
+        <div class="properties-grid">
+            <!-- Game state information will be displayed here -->
+        </div>
+    </div>
+
+    <div id="combat-box" style="display: none;">
+        <h3>Combat with <span id="opponent-name"></span></h3>
+        <p>Opponent HP: <span id="opponent-hp"></span></p>
+        <div id="combat-controls">
+            <button id="attack-btn">Attack</button>
+            <button id="defend-btn">Defend</button>
+            <button id="spell-btn">Spell</button>
+            <button id="item-btn">Item</button>
+            <button id="run-btn">Run</button>
+        </div>
+        <div id="combat-message-container">
+            <p id="combat-message"></p>
+            <p id="opponent-thinking" style="display: none; margin-top: 15px;"></p>
+        </div>
+    </div>
+
+    <!-- Load scripts in the correct order -->
+    <script src="{{ url_for('static', filename='js/utils.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/ui.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/combat.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/socket.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+</body>
+</html> 
