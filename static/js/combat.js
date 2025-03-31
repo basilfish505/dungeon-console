@@ -56,15 +56,18 @@ const Combat = (function() {
         // Update button states
         updateButtonStates(data.your_turn);
         
+        // Clear previous messages
+        elements.combatMessage.innerHTML = '';
+        
         // Handle combat messages based on action and what happened
         if (data.blocked) {
             // This is for block results
             if (data.your_turn) {
                 // You successfully blocked their attack
-                elements.combatMessage.textContent = `You blocked ${data.opponent_id}'s attack with your skillful guard!`;
+                elements.combatMessage.innerHTML = `You blocked ${data.opponent_id}'s attack with your skillful guard!`;
             } else {
                 // Your attack was blocked
-                elements.combatMessage.textContent = `Your blow was thwarted by ${data.opponent_id}'s skillful guard!`;
+                elements.combatMessage.innerHTML = `Your blow was thwarted by ${data.opponent_id}'s skillful guard!`;
             }
         } 
         else if (data.action === 'defend' && !data.blocked) {
@@ -72,25 +75,40 @@ const Combat = (function() {
             if (data.your_turn) {
                 // You're now taking your turn after opponent defended
                 if (data.previous_action === 'defend') {
-                    elements.combatMessage.textContent = `${data.opponent_id} took a defensive stance.`;
+                    elements.combatMessage.innerHTML = `${data.opponent_id} took a defensive stance.`;
                 }
             } else {
                 // You just took a defensive stance
-                elements.combatMessage.textContent = "You took a defensive stance.";
+                elements.combatMessage.innerHTML = "You took a defensive stance.";
             }
         }
         else if (data.damage_dealt) {
             // You dealt damage
-            elements.combatMessage.textContent = `You dealt ${data.damage_dealt} damage to ${data.opponent_id}.`;
+            let message = `You dealt ${data.damage_dealt} damage to ${data.opponent_id}.`;
+            
+            // Add monster counter-attack message if applicable
+            if (data.damage_taken && data.opponent_is_monster) {
+                message += `<br><span class="monster-attack">The ${data.opponent_id} strikes back for ${data.damage_taken} damage!</span>`;
+            }
+            
+            elements.combatMessage.innerHTML = message;
         } 
         else if (data.damage_taken) {
             // You took damage
-            elements.combatMessage.textContent = `You took ${data.damage_taken} damage from ${data.opponent_id}.`;
+            elements.combatMessage.innerHTML = `You took ${data.damage_taken} damage from ${data.opponent_id}.`;
         }
         
         // Update HP display if applicable
         if (data.opponent_hp) {
             elements.opponentHP.textContent = data.opponent_hp;
+        }
+        
+        // Update player HP if provided (for monster attacks)
+        if (data.your_hp) {
+            const playerHP = document.getElementById('player-hp');
+            if (playerHP) {
+                playerHP.textContent = data.your_hp;
+            }
         }
     }
     

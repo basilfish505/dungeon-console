@@ -179,7 +179,8 @@ class CombatSystem:
         update = {
             'type': 'combat_action',
             'action': 'defend' if is_defense else 'attack',
-            'your_turn': True  # Always player's turn after monster attacks
+            'your_turn': True,  # Always player's turn after monster attacks
+            'opponent_is_monster': True  # Flag to indicate monster combat
         }
         
         if not is_defense:
