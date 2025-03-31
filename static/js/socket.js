@@ -34,6 +34,8 @@ const SocketHandler = (function() {
     // Send player ID to server
     function selectPlayerId(playerId) {
         if (playerId) {
+            // Store player ID in hidden input for combat targeting
+            document.getElementById('player-id').value = playerId;
             socket.emit('select_id', playerId);
         }
     }

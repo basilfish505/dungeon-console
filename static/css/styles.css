@@ -170,7 +170,9 @@ body {
     text-align: center;
     z-index: 1000;
     margin-top: -100px;
-    width: 300px;
+    width: 350px;
+    max-height: 80vh;
+    overflow-y: auto;
 }
 
 #combat-controls {
@@ -216,4 +218,52 @@ body {
     opacity: 0.5;
     cursor: not-allowed;
     background-color: #001100;
+}
+
+/* Styles for multi-combatant battle interface */
+.opponents-list {
+    margin: 10px 0;
+    text-align: left;
+    border: 1px solid #003300;
+    padding: 8px;
+    max-height: 120px;
+    overflow-y: auto;
+}
+
+.opponent-entry {
+    padding: 5px;
+    margin: 3px 0;
+    border: 1px solid #004400;
+    display: flex;
+    justify-content: space-between;
+    cursor: pointer;
+}
+
+.opponent-entry:hover {
+    background-color: #001100;
+}
+
+.selected-target {
+    background-color: #003300;
+    border-color: #00ff00;
+}
+
+.opponent-name {
+    font-weight: bold;
+}
+
+.monster-attack {
+    color: #ff4040;
+    font-style: italic;
+}
+
+/* Add this to the combat styles */
+.current-turn {
+    background-color: #003300;
+    border-left: 3px solid #00ff00;
+}
+
+.current-turn .opponent-name {
+    font-weight: bold;
+    color: #00ff00;
 }

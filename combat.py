@@ -3,10 +3,12 @@ from flask_socketio import emit
 import random
 from player import Player
 from monster import Monster
+import uuid
 
 class CombatSystem:
     def __init__(self, game_state):
         self.game_state = game_state
+        self.battles = {}  # Dictionary to store battle instances by battle_id
     
     def start_combat(self, attacker_id, defender_id):
         """Initialize combat between two entities (players or monsters)"""
@@ -20,7 +22,35 @@ class CombatSystem:
         else:
             defender = self.game_state.players[defender_id]
         
+        # Check if either participant is already in a battle
+        existing_battle_id = self._find_existing_battle(attacker_id, defender_id)
+        
+        if existing_battle_id:
+            # Add the new combatant to an existing battle
+            return self._add_to_existing_battle(existing_battle_id, attacker_id, defender_id, defender, is_monster_combat)
+        else:
+            # Create a new battle
+            return self._create_new_battle(attacker_id, defender_id, defender, is_monster_combat)
+    
+    def _find_existing_battle(self, attacker_id, defender_id):
+        """Check if any participant is already in a battle"""
+        # Check attacker's battles
+        if attacker_id in self.game_state.active_combats:
+            return self.game_state.active_combats[attacker_id]
+        
+        # Check defender's battles (if it's a player)
+        if not isinstance(defender_id, Monster) and defender_id in self.game_state.active_combats:
+            return self.game_state.active_combats[defender_id]
+        
+        return None
+    
+    def _create_new_battle(self, attacker_id, defender_id, defender, is_monster_combat):
+        """Create a new battle between combatants"""
+        # Generate a unique battle ID
+        battle_id = str(uuid.uuid4())
+        
         # Set combat flags
+        attacker = self.game_state.players[attacker_id]
         attacker.in_combat = True
         defender.in_combat = True
         
@@ -33,297 +63,698 @@ class CombatSystem:
         if not is_monster_combat:
             self.game_state.add_player_message(defender_id, combat_message)
         
-        # Create and store combat state
-        combat_state = {
-            'attacker': attacker_id,
-            'defender': defender_id,
-            'defender_obj': defender,
-            'is_monster': is_monster_combat,
-            'current_turn': attacker_id,
-            'status': 'active'
+        # Create the battle structure
+        battle = {
+            'battle_id': battle_id,
+            'participants': [attacker_id],
+            'monsters': [],
+            'turn_order': [attacker_id],
+            'current_turn_index': 0,
+            'status': 'active',
+            'defend_status': {}
         }
         
-        self.game_state.active_combats[attacker_id] = combat_state
-        if not is_monster_combat:
-            self.game_state.active_combats[defender_id] = combat_state
+        # Add the defender to the battle
+        if is_monster_combat:
+            battle['monsters'].append(defender)
+            # Add monster to turn order so it gets a turn
+            battle['turn_order'].append(defender.id)
+        else:
+            battle['participants'].append(defender_id)
+            battle['turn_order'].append(defender_id)
         
-        # Send combat initiation to players
-        self._send_combat_start(attacker_id, defender, defender_display_name, is_monster_combat)
+        # Store the battle
+        self.battles[battle_id] = battle
+        
+        # Link combatants to the battle
+        self.game_state.active_combats[attacker_id] = battle_id
         if not is_monster_combat:
-            self._send_combat_start(defender_id, attacker, attacker.id, False, is_attacker=False)
+            self.game_state.active_combats[defender_id] = battle_id
+        
+        # Send combat initiation to attacker
+        self._send_combat_start(attacker_id, battle)
+        
+        # Send combat initiation to defender if it's a player
+        if not is_monster_combat:
+            self._send_combat_start(defender_id, battle)
         
         # Update all players' game state
         self._update_all_players()
+        
+        return battle_id
     
-    def _send_combat_start(self, player_id, opponent, opponent_display_name, is_monster, is_attacker=True):
-        """Send combat start information to a player"""
+    def _add_to_existing_battle(self, battle_id, new_player_id, defender_id, defender, is_monster_combat):
+        """Add a new combatant to an existing battle"""
+        battle = self.battles[battle_id]
+        new_player = self.game_state.players[new_player_id]
+        defender_display_name = defender.type if is_monster_combat else defender.id
+        
+        # Check if the new player is already in this battle
+        if new_player_id in battle['participants']:
+            return battle_id  # Already in battle, nothing to do
+        
+        # Check if the defender is already in this battle
+        defender_in_battle = False
+        if is_monster_combat:
+            for monster in battle['monsters']:
+                if monster.id == defender.id:
+                    defender_in_battle = True
+                    break
+        else:
+            defender_in_battle = defender_id in battle['participants']
+        
+        if not defender_in_battle:
+            # Add the defender to the battle
+            if is_monster_combat:
+                battle['monsters'].append(defender)
+                defender.in_combat = True
+                # Add monster to turn order so it gets a turn
+                if defender.id not in battle['turn_order']:
+                    battle['turn_order'].append(defender.id)
+            else:
+                battle['participants'].append(defender_id)
+                battle['turn_order'].append(defender_id)
+                defender.in_combat = True
+                self.game_state.active_combats[defender_id] = battle_id
+        
+        # Add the new player to the battle if not already present
+        if new_player_id not in battle['participants']:
+            battle['participants'].append(new_player_id)
+            battle['turn_order'].append(new_player_id)
+            new_player.in_combat = True
+            self.game_state.active_combats[new_player_id] = battle_id
+        
+        # Add messages about the new combatant
+        join_message = f"{new_player.id} joins the battle!"
+        for participant_id in battle['participants']:
+            self.game_state.add_player_message(participant_id, join_message)
+        
+        # Send updated battle info to all participants
+        for participant_id in battle['participants']:
+            self._send_combat_start(participant_id, battle)
+        
+        # Update all players' game state
+        self._update_all_players()
+        
+        return battle_id
+    
+    def _send_combat_start(self, player_id, battle):
+        """Send battle information to a player"""
+        player = self.game_state.players[player_id]
+        
+        # Get all opponents (players and monsters)
+        opponents = []
+        
+        # Add player opponents
+        for p_id in battle['participants']:
+            if p_id != player_id:
+                opponent = self.game_state.players[p_id]
+                opponents.append({
+                    'id': opponent.id,
+                    'hp': opponent.hp,
+                    'is_monster': False
+                })
+        
+        # Add monster opponents
+        for monster in battle['monsters']:
+            opponents.append({
+                'id': monster.type,
+                'hp': monster.hp,
+                'is_monster': True
+            })
+        
+        # Create combat info
         combat_info = {
             'type': 'combat_start',
-            'opponent_id': opponent_display_name,
-            'opponent_hp': opponent.hp,
-            'opponent_is_monster': is_monster,
-            'your_turn': is_attacker
+            'battle_id': battle['battle_id'],
+            'opponents': opponents
         }
+        
+        # Add accurate turn information
+        self._update_combat_turn_info(combat_info, player_id, battle)
+        
         emit('combat_update', combat_info, room=player_id)
     
-    def process_action(self, player_id, action):
+    def process_action(self, player_id, action, target_id=None):
         """Process a combat action from a player"""
         # Validate the action can be taken
         if not player_id or player_id not in self.game_state.active_combats:
             return
         
-        combat = self.game_state.active_combats[player_id]
-        if combat['current_turn'] != player_id:
+        battle_id = self.game_state.active_combats[player_id]
+        battle = self.battles[battle_id]
+        
+        # Check if it's this player's turn
+        current_turn_id = battle['turn_order'][battle['current_turn_index']]
+        if current_turn_id != player_id:
             return
         
-        # Get entities involved in combat
-        is_attacker = player_id == combat['attacker']
-        is_monster_combat = combat['is_monster']
-        player = self.game_state.players[player_id]
-        
-        # Get opponent (player or monster)
-        opponent_id = combat['defender'] if is_attacker else combat['attacker']
-        opponent = combat['defender_obj'] if (is_monster_combat and is_attacker) else self.game_state.players[opponent_id]
-        opponent_display_name = opponent.type if isinstance(opponent, Monster) else opponent.id
-        
-        # Process the action
-        if action == 'attack':
-            self._handle_attack(player_id, player, opponent, opponent_id, opponent_display_name, combat, is_attacker, is_monster_combat)
-        elif action == 'defend':
-            self._handle_defend(player_id, player, opponent, opponent_id, opponent_display_name, combat, is_attacker, is_monster_combat)
-    
-    def _handle_attack(self, player_id, player, opponent, opponent_id, opponent_display_name, combat, is_attacker, is_monster_combat):
-        """Handle an attack action"""
-        # Check for blocking
-        blocked = self._check_block(player_id, opponent_id, opponent_display_name, combat)
-        
-        if not blocked:
-            # Apply damage to opponent
-            damage = random.randint(1, 8)
-            opponent.hp -= damage
-            
-            # Add damage messages
-            self.game_state.add_player_message(player_id, f"....You deal {damage} damage to {opponent_display_name}!")
-            if not isinstance(opponent, Monster):
-                self.game_state.add_player_message(opponent_id, f"....You take {damage} damage from {player.id}!")
-            
-            # Check for death
-            if opponent.hp <= 0:
-                if isinstance(opponent, Monster):
-                    self._handle_monster_death(player_id, opponent)
-                else:
-                    self._handle_player_death(player_id, opponent_id)
+        # If no target specified, try to infer one
+        if not target_id:
+            target_id = self._infer_target(player_id, battle)
+            if not target_id:
+                # No valid target could be inferred
+                self._send_target_request(player_id, battle)
                 return
         
-        # For monster combat, monster attacks back immediately
-        if is_monster_combat and is_attacker:
-            self._process_monster_attack(player_id, player, opponent, opponent_display_name, damage, blocked)
-        else:
-            # Normal combat flow for player vs player
-            self._continue_combat(player_id, opponent_id, 0 if blocked else damage, blocked)
+        # Process the action based on type
+        if action == 'attack':
+            self._handle_attack(player_id, target_id, battle)
+        elif action == 'defend':
+            self._handle_defend(player_id, battle)
+        
+        # Advance to the next turn
+        self._advance_turn(battle)
     
-    def _check_block(self, attacker_id, defender_id, defender_display_name, combat):
+    def _infer_target(self, player_id, battle):
+        """Infer a target if only one opponent exists"""
+        # Count potential targets (other players and monsters)
+        targets = []
+        
+        # Add other players
+        for p_id in battle['participants']:
+            if p_id != player_id:
+                targets.append(p_id)
+        
+        # Add monsters
+        for monster in battle['monsters']:
+            targets.append(monster.id)
+        
+        # If there's only one target, return it
+        if len(targets) == 1:
+            return targets[0]
+        
+        # Can't infer a target
+        return None
+    
+    def _send_target_request(self, player_id, battle):
+        """Ask the player to select a target for their action"""
+        player = self.game_state.players[player_id]
+        
+        # Get all potential targets
+        targets = []
+        
+        # Add player targets
+        for p_id in battle['participants']:
+            if p_id != player_id:
+                opponent = self.game_state.players[p_id]
+                targets.append({
+                    'id': opponent.id,
+                    'hp': opponent.hp,
+                    'is_monster': False
+                })
+        
+        # Add monster targets
+        for monster in battle['monsters']:
+            targets.append({
+                'id': monster.type,
+                'monster_id': monster.id,  # Include the full ID for targeting
+                'hp': monster.hp,
+                'is_monster': True
+            })
+        
+        # Create and send the target request
+        target_request = {
+            'type': 'target_request',
+            'battle_id': battle['battle_id'],
+            'targets': targets
+        }
+        
+        emit('combat_update', target_request, room=player_id)
+    
+    def _handle_attack(self, attacker_id, target_id, battle):
+        """Handle an attack action"""
+        attacker = self.game_state.players[attacker_id]
+        
+        # Determine if target is a monster or player
+        target_is_monster = False
+        target = None
+        
+        # Try to find the target among players
+        if target_id in self.game_state.players:
+            target = self.game_state.players[target_id]
+        else:
+            # Try to find the target among monsters
+            for monster in battle['monsters']:
+                if monster.id == target_id or monster.type == target_id:
+                    target = monster
+                    target_is_monster = True
+                    break
+        
+        if not target:
+            # Target not found, ask for a valid target
+            self._send_target_request(attacker_id, battle)
+            return
+        
+        # Get display name for the target
+        target_display = target.type if target_is_monster else target.id
+        
+        # Check for blocking
+        blocked = self._check_block(attacker_id, target_id, target_display, battle)
+        
+        if not blocked:
+            # Apply damage to target
+            damage = random.randint(1, 8)
+            target.hp -= damage
+            
+            # Add damage messages
+            self.game_state.add_player_message(attacker_id, f"....You deal {damage} damage to {target_display}!")
+            
+            # Inform other players about the attack
+            for p_id in battle['participants']:
+                if p_id != attacker_id and p_id != target_id:
+                    self.game_state.add_player_message(p_id, f"....{attacker.id} deals {damage} damage to {target_display}!")
+            
+            # Inform the target if it's a player
+            if not target_is_monster:
+                self.game_state.add_player_message(target_id, f"....You take {damage} damage from {attacker.id}!")
+            
+            # Check for death
+            if target.hp <= 0:
+                if target_is_monster:
+                    self._handle_monster_death(attacker_id, target, battle)
+                else:
+                    self._handle_player_death(target_id, battle)
+                return
+        
+        # Send combat updates to all participants
+        for p_id in battle['participants']:
+            self._send_combat_update(p_id, battle, attacker_id, target_id, damage if not blocked else 0, blocked)
+    
+    def _check_block(self, attacker_id, defender_id, defender_display, battle):
         """Check if attack is blocked"""
-        if 'defend_status' not in combat or not combat['defend_status'].get(defender_id, False):
+        if 'defend_status' not in battle or not battle['defend_status'].get(defender_id, False):
             return False
             
         if random.random() < 0.5:  # 50% chance to block
             # Reset defend status
-            combat['defend_status'][defender_id] = False
+            battle['defend_status'][defender_id] = False
             
             # Add block messages
-            self.game_state.add_player_message(attacker_id, f"....Your blow is thwarted by {defender_display_name}'s skillful guard!")
-            if not isinstance(combat['defender_obj'], Monster) or attacker_id == combat['defender']:
+            self.game_state.add_player_message(attacker_id, f"....Your blow is thwarted by {defender_display}'s skillful guard!")
+            
+            # Notify other players
+            for p_id in battle['participants']:
+                if p_id != attacker_id and p_id != defender_id:
+                    self.game_state.add_player_message(p_id, f"....{self.game_state.players[attacker_id].id}'s blow is thwarted by {defender_display}'s skillful guard!")
+            
+            # Notify the defender if it's a player
+            if defender_id in self.game_state.players:
                 self.game_state.add_player_message(defender_id, f"....{self.game_state.players[attacker_id].id}'s blow is thwarted by your skillful guard!")
             
             return True
         return False
     
-    def _handle_defend(self, player_id, player, opponent, opponent_id, opponent_display_name, combat, is_attacker, is_monster_combat):
+    def _handle_defend(self, player_id, battle):
         """Handle a defend action"""
+        player = self.game_state.players[player_id]
+        
         # Initialize defend status if needed
-        if 'defend_status' not in combat:
-            combat['defend_status'] = {}
+        if 'defend_status' not in battle:
+            battle['defend_status'] = {}
         
         # Set player's defend status
-        combat['defend_status'][player_id] = True
+        battle['defend_status'][player_id] = True
         
         # Add messages
         self.game_state.add_player_message(player_id, f"....You take a defensive stance.")
-        if not isinstance(opponent, Monster):
-            self.game_state.add_player_message(opponent_id, f"....{player.id} takes a defensive stance.")
         
-        # For monster combat, monster attacks back with reduced damage
-        if is_monster_combat and is_attacker:
-            self._process_monster_attack(player_id, player, opponent, opponent_display_name, 0, False, is_defense=True)
-        else:
-            # Normal combat flow for player vs player
-            self._continue_combat(player_id, opponent_id, 0, False, "defense")
+        # Notify other players
+        for p_id in battle['participants']:
+            if p_id != player_id:
+                self.game_state.add_player_message(p_id, f"....{player.id} takes a defensive stance.")
+        
+        # Send combat updates to all participants
+        for p_id in battle['participants']:
+            self._send_defend_update(p_id, battle, player_id)
     
-    def _process_monster_attack(self, player_id, player, monster, monster_display_name, damage_dealt, blocked, is_defense=False):
-        """Process a monster's automatic attack"""
-        # Calculate monster damage (reduced for defense)
-        monster_damage = random.randint(1, 3 if is_defense else 6)
-        player.hp -= monster_damage
-        
-        # Add message
-        defense_msg = ", reduced by your defensive stance" if is_defense else ""
-        self.game_state.add_player_message(player_id, f"....The {monster_display_name} attacks you for {monster_damage} damage{defense_msg}!")
-        
-        # Check for player death
-        if player.hp <= 0:
-            self._handle_player_death_by_monster(player_id, monster)
+    def _advance_turn(self, battle):
+        """Advance to the next turn in the battle"""
+        if not battle['turn_order']:
             return
         
-        # Send combat update to player
+        # Move to the next participant
+        battle['current_turn_index'] = (battle['current_turn_index'] + 1) % len(battle['turn_order'])
+        current_turn_id = battle['turn_order'][battle['current_turn_index']]
+        
+        # If it's a player's turn, send notifications to all players
+        if current_turn_id in self.game_state.players:
+            current_player = self.game_state.players[current_turn_id]
+            
+            # Send notifications to all players in the battle
+            for player_id in battle['participants']:
+                if player_id == current_turn_id:
+                    # For the player whose turn it is
+                    turn_notification = {
+                        'type': 'turn_notification',
+                        'battle_id': battle['battle_id'],
+                        'message': "It's your turn to act!",
+                        'your_turn': True,
+                        'active_player': current_player.id
+                    }
+                else:
+                    # For other players waiting their turn
+                    turn_notification = {
+                        'type': 'turn_notification',
+                        'battle_id': battle['battle_id'],
+                        'message': f"Waiting for {current_player.id} to take their turn...",
+                        'your_turn': False,
+                        'active_player': current_player.id
+                    }
+                
+                emit('combat_update', turn_notification, room=player_id)
+        
+        else:
+            # It's a monster's turn, process it automatically
+            # Find the monster
+            monster = None
+            for m in battle['monsters']:
+                if m.id == current_turn_id:
+                    monster = m
+                    break
+            
+            if monster:
+                # Notify all players that a monster is taking its turn
+                for player_id in battle['participants']:
+                    monster_turn_notification = {
+                        'type': 'turn_notification',
+                        'battle_id': battle['battle_id'],
+                        'message': f"The {monster.type} is preparing to attack!",
+                        'your_turn': False,
+                        'active_player': monster.type
+                    }
+                    emit('combat_update', monster_turn_notification, room=player_id)
+                
+                # Process the monster's turn
+                self._process_monster_turn(current_turn_id, battle)
+            else:
+                # Monster not found (likely died), skip this turn
+                print(f"Monster {current_turn_id} not found in turn order, skipping")
+                # Recursively call to find the next valid turn
+                self._advance_turn(battle)
+    
+    def _process_monster_turn(self, monster_id, battle):
+        """Process a monster's automatic turn"""
+        # Find the monster
+        monster = None
+        for m in battle['monsters']:
+            if m.id == monster_id:
+                monster = m
+                break
+        
+        if not monster:
+            # Monster not found, skip this turn without advancing again
+            print(f"Monster {monster_id} not found in battle, skipping turn")
+            return
+        
+        # Monster automatically attacks a random player
+        if battle['participants']:
+            target_id = random.choice(battle['participants'])
+            target = self.game_state.players[target_id]
+            
+            # Calculate monster damage
+            damage = random.randint(1, 6)
+            target.hp -= damage
+            
+            # Add messages
+            attack_message = f"....The {monster.type} attacks {target.id} for {damage} damage!"
+            self.game_state.add_global_message(attack_message)
+            
+            # Send private messages to involved players
+            for p_id in battle['participants']:
+                if p_id == target_id:
+                    self.game_state.add_player_message(p_id, f"....The {monster.type} attacks you for {damage} damage!")
+                else:
+                    self.game_state.add_player_message(p_id, attack_message)
+            
+            # Check for player death
+            if target.hp <= 0:
+                self._handle_player_death(target_id, battle)
+                return
+            
+            # Send combat updates
+            for p_id in battle['participants']:
+                self._send_monster_attack_update(p_id, battle, monster, target_id, damage)
+            
+            # After the monster's turn is complete, advance to next turn
+            self._advance_turn(battle)
+        else:
+            # No players left to attack, end battle
+            self._check_battle_end(battle)
+    
+    def _update_combat_turn_info(self, update, player_id, battle):
+        """Add current turn information to a combat update"""
+        # Determine if it's this player's turn
+        if battle['turn_order'] and battle['current_turn_index'] < len(battle['turn_order']):
+            current_turn_id = battle['turn_order'][battle['current_turn_index']]
+            update['your_turn'] = (current_turn_id == player_id)
+        else:
+            update['your_turn'] = False
+        
+        return update
+
+    def _send_combat_update(self, player_id, battle, attacker_id, target_id, damage, blocked):
+        """Send a combat update to a player after an attack"""
+        # Determine which update to send based on player's role
+        is_attacker = player_id == attacker_id
+        is_target = player_id == target_id
+        
+        # Find the target entity
+        target_is_monster = True
+        target = None
+        for monster in battle['monsters']:
+            if monster.id == target_id or monster.type == target_id:
+                target = monster
+                break
+        
+        if not target and target_id in self.game_state.players:
+            target = self.game_state.players[target_id]
+            target_is_monster = False
+        
+        if not target:
+            return  # Invalid target
+        
+        # Get display names
+        target_display = target.type if target_is_monster else target.id
+        attacker_display = self.game_state.players[attacker_id].id
+        
+        # Get the current active player
+        current_turn_id = battle['turn_order'][battle['current_turn_index']]
+        active_player = None
+        
+        if current_turn_id in self.game_state.players:
+            active_player = self.game_state.players[current_turn_id].id
+        else:
+            # It's a monster's turn
+            for monster in battle['monsters']:
+                if monster.id == current_turn_id:
+                    active_player = monster.type
+                    break
+        
+        # Create the update based on player's role
         update = {
             'type': 'combat_action',
-            'action': 'defend' if is_defense else 'attack',
-            'your_turn': True,  # Always player's turn after monster attacks
-            'opponent_is_monster': True  # Flag to indicate monster combat
+            'battle_id': battle['battle_id'],
+            'action': 'attack',
+            'blocked': blocked,
+            'attacker_id': attacker_display,
+            'target_id': target_display,
+            'active_player': active_player
         }
         
-        if not is_defense:
-            update.update({
-                'damage_dealt': damage_dealt,
-                'damage_taken': monster_damage,
-            })
+        # Add accurate turn information
+        self._update_combat_turn_info(update, player_id, battle)
+        
+        if is_attacker:
+            if blocked:
+                update['message'] = f"Your blow was thwarted by {target_display}'s skillful guard!"
+            else:
+                update['message'] = f"You dealt {damage} damage to {target_display}."
+                update['damage_dealt'] = damage
+        elif is_target:
+            if blocked:
+                update['message'] = f"You blocked {attacker_display}'s attack with your skillful guard!"
+            else:
+                update['message'] = f"You took {damage} damage from {attacker_display}."
+                update['damage_taken'] = damage
         else:
-            update.update({
-                'damage_taken': monster_damage,
-            })
+            if blocked:
+                update['message'] = f"{attacker_display}'s blow was thwarted by {target_display}'s skillful guard!"
+            else:
+                update['message'] = f"{attacker_display} dealt {damage} damage to {target_display}."
         
-        update.update({
-            'opponent_id': monster_display_name,
-            'opponent_hp': monster.hp,
-            'your_hp': player.hp,
-        })
+        # Add all combatants' status
+        update['combatants'] = self._get_combatants_status(battle)
         
+        # Send the update
         emit('combat_update', update, room=player_id)
         emit('game_state', self.game_state.get_game_state(player_id), room=player_id)
     
-    def _continue_combat(self, attacker_id, defender_id, damage, blocked=False, action_type="attack"):
-        """Continue combat after an action (PvP)"""
-        attacker = self.game_state.players[attacker_id]
-        combat = self.game_state.active_combats[attacker_id]
+    def _send_defend_update(self, player_id, battle, defender_id):
+        """Send a combat update to a player after a defend action"""
+        is_defender = player_id == defender_id
+        defender_display = self.game_state.players[defender_id].id
         
-        # Switch turns for PvP
-        combat['current_turn'] = defender_id
+        # Get the current active player
+        current_turn_id = battle['turn_order'][battle['current_turn_index']]
+        active_player = None
         
-        # Get defender (player or monster)
-        is_monster_opponent = combat['is_monster']
-        if is_monster_opponent:
-            defender = combat['defender_obj']
-            defender_display = defender.type
+        if current_turn_id in self.game_state.players:
+            active_player = self.game_state.players[current_turn_id].id
         else:
-            defender = self.game_state.players[defender_id]
-            defender_display = defender.id
+            # It's a monster's turn
+            for monster in battle['monsters']:
+                if monster.id == current_turn_id:
+                    active_player = monster.type
+                    break
         
-        # Send updates based on action type
-        if action_type == "attack":
-            self._send_attack_updates(attacker_id, defender_id, defender_display, attacker.hp, defender.hp, damage, blocked, is_monster_opponent)
-        elif action_type == "defense":
-            self._send_defense_updates(attacker_id, defender_id, defender_display, attacker.hp, is_monster_opponent)
-    
-    def _send_attack_updates(self, attacker_id, defender_id, defender_display, attacker_hp, defender_hp, damage, blocked, is_monster_opponent):
-        """Send updates for attack actions"""
-        if blocked:
-            attacker_update = {
-                'type': 'combat_action',
-                'action': 'attack',
-                'blocked': True,
-                'opponent_id': defender_display,
-                'opponent_hp': defender_hp,
-                'your_hp': attacker_hp,
-                'your_turn': False
-            }
-            
-            if not is_monster_opponent:
-                defender_update = {
-                    'type': 'combat_action',
-                    'action': 'defend',
-                    'blocked': True,
-                    'opponent_id': self.game_state.players[attacker_id].id,
-                    'your_hp': defender_hp,
-                    'your_turn': True
-                }
-        else:
-            attacker_update = {
-                'type': 'combat_action',
-                'action': 'attack',
-                'damage_dealt': damage,
-                'opponent_id': defender_display,
-                'opponent_hp': defender_hp,
-                'your_hp': attacker_hp,
-                'your_turn': False
-            }
-            
-            if not is_monster_opponent:
-                defender_update = {
-                    'type': 'combat_action',
-                    'action': 'attack',
-                    'damage_taken': damage,
-                    'opponent_id': self.game_state.players[attacker_id].id,
-                    'your_hp': defender_hp,
-                    'your_turn': True
-                }
-        
-        # Send updates and game states
-        emit('combat_update', attacker_update, room=attacker_id)
-        emit('game_state', self.game_state.get_game_state(attacker_id), room=attacker_id)
-        
-        if not is_monster_opponent:
-            emit('combat_update', defender_update, room=defender_id)
-            emit('game_state', self.game_state.get_game_state(defender_id), room=defender_id)
-    
-    def _send_defense_updates(self, attacker_id, defender_id, defender_display, attacker_hp, is_monster_opponent):
-        """Send updates for defense actions"""
-        attacker_update = {
+        # Create the update
+        update = {
             'type': 'combat_action',
+            'battle_id': battle['battle_id'],
             'action': 'defend',
-            'previous_action': 'defend',
-            'opponent_id': defender_display,
-            'your_hp': attacker_hp,
-            'your_turn': False
+            'defender_id': defender_display,
+            'active_player': active_player
         }
         
-        if not is_monster_opponent:
-            defender_update = {
-                'type': 'combat_action',
-                'action': 'turn',
-                'previous_action': 'defend',
-                'opponent_id': self.game_state.players[attacker_id].id,
-                'your_turn': True
-            }
+        # Add accurate turn information
+        self._update_combat_turn_info(update, player_id, battle)
         
-        # Send updates and game states
-        emit('combat_update', attacker_update, room=attacker_id)
-        emit('game_state', self.game_state.get_game_state(attacker_id), room=attacker_id)
+        if is_defender:
+            update['message'] = "You took a defensive stance."
+        else:
+            update['message'] = f"{defender_display} took a defensive stance."
         
-        if not is_monster_opponent:
-            emit('combat_update', defender_update, room=defender_id)
-            emit('game_state', self.game_state.get_game_state(defender_id), room=defender_id)
+        # Add all combatants' status
+        update['combatants'] = self._get_combatants_status(battle)
+        
+        # Send the update
+        emit('combat_update', update, room=player_id)
+        emit('game_state', self.game_state.get_game_state(player_id), room=player_id)
     
-    def _handle_monster_death(self, winner_id, monster):
-        """Handle a monster's death in combat"""
-        winner = self.game_state.players[winner_id]
+    def _send_monster_attack_update(self, player_id, battle, monster, target_id, damage):
+        """Send a combat update for a monster's attack"""
+        is_target = player_id == target_id
+        monster_display = monster.type
+        target_display = self.game_state.players[target_id].id
         
-        # Clear combat flags
-        winner.in_combat = False
+        # Get the current active player
+        current_turn_id = battle['turn_order'][battle['current_turn_index']]
+        active_player = None
+        
+        if current_turn_id in self.game_state.players:
+            active_player = self.game_state.players[current_turn_id].id
+        else:
+            # It's a monster's turn
+            for m in battle['monsters']:
+                if m.id == current_turn_id:
+                    active_player = m.type
+                    break
+        
+        # Create the update
+        update = {
+            'type': 'combat_action',
+            'battle_id': battle['battle_id'],
+            'action': 'monster_attack',
+            'attacker_id': monster_display,
+            'target_id': target_display,
+            'damage': damage,
+            'active_player': active_player
+        }
+        
+        # Add accurate turn information
+        self._update_combat_turn_info(update, player_id, battle)
+        
+        if is_target:
+            update['message'] = f"The {monster_display} attacks you for {damage} damage!"
+            update['damage_taken'] = damage
+        else:
+            update['message'] = f"The {monster_display} attacks {target_display} for {damage} damage!"
+        
+        # Add all combatants' status
+        update['combatants'] = self._get_combatants_status(battle)
+        
+        # Send the update
+        emit('combat_update', update, room=player_id)
+        emit('game_state', self.game_state.get_game_state(player_id), room=player_id)
+    
+    def _get_combatants_status(self, battle):
+        """Get the status of all combatants in a battle"""
+        combatants = []
+        
+        # Add players
+        for p_id in battle['participants']:
+            player = self.game_state.players[p_id]
+            is_current = battle['turn_order'][battle['current_turn_index']] == p_id
+            
+            combatants.append({
+                'id': player.id,
+                'hp': player.hp,
+                'is_monster': False,
+                'defending': battle.get('defend_status', {}).get(p_id, False),
+                'is_current_turn': is_current
+            })
+        
+        # Add monsters
+        for monster in battle['monsters']:
+            is_current = battle['turn_order'][battle['current_turn_index']] == monster.id
+            
+            combatants.append({
+                'id': monster.type,
+                'monster_id': monster.id,
+                'hp': monster.hp,
+                'is_monster': True,
+                'is_current_turn': is_current
+            })
+        
+        # Sort combatants by turn order
+        sorted_combatants = []
+        for turn_id in battle['turn_order']:
+            for combatant in combatants:
+                if (combatant['is_monster'] and combatant['monster_id'] == turn_id) or \
+                   (not combatant['is_monster'] and combatant['id'] == turn_id):
+                    sorted_combatants.append(combatant)
+                    break
+        
+        # Add any combatants that weren't in the turn order
+        for combatant in combatants:
+            if combatant not in sorted_combatants:
+                sorted_combatants.append(combatant)
+        
+        return sorted_combatants
+    
+    def _handle_monster_death(self, killer_id, monster, battle):
+        """Handle a monster's death in combat"""
+        killer = self.game_state.players[killer_id]
+        
+        # Clear monster's combat flag
         monster.in_combat = False
         
         # Add messages
-        self.game_state.add_player_message(winner_id, f"You have defeated the {monster.type}!")
-        self.game_state.add_global_message(f"A {monster.type} has been slain by {winner.id}!")
+        self.game_state.add_player_message(killer_id, f"You have defeated the {monster.type}!")
+        self.game_state.add_global_message(f"A {monster.type} has been slain by {killer.id}!")
         
-        # Send end messages
-        winner_data = {
-            'type': 'combat_end',
-            'winner': winner_id,
-            'loser': monster.type,
-            'message': f"You have defeated the {monster.type}!"
-        }
-        emit('combat_update', winner_data, room=winner_id)
+        # Remove monster from battle
+        battle['monsters'].remove(monster)
+        
+        # Remove monster from turn order if present
+        if monster.id in battle['turn_order']:
+            idx = battle['turn_order'].index(monster.id)
+            battle['turn_order'].remove(monster.id)
+            # Adjust current turn index if needed
+            if battle['current_turn_index'] >= idx:
+                battle['current_turn_index'] = max(0, battle['current_turn_index'] - 1)
+        
+        # Send death messages to all participants
+        for p_id in battle['participants']:
+            death_data = {
+                'type': 'monster_death',
+                'battle_id': battle['battle_id'],
+                'monster_id': monster.type,
+                'killer_id': killer.id,
+                'message': f"The {monster.type} has been defeated by {killer.id}!"
+            }
+            emit('combat_update', death_data, room=p_id)
         
         # Remove monster from game
         monster_position = tuple(monster.pos)
@@ -332,101 +763,97 @@ class CombatSystem:
             # Update the game map to remove the monster symbol
             self.game_state.game_map[monster_position[0]][monster_position[1]] = '.'
         
-        # Clean up combat state
-        del self.game_state.active_combats[winner_id]
+        # Check if battle should end
+        self._check_battle_end(battle)
         
         # Update all players
         self._update_all_players()
     
-    def _handle_player_death(self, winner_id, loser_id):
+    def _handle_player_death(self, player_id, battle):
         """Handle a player's death in combat"""
-        winner = self.game_state.players[winner_id]
-        loser = self.game_state.players[loser_id]
-        
-        # Zero out HP and mark combat as ended
-        loser.hp = 0
-        combat = self.game_state.active_combats[winner_id]
-        combat['status'] = 'ended'
-        
-        # Clear combat flags
-        winner.in_combat = False
-        loser.in_combat = False
-        
-        # Add messages
-        self.game_state.add_player_message(winner_id, "You are victorious in battle!")
-        self.game_state.add_player_message(loser_id, "Thou art dead.")
-        self.game_state.add_global_message(f"{loser.id} has been slain by {winner.id}!")
-        
-        # Send end messages
-        winner_data = {
-            'type': 'combat_end',
-            'winner': winner_id,
-            'loser': loser_id,
-            'message': "You are victorious in battle!"
-        }
-        loser_data = {
-            'type': 'combat_end',
-            'winner': winner_id,
-            'loser': loser_id,
-            'message': "Thou art dead."
-        }
-        emit('combat_update', winner_data, room=winner_id)
-        emit('combat_update', loser_data, room=loser_id)
-        
-        # Remove defeated player
-        if loser_id in self.game_state.active_players:
-            del self.game_state.active_players[loser_id]
-        if loser_id in self.game_state.players:
-            del self.game_state.players[loser_id]
-        
-        # Clean up combat state
-        del self.game_state.active_combats[winner_id]
-        del self.game_state.active_combats[loser_id]
-        
-        # Notify client of death
-        emit('player_died', room=loser_id)
-        
-        # Update all players
-        self._update_all_players()
-    
-    def _handle_player_death_by_monster(self, player_id, monster):
-        """Handle player's death by a monster"""
         player = self.game_state.players[player_id]
         
-        # Zero out HP
+        # Zero out HP and mark player as dead
         player.hp = 0
-        
-        # Clear combat flags
         player.in_combat = False
-        monster.in_combat = False
         
-        # Add messages
-        self.game_state.add_player_message(player_id, f"You have been slain by the {monster.type}!")
-        self.game_state.add_global_message(f"{player.id} has been slain by a {monster.type}!")
+        # Add global message
+        self.game_state.add_global_message(f"{player.id} has been slain!")
         
-        # Send end message
-        player_data = {
-            'type': 'combat_end',
-            'winner': monster.type,
-            'loser': player_id,
-            'message': f"You have been slain by the {monster.type}!"
+        # Remove player from battle
+        if player_id in battle['participants']:
+            battle['participants'].remove(player_id)
+        
+        # Remove player from turn order
+        if player_id in battle['turn_order']:
+            idx = battle['turn_order'].index(player_id)
+            battle['turn_order'].remove(player_id)
+            # Adjust current turn index if needed
+            if battle['current_turn_index'] >= idx:
+                battle['current_turn_index'] = max(0, battle['current_turn_index'] - 1)
+        
+        # Send death messages to all participants
+        for p_id in battle['participants']:
+            death_data = {
+                'type': 'player_death',
+                'battle_id': battle['battle_id'],
+                'player_id': player.id,
+                'message': f"{player.id} has been slain!"
+            }
+            emit('combat_update', death_data, room=p_id)
+        
+        # Send death message to the dead player
+        death_data = {
+            'type': 'player_death',
+            'battle_id': battle['battle_id'],
+            'player_id': player.id,
+            'message': "Thou art dead."
         }
-        emit('combat_update', player_data, room=player_id)
+        emit('combat_update', death_data, room=player_id)
         
-        # Remove player
+        # Remove player from active combat
+        if player_id in self.game_state.active_combats:
+            del self.game_state.active_combats[player_id]
+        
+        # Remove player from active players
         if player_id in self.game_state.active_players:
             del self.game_state.active_players[player_id]
-        if player_id in self.game_state.players:
-            del self.game_state.players[player_id]
         
-        # Clean up combat state
-        del self.game_state.active_combats[player_id]
+        # Check if battle should end
+        self._check_battle_end(battle)
         
         # Notify client of death
         emit('player_died', room=player_id)
         
         # Update all players
         self._update_all_players()
+    
+    def _check_battle_end(self, battle):
+        """Check if a battle should end"""
+        # End if no monsters and only one or zero players
+        if len(battle['monsters']) == 0 and len(battle['participants']) <= 1:
+            # End the battle
+            battle['status'] = 'ended'
+            
+            # Clear combat flags for remaining player if any
+            if battle['participants']:
+                last_player_id = battle['participants'][0]
+                self.game_state.players[last_player_id].in_combat = False
+                
+                # Remove from active combat
+                if last_player_id in self.game_state.active_combats:
+                    del self.game_state.active_combats[last_player_id]
+                
+                # Send battle end message
+                end_data = {
+                    'type': 'combat_end',
+                    'battle_id': battle['battle_id'],
+                    'message': "The battle has ended."
+                }
+                emit('combat_update', end_data, room=last_player_id)
+            
+            # Remove battle
+            del self.battles[battle['battle_id']]
     
     def _update_all_players(self):
         """Update game state for all active players"""

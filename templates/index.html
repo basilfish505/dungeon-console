@@ -73,8 +73,13 @@
             </div>
 
     <div id="combat-box" style="display: none;">
-        <h3>Combat with <span id="opponent-name"></span></h3>
-        <p>Opponent HP: <span id="opponent-hp"></span></p>
+        <h3>Combat</h3>
+        <div id="target-selection">
+            <p>Current Target: <span id="opponent-name"></span> (HP: <span id="opponent-hp"></span>)</p>
+            <div id="opponents-list" class="opponents-list">
+                <!-- Opponents will be listed here -->
+            </div>
+        </div>
         <div id="combat-controls">
             <button id="attack-btn">Attack</button>
             <button id="defend-btn">Defend</button>
@@ -86,6 +91,7 @@
             <p id="combat-message"></p>
             <p id="opponent-thinking" style="display: none; margin-top: 15px;"></p>
         </div>
+        <input type="hidden" id="player-id" value="">
     </div>
 
     <!-- Load scripts in the correct order -->

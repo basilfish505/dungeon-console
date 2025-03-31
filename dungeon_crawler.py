@@ -235,7 +235,9 @@ def handle_move(direction):
 @socketio.on('combat_action')
 def handle_combat_action(data):
     player_id = session.get('player_id')
-    combat_system.process_action(player_id, data['action'])
+    action = data['action']
+    target_id = data.get('target_id')  # Get the target if provided
+    combat_system.process_action(player_id, action, target_id)
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
