@@ -7,10 +7,12 @@ import random
 import os
 from player import Player
 from combat import CombatSystem
+from monster import Monster  # Import the Monster class
 
 # Constants
 MAP_SIZE = 20
 BOULDER_PROBABILITY = 0.03
+MONSTER_PROBABILITY = 0.02  # 2% chance of monster spawn per tile
 SECRET_KEY = 'your-secret-key-here'
 
 app = Flask(__name__)
@@ -25,11 +27,13 @@ class GameState:
         self.active_players = {}
         self.player_messages = {}  # Dictionary to store messages per player
         self.active_combats = {}  # Dictionary to track active combat states
+        self.monsters = {}  # Dictionary to store monsters by position tuple
         self.generate_map()
 
     def generate_map(self):
         self.game_map = self.create_empty_map_with_walls()
         self.populate_map_with_boulders()
+        self.spawn_monsters()  # Add monsters to the map
 
     def create_empty_map_with_walls(self):
         return [['#' for _ in range(self.map_size)] for _ in range(self.map_size)]
@@ -38,6 +42,24 @@ class GameState:
         for i in range(1, self.map_size-1):
             for j in range(1, self.map_size-1):
                 self.game_map[i][j] = '#' if random.random() < BOULDER_PROBABILITY else '.'
+
+    def spawn_monsters(self):
+        for i in range(1, self.map_size-1):
+            for j in range(1, self.map_size-1):
+                # Only spawn monsters on empty spaces
+                if self.game_map[i][j] == '.' and random.random() < MONSTER_PROBABILITY:
+                    # Select a random monster type
+                    monster_types = ["Skeleton", "Ghoul", "Zombie", "Goblin", "Orc", 
+                                    "Troll", "Wraith", "Lich", "Giant Spider", "Slime"]
+                    monster_type = random.choice(monster_types)
+                    monster_id = f"{monster_type}-{i},{j}"
+                    monster = Monster(monster_id, monster_type, [i, j])
+                    
+                    # Store the monster in the monsters dictionary
+                    self.monsters[(i, j)] = monster
+                    
+                    # Mark the monster's position on the map
+                    self.game_map[i][j] = '&'
 
     def find_random_start(self):
         while True:
@@ -49,7 +71,10 @@ class GameState:
         return random.randint(1, self.map_size-2), random.randint(1, self.map_size-2)
 
     def is_position_free(self, x, y):
-        return self.game_map[y][x] == '.' and not any(p.pos == [y, x] for p in self.players.values())
+        # Check if position is free (no walls, players, or monsters)
+        return (self.game_map[y][x] == '.' and 
+                not any(p.pos == [y, x] for p in self.players.values()) and
+                (y, x) not in self.monsters)
 
     def add_player(self, player_id):
         if player_id not in self.players:
@@ -101,15 +126,24 @@ class GameState:
                 self.game_map[new_pos[0]][new_pos[1]] != '#')
 
     def is_combat_scenario(self, player_id, new_pos):
+        # Check for player-player combat
         for other_id, other_player in self.players.items():
             if (other_id != player_id and 
                 other_player.pos == new_pos and 
                 other_id in self.active_players):
                 combat_system.start_combat(player_id, other_id)
                 return True
+        
+        # Check for player-monster combat
+        monster_pos = (new_pos[0], new_pos[1])
+        if monster_pos in self.monsters:
+            monster = self.monsters[monster_pos]
+            combat_system.start_combat(player_id, monster)
+            return True
+        
         return False
 
-    # Update get_game_state to work with Player objects
+    # Update get_game_state to include monsters
     def get_game_state(self, current_player_id):
         visible_map = [row[:] for row in self.game_map]
         
@@ -117,6 +151,10 @@ class GameState:
         for player in self.players.values():
             pos = player.pos
             visible_map[pos[0]][pos[1]] = '@'
+        
+        # Show all monsters as "&" (redundant as they're already marked in the map, but for clarity)
+        for pos, monster in self.monsters.items():
+            visible_map[pos[0]][pos[1]] = '&'
         
         # Include current player's data if they exist
         player_data = None
