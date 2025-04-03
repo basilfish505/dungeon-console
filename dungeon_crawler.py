@@ -8,6 +8,7 @@ import os
 from player import Player
 from combat import CombatSystem
 from monster import Monster  # Import the Monster class
+import ssl
 
 # Constants
 MAP_SIZE = 20
@@ -251,4 +252,6 @@ if __name__ == '__main__':
         socketio.run(app, 
                     host='127.0.0.1',
                     port=port,
-                    debug=True) 
+                    debug=True)
+
+print(ssl.OPENSSL_VERSION) 
