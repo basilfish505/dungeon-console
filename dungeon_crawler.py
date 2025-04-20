@@ -13,7 +13,7 @@ import ssl
 # Constants
 MAP_SIZE = 20
 BOULDER_PROBABILITY = 0.03
-MONSTER_PROBABILITY = 0.02  # 2% chance of monster spawn per tile
+MONSTER_PROBABILITY = 0.06  # 2% chance of monster spawn per tile
 SECRET_KEY = 'your-secret-key-here'
 
 app = Flask(__name__)
