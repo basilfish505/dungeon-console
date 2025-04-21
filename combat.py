@@ -84,7 +84,7 @@ class CombatSystem:
         defender_display_name = defender.type if is_monster_combat else defender.id
         
         # Add combat messages
-        combat_message = f"{attacker.id} engages {defender_display_name} in combat!"
+        combat_message = f".... {attacker.id} engages {defender_display_name} in combat!"
         self.game_state.add_player_message(attacker_id, combat_message)
         if not is_monster_combat:
             self.game_state.add_player_message(defender_id, combat_message)
@@ -133,7 +133,7 @@ class CombatSystem:
             self._add_entity_to_battle(battle, new_player_id, new_player, False)
             
             # Add messages about the new combatant
-            join_message = f"{new_player.id} joins the battle!"
+            join_message = f".... {new_player.id} joins the battle!"
             for participant_id in battle['participants']:
                 self.game_state.add_player_message(participant_id, join_message)
         
@@ -310,16 +310,16 @@ class CombatSystem:
             target.hp -= damage
             
             # Add damage messages
-            self.game_state.add_player_message(attacker_id, f"You deal {damage} damage to {target_display}!")
+            self.game_state.add_player_message(attacker_id, f".... You deal {damage} damage to {target_display}!")
             
             # Inform other players about the attack
             for p_id in battle['participants']:
                 if p_id != attacker_id and p_id != target_id:
-                    self.game_state.add_player_message(p_id, f"{attacker.id} deals {damage} damage to {target_display}!")
+                    self.game_state.add_player_message(p_id, f".... {attacker.id} deals {damage} damage to {target_display}!")
             
             # Inform the target if it's a player
             if not target_is_monster:
-                self.game_state.add_player_message(target_id, f"You take {damage} damage from {attacker.id}!")
+                self.game_state.add_player_message(target_id, f".... You take {damage} damage from {attacker.id}!")
             
             # Check for death
             if target.hp <= 0:
@@ -344,16 +344,16 @@ class CombatSystem:
             battle['defend_status'][defender_id] = False
             
             # Add block messages
-            self.game_state.add_player_message(attacker_id, f"Your blow is thwarted by {defender_display}'s skillful guard!")
+            self.game_state.add_player_message(attacker_id, f".... Your blow is thwarted by {defender_display}'s skillful guard!")
             
             # Notify other players
             for p_id in battle['participants']:
                 if p_id != attacker_id and p_id != defender_id:
-                    self.game_state.add_player_message(p_id, f"{self.game_state.players[attacker_id].id}'s blow is thwarted by {defender_display}'s skillful guard!")
+                    self.game_state.add_player_message(p_id, f".... {self.game_state.players[attacker_id].id}'s blow is thwarted by {defender_display}'s skillful guard!")
             
             # Notify the defender if it's a player
             if defender_id in self.game_state.players:
-                self.game_state.add_player_message(defender_id, f"{self.game_state.players[attacker_id].id}'s blow is thwarted by your skillful guard!")
+                self.game_state.add_player_message(defender_id, f".... {self.game_state.players[attacker_id].id}'s blow is thwarted by your skillful guard!")
             
             return True
         return False
@@ -370,12 +370,12 @@ class CombatSystem:
         battle['defend_status'][player_id] = True
         
         # Add messages
-        self.game_state.add_player_message(player_id, "You take a defensive stance.")
+        self.game_state.add_player_message(player_id, ".... You take a defensive stance.")
         
         # Notify other players
         for p_id in battle['participants']:
             if p_id != player_id:
-                self.game_state.add_player_message(p_id, f"{player.id} takes a defensive stance.")
+                self.game_state.add_player_message(p_id, f".... {player.id} takes a defensive stance.")
         
         # Send combat updates to all participants
         for p_id in battle['participants']:
@@ -504,21 +504,21 @@ class CombatSystem:
             target.hp -= damage
             
             # Add messages
-            attack_message = f"The {monster.type} attacks {target.id} for {damage} damage!"
+            attack_message = f".... The {monster.type} attacks {target.id} for {damage} damage!"
             
             # Send messages to players
             for p_id in battle['participants']:
                 if p_id == target_id:
                     # Send personalized message to the attacked player
-                    self.game_state.add_player_message(p_id, f"The {monster.type} attacks you for {damage} damage!")
+                    self.game_state.add_player_message(p_id, f".... The {monster.type} attacks you for {damage} damage!")
                 else:
                     # Send general message to other players
-                    self.game_state.add_player_message(p_id, attack_message)
+                    self.game_state.add_player_message(p_id, f".... {attack_message}")
             
             # Send global message, but exclude the attacked player to avoid duplicate messages
             for player_id in self.game_state.active_players:
                 if player_id not in battle['participants'] or player_id != target_id:
-                    self.game_state.add_player_message(player_id, attack_message)
+                    self.game_state.add_player_message(player_id, f".... {attack_message}")
             
             # Check for player death
             if target.hp <= 0:
@@ -611,19 +611,19 @@ class CombatSystem:
         # Create message based on player's role
         if is_attacker:
             if blocked:
-                message = f"Your blow was thwarted by {target_display}'s skillful guard!"
+                message = f".... Your blow was thwarted by {target_display}'s skillful guard!"
             else:
-                message = f"You dealt {damage} damage to {target_display}."
+                message = f".... You dealt {damage} damage to {target_display}."
         elif is_target:
             if blocked:
-                message = f"You blocked {attacker_display}'s attack with your skillful guard!"
+                message = f".... You blocked {attacker_display}'s attack with your skillful guard!"
             else:
-                message = f"You took {damage} damage from {attacker_display}."
+                message = f".... You took {damage} damage from {attacker_display}."
         else:
             if blocked:
-                message = f"{attacker_display}'s blow was thwarted by {target_display}'s skillful guard!"
+                message = f".... {attacker_display}'s blow was thwarted by {target_display}'s skillful guard!"
             else:
-                message = f"{attacker_display} dealt {damage} damage to {target_display}."
+                message = f".... {attacker_display} dealt {damage} damage to {target_display}."
         
         # Create the update
         update = self._create_combat_update(
@@ -655,9 +655,9 @@ class CombatSystem:
         
         # Create message based on player's role
         if is_defender:
-            message = "You took a defensive stance."
+            message = ".... You took a defensive stance."
         else:
-            message = f"{defender_display} took a defensive stance."
+            message = f".... {defender_display} took a defensive stance."
         
         # Create the update
         update = self._create_combat_update(
@@ -681,9 +681,9 @@ class CombatSystem:
         
         # Create message based on player's role
         if is_target:
-            message = f"The {monster_display} attacks you for {damage} damage!"
+            message = f".... The {monster_display} attacks you for {damage} damage!"
         else:
-            message = f"The {monster_display} attacks {target_display} for {damage} damage!"
+            message = f".... The {monster_display} attacks {target_display} for {damage} damage!"
         
         # Create the update
         update = self._create_combat_update(
@@ -758,8 +758,8 @@ class CombatSystem:
         monster.in_combat = False
         
         # Add messages
-        self.game_state.add_player_message(killer_id, f"You have defeated the {monster.type}!")
-        self.game_state.add_global_message(f"A {monster.type} has been slain by {killer.id}!")
+        self.game_state.add_player_message(killer_id, f".... You have defeated the {monster.type}!")
+        self.game_state.add_global_message(f".... A {monster.type} has been slain by {killer.id}!")
         
         # Remove monster from battle
         battle['monsters'].remove(monster)
@@ -779,7 +779,7 @@ class CombatSystem:
                 'battle_id': battle['battle_id'],
                 'monster_id': monster.type,
                 'killer_id': killer.id,
-                'message': f"The {monster.type} has been defeated by {killer.id}!"
+                'message': f".... The {monster.type} has been defeated by {killer.id}!"
             }
             emit('combat_update', death_data, room=p_id)
         
@@ -808,7 +808,7 @@ class CombatSystem:
         player.in_combat = False
         
         # Add global message
-        self.game_state.add_global_message(f"{player.id} has been slain!")
+        self.game_state.add_global_message(f".... {player.id} has been slain!")
         
         # Remove player from battle
         if player_id in battle['participants']:
@@ -828,7 +828,7 @@ class CombatSystem:
                 'type': 'player_death',
                 'battle_id': battle['battle_id'],
                 'player_id': player.id,
-                'message': f"{player.id} has been slain!"
+                'message': f".... {player.id} has been slain!"
             }
             emit('combat_update', death_data, room=p_id)
         
@@ -837,7 +837,7 @@ class CombatSystem:
             'type': 'player_death',
             'battle_id': battle['battle_id'],
             'player_id': player.id,
-            'message': "Thou art dead."
+            'message': ".... Thou art dead."
         }
         emit('combat_update', death_data, room=player_id)
         
@@ -885,7 +885,7 @@ class CombatSystem:
                 end_data = {
                     'type': 'combat_end',
                     'battle_id': battle['battle_id'],
-                    'message': "The battle has ended."
+                    'message': ".... The battle has ended."
                 }
                 emit('combat_update', end_data, room=last_player_id)
             
