@@ -215,8 +215,31 @@ def handle_select_id(player_id):
 def handle_disconnect():
     player_id = session.get('player_id')
     if player_id:
+        # Check if the disconnecting player was in active combat and if it was their turn
+        if player_id in game_state.active_combats:
+            battle_id = game_state.active_combats[player_id]
+            if battle_id in combat_system.battles:
+                battle = combat_system.battles[battle_id]
+                # Check if battle is active and has turns
+                if battle['status'] == 'active' and battle['turn_order']:
+                    current_turn_index = battle['current_turn_index']
+                    # Check bounds for safety
+                    if current_turn_index < len(battle['turn_order']):
+                        current_turn_id = battle['turn_order'][current_turn_index]
+                        if current_turn_id == player_id:
+                            print(f"Player {player_id} disconnected during their turn. Advancing turn.")
+                            # Remove player first so _advance_turn knows they are inactive
+                            game_state.remove_player(player_id)
+                            combat_system._advance_turn(battle)
+                            # Exit early since remove_player and emit are handled
+                            return
+        
+        # If not handled by combat logic above, proceed with normal removal
         game_state.remove_player(player_id)
-        emit('game_state', game_state.get_game_state(None), broadcast=True)
+        # Update remaining players (optional, can be intensive if many players)
+        # Consider if this broadcast is necessary or if updates happen via combat system
+        # emit('game_state', game_state.get_game_state(None), broadcast=True) 
+        print(f"Player {player_id} disconnected.") # Keep log
 
 @socketio.on('move')
 def handle_move(direction):

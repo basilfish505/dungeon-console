@@ -389,34 +389,42 @@ class CombatSystem:
         # Move to the next participant
         battle['current_turn_index'] = (battle['current_turn_index'] + 1) % len(battle['turn_order'])
         current_turn_id = battle['turn_order'][battle['current_turn_index']]
-        
-        # Check if the current entity still exists in the battle
-        entity_exists = False
+
+        # Check if the current entity still exists and is active
+        entity_exists_and_active = False
         if current_turn_id in self.game_state.players:
-            entity_exists = current_turn_id in battle['participants']
+            # Check if player exists AND is active (connected)
+            entity_exists_and_active = current_turn_id in self.game_state.active_players
         else:
+            # Check if monster exists
             for monster in battle['monsters']:
                 if monster.id == current_turn_id:
-                    entity_exists = True
+                    entity_exists_and_active = True
                     break
-        
-        # If entity doesn't exist, recursively advance to next turn
-        if not entity_exists:
-            print(f"Entity {current_turn_id} not found in battle, skipping turn")
+
+        # If entity doesn't exist or is an inactive player, skip their turn
+        if not entity_exists_and_active:
+            print(f"Entity {current_turn_id} not active or found in battle, removing from turn order and skipping turn.")
             # Remove from turn order
-            battle['turn_order'].remove(current_turn_id)
+            original_index = battle['turn_order'].index(current_turn_id)
+            battle['turn_order'].pop(original_index)
+
+            # Adjust the index: if the removed player was before or at the current index,
+            # the effective next index remains the same relative to the new list size.
+            # If the removed player was the *last* element and the current_turn_index
+            # pointed to it, wrap around to 0.
             if battle['current_turn_index'] >= len(battle['turn_order']):
-                battle['current_turn_index'] = 0
-            
-            # If no more turns, end the battle
+                 battle['current_turn_index'] = 0
+
+            # If turn order is now empty, check if battle should end
             if not battle['turn_order']:
                 self._check_battle_end(battle)
                 return
-            
-            # Try the next turn
+
+            # Recursively call advance_turn to find the next valid participant
             self._advance_turn(battle)
             return
-        
+
         # Handle the turn based on entity type
         if current_turn_id in self.game_state.players:
             self._handle_player_turn(current_turn_id, battle)
