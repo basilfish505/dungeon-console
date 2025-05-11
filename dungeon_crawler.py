@@ -30,11 +30,22 @@ class GameState:
         self.active_combats = {}
         self.monsters = {}
         self.game_map = None
-        self.generate_map()
+        self.levels = {}  # Dictionary to store generated levels
+        self.current_level = 0  # Track current level (0 is top level)
+        self.generate_top_level()
 
-    def generate_map(self):
-        """Generate a new map using the MapGenerator"""
-        self.game_map, self.monsters = self.map_generator.generate_map()
+    def generate_top_level(self):
+        """Generate the top level using the MapGenerator"""
+        self.game_map, self.monsters = self.map_generator.generate_top_level()
+        self.levels[0] = (self.game_map, self.monsters)
+
+    def generate_level(self, level_number):
+        """Generate a new level if it doesn't exist"""
+        if level_number not in self.levels:
+            self.game_map, self.monsters = self.map_generator.generate_level()
+            self.levels[level_number] = (self.game_map, self.monsters)
+        else:
+            self.game_map, self.monsters = self.levels[level_number]
 
     def find_random_start(self):
         """Find a random starting position using the MapGenerator"""
@@ -82,6 +93,16 @@ class GameState:
         new_pos = player.move(direction)
 
         if self.is_valid_move(new_pos):
+            # Check if player is moving onto stairs down
+            if self.game_map[new_pos[0]][new_pos[1]] == '↓':
+                # Descend to next level
+                self.current_level += 1
+                self.generate_level(self.current_level)
+                # Find a safe position for the player on the new level
+                player.pos = self.find_random_start()
+                self.add_player_message(player_id, f"You descend deeper into the dungeon...")
+                return True
+            
             if self.is_combat_scenario(player_id, new_pos):
                 return True
             player.pos = new_pos

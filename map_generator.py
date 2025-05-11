@@ -12,11 +12,30 @@ class MapGenerator:
         self.game_map = None
         self.monsters = {}
 
-    def generate_map(self):
-        """Generate a new map with walls, boulders, and monsters"""
+    def generate_level(self):
+        """Generate a new level with walls, boulders, and monsters"""
         self.game_map = self.create_empty_map_with_walls()
         self.populate_map_with_boulders()
         self.spawn_monsters()
+        return self.game_map, self.monsters
+
+    def generate_top_level(self):
+        """Generate the top level without boulders or monsters, but with stairs down"""
+        # Create a map with only border walls
+        self.game_map = [['.' for _ in range(self.map_size)] for _ in range(self.map_size)]
+        # Add walls around the border
+        for i in range(self.map_size):
+            self.game_map[0][i] = '#'  # Top border
+            self.game_map[self.map_size-1][i] = '#'  # Bottom border
+            self.game_map[i][0] = '#'  # Left border
+            self.game_map[i][self.map_size-1] = '#'  # Right border
+        
+        self.monsters = {}  # Clear any existing monsters
+        
+        # Place stairs down in a random position
+        stairs_x, stairs_y = self.get_random_position()
+        self.game_map[stairs_y][stairs_x] = '↓'  # Unicode down arrow for stairs down
+        
         return self.game_map, self.monsters
 
     def create_empty_map_with_walls(self):
@@ -63,4 +82,4 @@ class MapGenerator:
         """Check if a position is free of walls, players, and monsters"""
         return (self.game_map[y][x] == '.' and 
                 not any(p.pos == [y, x] for p in players.values()) and
-                (y, x) not in existing_monsters) 
+                (y, x) not in existing_monsters)
