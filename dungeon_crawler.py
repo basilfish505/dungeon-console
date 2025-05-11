@@ -263,6 +263,70 @@ def handle_combat_action(data):
     target_id = data.get('target_id')  # Get the target if provided
     combat_system.process_action(player_id, action, target_id)
 
+def _handle_monster_turn(self, monster_id, battle):
+    """Process a monster's turn"""
+    # Find the monster
+    monster = None
+    for m in battle['monsters']:
+        if m.id == monster_id:
+            monster = m
+            break
+    
+    if not monster:
+        # Monster not found, skip this turn
+        print(f"Monster {monster_id} not found in battle, skipping turn")
+        if monster_id in battle['turn_order']:
+            battle['turn_order'].remove(monster_id)
+        # Advance to next turn
+        self._advance_turn(battle)
+        return
+    
+    # Notify all players that a monster is taking its turn
+    for player_id in battle['participants']:
+        monster_turn_notification = self._create_combat_update(
+            player_id,
+            battle,
+            'turn_notification',
+            f"The {monster.type} is preparing to attack!",
+            your_turn=False,
+            active_player=monster.type
+        )
+        emit('combat_update', monster_turn_notification, room=player_id)
+    
+    # Monster automatically attacks a random player
+    if battle['participants']:
+        # Choose a target
+        target_id = random.choice(battle['participants'])
+        target = self.game_state.players[target_id]
+        
+        # Calculate monster damage
+        damage = random.randint(1, 6)
+        target.hp -= damage
+        
+        # Add messages only to battle participants
+        for p_id in battle['participants']:
+            if p_id == target_id:
+                # Send personalized message to the attacked player
+                self.game_state.add_player_message(p_id, f"The {monster.type} attacks you for {damage} damage!")
+            else:
+                # Send general message to other players in the battle
+                self.game_state.add_player_message(p_id, f"The {monster.type} attacks {target.id} for {damage} damage!")
+        
+        # Check for player death
+        if target.hp <= 0:
+            self._handle_player_death(target_id, battle)
+        else:
+            # Send combat updates
+            for p_id in battle['participants']:
+                self._send_monster_attack_update(p_id, battle, monster, target_id, damage)
+        
+        # After the monster's turn is complete, advance to next turn if the battle isn't over
+        if battle['status'] == 'active':
+            self._advance_turn(battle)
+    else:
+        # No players left to attack, end battle
+        self._check_battle_end(battle)
+
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     if os.environ.get('RENDER'):  # Check if we're on Render

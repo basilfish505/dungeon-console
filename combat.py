@@ -490,9 +490,6 @@ class CombatSystem:
             )
             emit('combat_update', monster_turn_notification, room=player_id)
         
-        # Give a slight delay to make the monster's turn feel more natural
-        # In a real game, you might want to use an actual delay mechanism
-        
         # Monster automatically attacks a random player
         if battle['participants']:
             # Choose a target
@@ -503,22 +500,14 @@ class CombatSystem:
             damage = random.randint(1, 6)
             target.hp -= damage
             
-            # Add messages
-            attack_message = f".... The {monster.type} attacks {target.id} for {damage} damage!"
-            
-            # Send messages to players
+            # Add messages only to battle participants
             for p_id in battle['participants']:
                 if p_id == target_id:
                     # Send personalized message to the attacked player
                     self.game_state.add_player_message(p_id, f".... The {monster.type} attacks you for {damage} damage!")
                 else:
-                    # Send general message to other players
-                    self.game_state.add_player_message(p_id, f".... {attack_message}")
-            
-            # Send global message, but exclude the attacked player to avoid duplicate messages
-            for player_id in self.game_state.active_players:
-                if player_id not in battle['participants'] or player_id != target_id:
-                    self.game_state.add_player_message(player_id, f".... {attack_message}")
+                    # Send general message to other players in the battle
+                    self.game_state.add_player_message(p_id, f".... The {monster.type} attacks {target.id} for {damage} damage!")
             
             # Check for player death
             if target.hp <= 0:
@@ -675,6 +664,10 @@ class CombatSystem:
     
     def _send_monster_attack_update(self, player_id, battle, monster, target_id, damage):
         """Send a combat update for a monster's attack"""
+        # Only send updates to players who are actually in this battle
+        if player_id not in battle['participants']:
+            return
+        
         is_target = player_id == target_id
         monster_display = monster.type
         target_display = self.game_state.players[target_id].id
