@@ -9,6 +9,7 @@ from player import Player
 from combat import CombatSystem
 from monster import Monster  # Import the Monster class
 import ssl
+from map_generator import MapGenerator  # Add this import at the top
 
 # Constants
 MAP_SIZE = 20
@@ -22,60 +23,26 @@ socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')
 
 class GameState:
     def __init__(self):
-        self.map_size = MAP_SIZE
-        self.game_map = None
+        self.map_generator = MapGenerator()
         self.players = {}
         self.active_players = {}
-        self.player_messages = {}  # Dictionary to store messages per player
-        self.active_combats = {}  # Dictionary to track active combat states
-        self.monsters = {}  # Dictionary to store monsters by position tuple
+        self.player_messages = {}
+        self.active_combats = {}
+        self.monsters = {}
+        self.game_map = None
         self.generate_map()
 
     def generate_map(self):
-        self.game_map = self.create_empty_map_with_walls()
-        self.populate_map_with_boulders()
-        self.spawn_monsters()  # Add monsters to the map
-
-    def create_empty_map_with_walls(self):
-        return [['#' for _ in range(self.map_size)] for _ in range(self.map_size)]
-
-    def populate_map_with_boulders(self):
-        for i in range(1, self.map_size-1):
-            for j in range(1, self.map_size-1):
-                self.game_map[i][j] = '#' if random.random() < BOULDER_PROBABILITY else '.'
-
-    def spawn_monsters(self):
-        for i in range(1, self.map_size-1):
-            for j in range(1, self.map_size-1):
-                # Only spawn monsters on empty spaces
-                if self.game_map[i][j] == '.' and random.random() < MONSTER_PROBABILITY:
-                    # Select a random monster type
-                    monster_types = ["Skeleton", "Ghoul", "Zombie", "Goblin", "Orc", 
-                                    "Troll", "Wraith", "Lich", "Giant Spider", "Slime"]
-                    monster_type = random.choice(monster_types)
-                    monster_id = f"{monster_type}-{i},{j}"
-                    monster = Monster(monster_id, monster_type, [i, j])
-                    
-                    # Store the monster in the monsters dictionary
-                    self.monsters[(i, j)] = monster
-                    
-                    # Mark the monster's position on the map
-                    self.game_map[i][j] = '&'
+        """Generate a new map using the MapGenerator"""
+        self.game_map, self.monsters = self.map_generator.generate_map()
 
     def find_random_start(self):
-        while True:
-            x, y = self.get_random_position()
-            if self.is_position_free(x, y):
-                return [y, x]
-
-    def get_random_position(self):
-        return random.randint(1, self.map_size-2), random.randint(1, self.map_size-2)
+        """Find a random starting position using the MapGenerator"""
+        return self.map_generator.find_random_start(self.players, self.monsters)
 
     def is_position_free(self, x, y):
-        # Check if position is free (no walls, players, or monsters)
-        return (self.game_map[y][x] == '.' and 
-                not any(p.pos == [y, x] for p in self.players.values()) and
-                (y, x) not in self.monsters)
+        """Check if a position is free using the MapGenerator"""
+        return self.map_generator.is_position_free(x, y, self.players, self.monsters)
 
     def add_player(self, player_id):
         if player_id not in self.players:
@@ -122,8 +89,8 @@ class GameState:
         return False
 
     def is_valid_move(self, new_pos):
-        return (0 <= new_pos[0] < self.map_size and 
-                0 <= new_pos[1] < self.map_size and 
+        return (0 <= new_pos[0] < self.map_generator.map_size and 
+                0 <= new_pos[1] < self.map_generator.map_size and 
                 self.game_map[new_pos[0]][new_pos[1]] != '#')
 
     def is_combat_scenario(self, player_id, new_pos):
