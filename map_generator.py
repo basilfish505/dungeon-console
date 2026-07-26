@@ -3,8 +3,8 @@ from monster import Monster
 
 # Constants
 MAP_SIZE = 20
-BOULDER_PROBABILITY = 0.03
-MONSTER_PROBABILITY = 0.06
+BOULDER_PROBABILITY = 0.03  # 3% chance of boulder per interior tile
+MONSTER_PROBABILITY = 0.01  # 1% chance of monster spawn per empty tile
 
 class MapGenerator:
     def __init__(self, map_size=MAP_SIZE):
@@ -39,7 +39,7 @@ class MapGenerator:
         return self.game_map, self.monsters
 
     def create_empty_map_with_walls(self):
-        """Create an empty map with walls around the edges"""
+        """Create a map filled with walls (interior carved later)."""
         return [['#' for _ in range(self.map_size)] for _ in range(self.map_size)]
 
     def populate_map_with_boulders(self):
