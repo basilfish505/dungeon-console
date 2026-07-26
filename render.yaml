@@ -1,9 +1,11 @@
 services:
   - type: web
-    name: dungeon-crawler
+    name: permaquest
     env: python
     buildCommand: pip install -r requirements.txt
     startCommand: gunicorn --worker-class eventlet -w 1 dungeon_crawler:app
     envVars:
       - key: PYTHON_VERSION
         value: 3.11
+      - key: RENDER
+        value: "true"

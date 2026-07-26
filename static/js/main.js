@@ -72,7 +72,7 @@ const Game = (function() {
         SocketHandler.sendMove(direction);
     }, 100);
     
-    // Expose necessary functions to global scope for HTML onclick attributes
+    // Expose for console/debug access (UI uses addEventListener, not onclick)
     window.submitName = submitName;
     window.move = move;
     window.sendCombatAction = Combat.sendAction;

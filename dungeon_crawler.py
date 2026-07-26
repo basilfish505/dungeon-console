@@ -7,14 +7,10 @@ import random
 import os
 from player import Player
 from combat import CombatSystem
-from monster import Monster  # Import the Monster class
 import ssl
-from map_generator import MapGenerator  # Add this import at the top
+from map_generator import MapGenerator
 
-# Constants
-MAP_SIZE = 20
-BOULDER_PROBABILITY = 0.03
-MONSTER_PROBABILITY = 0.06  # 2% chance of monster spawn per tile
+# Constants (map spawn rates live in map_generator.py)
 SECRET_KEY = 'your-secret-key-here'
 
 app = Flask(__name__)
@@ -132,7 +128,6 @@ class GameState:
         
         return False
 
-    # Update get_game_state to include monsters
     def get_game_state(self, current_player_id):
         visible_map = [row[:] for row in self.game_map]
         
@@ -219,15 +214,12 @@ def handle_disconnect():
                             # Remove player first so _advance_turn knows they are inactive
                             game_state.remove_player(player_id)
                             combat_system._advance_turn(battle)
-                            # Exit early since remove_player and emit are handled
+                            # Exit early; turn advance notifies remaining combatants
                             return
         
         # If not handled by combat logic above, proceed with normal removal
         game_state.remove_player(player_id)
-        # Update remaining players (optional, can be intensive if many players)
-        # Consider if this broadcast is necessary or if updates happen via combat system
-        # emit('game_state', game_state.get_game_state(None), broadcast=True) 
-        print(f"Player {player_id} disconnected.") # Keep log
+        print(f"Player {player_id} disconnected.")
 
 @socketio.on('move')
 def handle_move(direction):

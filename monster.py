@@ -3,7 +3,7 @@ class Monster:
         self.id = monster_id  # Unique identifier
         self.type = monster_type  # Type of the monster (e.g., "Goblin")
         self.pos = position   # Position on the map
-        self.hp = 20          # Starting HP, slightly lower than players
+        self.hp = 20          # Starting HP (players roll 10–20 max HP)
         self.attack_power = 5 # Basic attack power
         self.in_combat = False # Combat status flag
     
