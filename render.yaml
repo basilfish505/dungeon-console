@@ -3,7 +3,7 @@ services:
     name: dungeon-crawler
     env: python
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn dungeon_crawler:app
+    startCommand: gunicorn --worker-class eventlet -w 1 dungeon_crawler:app
     envVars:
       - key: PYTHON_VERSION
         value: 3.11
