@@ -34,13 +34,15 @@ class GameState:
         self.game_map, self.monsters = self.map_generator.generate_top_level()
         self.levels[0] = (self.game_map, self.monsters)
 
-    def ensure_level(self, level_number):
+    def ensure_level(self, level_number, stairs_up_pos=None):
         """Return (map, monsters) for a level, generating it if needed"""
         if level_number not in self.levels:
             if level_number == 0:
                 self.generate_top_level()
             else:
-                game_map, monsters = self.map_generator.generate_level()
+                game_map, monsters = self.map_generator.generate_level(
+                    stairs_up_pos=stairs_up_pos
+                )
                 self.levels[level_number] = (game_map, monsters)
         return self.levels[level_number]
 
@@ -50,6 +52,26 @@ class GameState:
             pid: player for pid, player in self.players.items()
             if player.dungeon_level == level_number
         }
+
+    def place_player_on_stair(self, player, level_number, stair_symbol):
+        """Move player to a level next to (or on) the matching staircase"""
+        game_map, monsters = self.ensure_level(level_number)
+        stair_pos = self.map_generator.find_tile(game_map, stair_symbol)
+        player.dungeon_level = level_number
+        if stair_pos is None:
+            player.pos = self.find_random_start(level_number)
+            return
+
+        # Prefer an adjacent open tile so the stair stays visible and usable
+        y, x = stair_pos
+        players_here = self.players_on_level(level_number)
+        for dy, dx in ((0, 1), (0, -1), (1, 0), (-1, 0)):
+            ny, nx = y + dy, x + dx
+            if self.map_generator.is_position_free(nx, ny, players_here, monsters, game_map):
+                player.pos = [ny, nx]
+                return
+
+        player.pos = stair_pos
 
     def find_random_start(self, level_number=0):
         """Find a random starting position on the given dungeon level"""
@@ -114,13 +136,23 @@ class GameState:
         new_pos = player.move(direction)
 
         if self.is_valid_move(new_pos, game_map):
-            # Check if player is moving onto stairs down
-            if game_map[new_pos[0]][new_pos[1]] == '↓':
-                # Only this player descends
-                player.dungeon_level += 1
-                self.ensure_level(player.dungeon_level)
-                player.pos = self.find_random_start(player.dungeon_level)
-                self.add_player_message(player_id, f"You descend deeper into the dungeon...")
+            tile = game_map[new_pos[0]][new_pos[1]]
+
+            # Stairs down → deeper level, land on ↑
+            if tile == '↓':
+                dest_level = player.dungeon_level + 1
+                self.ensure_level(dest_level, stairs_up_pos=new_pos)
+                self.place_player_on_stair(player, dest_level, '↑')
+                self.add_player_message(player_id, "You descend deeper into the dungeon...")
+                return True
+
+            # Stairs up → previous level, land on ↓
+            if tile == '↑':
+                if player.dungeon_level <= 0:
+                    return False
+                dest_level = player.dungeon_level - 1
+                self.place_player_on_stair(player, dest_level, '↓')
+                self.add_player_message(player_id, "You climb back toward the surface...")
                 return True
             
             if self.is_combat_scenario(player_id, new_pos, monsters):

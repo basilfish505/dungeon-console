@@ -12,12 +12,14 @@ class MapGenerator:
         self.game_map = None
         self.monsters = {}
 
-    def generate_level(self):
-        """Generate a new level with walls, boulders, and monsters"""
+    def generate_level(self, stairs_up_pos=None):
+        """Generate a new level with walls, boulders, monsters, and stairs both ways"""
         self.game_map = self.create_empty_map_with_walls()
         self.monsters = {}  # Fresh dict so earlier levels keep their monsters
         self.populate_map_with_boulders()
         self.spawn_monsters()
+        up_pos = self.place_stair('↑', preferred_pos=stairs_up_pos)
+        self.place_stair('↓', avoid_pos=up_pos)
         return self.game_map, self.monsters
 
     def generate_top_level(self):
@@ -34,8 +36,7 @@ class MapGenerator:
         self.monsters = {}  # Clear any existing monsters
         
         # Place stairs down in a random position
-        stairs_x, stairs_y = self.get_random_position()
-        self.game_map[stairs_y][stairs_x] = '↓'  # Unicode down arrow for stairs down
+        self.place_stair('↓')
         
         return self.game_map, self.monsters
 
@@ -67,6 +68,32 @@ class MapGenerator:
                     
                     # Mark the monster's position on the map
                     self.game_map[i][j] = '&'
+
+    def place_stair(self, symbol, preferred_pos=None, avoid_pos=None):
+        """Place a stair tile, preferring a position when provided. Returns [y, x]."""
+        if preferred_pos is not None:
+            y, x = preferred_pos
+            if 1 <= y < self.map_size - 1 and 1 <= x < self.map_size - 1:
+                if (y, x) in self.monsters:
+                    del self.monsters[(y, x)]
+                self.game_map[y][x] = symbol
+                return [y, x]
+
+        while True:
+            x, y = self.get_random_position()
+            if avoid_pos is not None and [y, x] == avoid_pos:
+                continue
+            if self.game_map[y][x] == '.':
+                self.game_map[y][x] = symbol
+                return [y, x]
+
+    def find_tile(self, game_map, symbol):
+        """Find the first tile matching symbol; returns [y, x] or None"""
+        for y, row in enumerate(game_map):
+            for x, cell in enumerate(row):
+                if cell == symbol:
+                    return [y, x]
+        return None
 
     def find_random_start(self, players, existing_monsters, game_map=None):
         """Find a random starting position that's free of players and monsters"""
