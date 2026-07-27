@@ -4,6 +4,7 @@ class Player:
     def __init__(self, player_id, position):
         self.id = player_id
         self.pos = position
+        self.dungeon_level = 0  # 0 is top level
         self.level = 1
         self.xp = 0
         # HP/MP properties

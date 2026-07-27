@@ -15,6 +15,7 @@ class MapGenerator:
     def generate_level(self):
         """Generate a new level with walls, boulders, and monsters"""
         self.game_map = self.create_empty_map_with_walls()
+        self.monsters = {}  # Fresh dict so earlier levels keep their monsters
         self.populate_map_with_boulders()
         self.spawn_monsters()
         return self.game_map, self.monsters
@@ -67,19 +68,20 @@ class MapGenerator:
                     # Mark the monster's position on the map
                     self.game_map[i][j] = '&'
 
-    def find_random_start(self, players, existing_monsters):
+    def find_random_start(self, players, existing_monsters, game_map=None):
         """Find a random starting position that's free of players and monsters"""
         while True:
             x, y = self.get_random_position()
-            if self.is_position_free(x, y, players, existing_monsters):
+            if self.is_position_free(x, y, players, existing_monsters, game_map):
                 return [y, x]
 
     def get_random_position(self):
         """Get a random position within the map bounds"""
         return random.randint(1, self.map_size-2), random.randint(1, self.map_size-2)
 
-    def is_position_free(self, x, y, players, existing_monsters):
+    def is_position_free(self, x, y, players, existing_monsters, game_map=None):
         """Check if a position is free of walls, players, and monsters"""
-        return (self.game_map[y][x] == '.' and 
+        check_map = game_map if game_map is not None else self.game_map
+        return (check_map[y][x] == '.' and 
                 not any(p.pos == [y, x] for p in players.values()) and
                 (y, x) not in existing_monsters)

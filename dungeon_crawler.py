@@ -27,7 +27,6 @@ class GameState:
         self.monsters = {}
         self.game_map = None
         self.levels = {}  # Dictionary to store generated levels
-        self.current_level = 0  # Track current level (0 is top level)
         self.generate_top_level()
 
     def generate_top_level(self):
@@ -35,27 +34,52 @@ class GameState:
         self.game_map, self.monsters = self.map_generator.generate_top_level()
         self.levels[0] = (self.game_map, self.monsters)
 
-    def generate_level(self, level_number):
-        """Generate a new level if it doesn't exist"""
+    def ensure_level(self, level_number):
+        """Return (map, monsters) for a level, generating it if needed"""
         if level_number not in self.levels:
-            self.game_map, self.monsters = self.map_generator.generate_level()
-            self.levels[level_number] = (self.game_map, self.monsters)
-        else:
-            self.game_map, self.monsters = self.levels[level_number]
+            if level_number == 0:
+                self.generate_top_level()
+            else:
+                game_map, monsters = self.map_generator.generate_level()
+                self.levels[level_number] = (game_map, monsters)
+        return self.levels[level_number]
 
-    def find_random_start(self):
-        """Find a random starting position using the MapGenerator"""
-        return self.map_generator.find_random_start(self.players, self.monsters)
+    def players_on_level(self, level_number):
+        """Players currently on the given dungeon level"""
+        return {
+            pid: player for pid, player in self.players.items()
+            if player.dungeon_level == level_number
+        }
 
-    def is_position_free(self, x, y):
-        """Check if a position is free using the MapGenerator"""
-        return self.map_generator.is_position_free(x, y, self.players, self.monsters)
+    def find_random_start(self, level_number=0):
+        """Find a random starting position on the given dungeon level"""
+        game_map, monsters = self.ensure_level(level_number)
+        return self.map_generator.find_random_start(
+            self.players_on_level(level_number), monsters, game_map
+        )
+
+    def is_position_free(self, x, y, level_number=0):
+        """Check if a position is free on the given dungeon level"""
+        game_map, monsters = self.ensure_level(level_number)
+        return self.map_generator.is_position_free(
+            x, y, self.players_on_level(level_number), monsters, game_map
+        )
+
+    def remove_monster_at(self, position):
+        """Remove a monster from whichever level it lives on"""
+        for game_map, monsters in self.levels.values():
+            if position in monsters:
+                del monsters[position]
+                game_map[position[0]][position[1]] = '.'
+                return True
+        return False
 
     def add_player(self, player_id):
         if player_id not in self.players:
-            # Create new Player object with random stats
-            position = self.find_random_start()
+            # New players always join on the top level
+            position = self.find_random_start(0)
             new_player = Player(player_id, position)
+            new_player.dungeon_level = 0
             self.players[player_id] = new_player
             # Initialize player's message list
             self.player_messages[player_id] = []
@@ -86,34 +110,37 @@ class GameState:
             return False
 
         player = self.players[player_id]
+        game_map, monsters = self.ensure_level(player.dungeon_level)
         new_pos = player.move(direction)
 
-        if self.is_valid_move(new_pos):
+        if self.is_valid_move(new_pos, game_map):
             # Check if player is moving onto stairs down
-            if self.game_map[new_pos[0]][new_pos[1]] == '↓':
-                # Descend to next level
-                self.current_level += 1
-                self.generate_level(self.current_level)
-                # Find a safe position for the player on the new level
-                player.pos = self.find_random_start()
+            if game_map[new_pos[0]][new_pos[1]] == '↓':
+                # Only this player descends
+                player.dungeon_level += 1
+                self.ensure_level(player.dungeon_level)
+                player.pos = self.find_random_start(player.dungeon_level)
                 self.add_player_message(player_id, f"You descend deeper into the dungeon...")
                 return True
             
-            if self.is_combat_scenario(player_id, new_pos):
+            if self.is_combat_scenario(player_id, new_pos, monsters):
                 return True
             player.pos = new_pos
             return True
         return False
 
-    def is_valid_move(self, new_pos):
+    def is_valid_move(self, new_pos, game_map):
         return (0 <= new_pos[0] < self.map_generator.map_size and 
                 0 <= new_pos[1] < self.map_generator.map_size and 
-                self.game_map[new_pos[0]][new_pos[1]] != '#')
+                game_map[new_pos[0]][new_pos[1]] != '#')
 
-    def is_combat_scenario(self, player_id, new_pos):
-        # Check for player-player combat
+    def is_combat_scenario(self, player_id, new_pos, monsters):
+        player = self.players[player_id]
+
+        # Check for player-player combat (same dungeon level only)
         for other_id, other_player in self.players.items():
             if (other_id != player_id and 
+                other_player.dungeon_level == player.dungeon_level and
                 other_player.pos == new_pos and 
                 other_id in self.active_players):
                 combat_system.start_combat(player_id, other_id)
@@ -121,23 +148,30 @@ class GameState:
         
         # Check for player-monster combat
         monster_pos = (new_pos[0], new_pos[1])
-        if monster_pos in self.monsters:
-            monster = self.monsters[monster_pos]
+        if monster_pos in monsters:
+            monster = monsters[monster_pos]
             combat_system.start_combat(player_id, monster)
             return True
         
         return False
 
     def get_game_state(self, current_player_id):
-        visible_map = [row[:] for row in self.game_map]
+        if current_player_id and current_player_id in self.players:
+            level = self.players[current_player_id].dungeon_level
+        else:
+            level = 0  # Pre-join / spectator view is the top level
+
+        game_map, monsters = self.ensure_level(level)
+        visible_map = [row[:] for row in game_map]
         
-        # Show all players as "@"
+        # Show players on this level as "@"
         for player in self.players.values():
-            pos = player.pos
-            visible_map[pos[0]][pos[1]] = '@'
+            if player.dungeon_level == level:
+                pos = player.pos
+                visible_map[pos[0]][pos[1]] = '@'
         
-        # Show all monsters as "&" (redundant as they're already marked in the map, but for clarity)
-        for pos, monster in self.monsters.items():
+        # Show monsters on this level as "&"
+        for pos, monster in monsters.items():
             visible_map[pos[0]][pos[1]] = '&'
         
         # Include current player's data if they exist

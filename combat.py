@@ -776,12 +776,8 @@ class CombatSystem:
             }
             emit('combat_update', death_data, room=p_id)
         
-        # Remove monster from game
-        monster_position = tuple(monster.pos)
-        if monster_position in self.game_state.monsters:
-            del self.game_state.monsters[monster_position]
-            # Update the game map to remove the monster symbol
-            self.game_state.game_map[monster_position[0]][monster_position[1]] = '.'
+        # Remove monster from whichever dungeon level it lives on
+        self.game_state.remove_monster_at(tuple(monster.pos))
         
         # Check if battle should end
         self._check_battle_end(battle)
@@ -834,8 +830,10 @@ class CombatSystem:
         }
         emit('combat_update', death_data, room=player_id)
         
-        # Clear the player's position on the map
-        self.game_state.game_map[player_position[0]][player_position[1]] = '.'
+        # Clear the player's tile on their dungeon level (players are overlaid, but keep map clean)
+        game_map, _ = self.game_state.ensure_level(player.dungeon_level)
+        if game_map[player_position[0]][player_position[1]] not in ('#', '↓'):
+            game_map[player_position[0]][player_position[1]] = '.'
         
         # Remove player from active combat
         if player_id in self.game_state.active_combats:
