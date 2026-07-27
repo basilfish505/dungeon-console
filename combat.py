@@ -1,14 +1,23 @@
 from flask import session
-from flask_socketio import emit
 import random
 from player import Player
 from monster import Monster
 import uuid
 
+TURN_TIMEOUT_SECONDS = 6
+
 class CombatSystem:
-    def __init__(self, game_state):
+    def __init__(self, game_state, socketio):
         self.game_state = game_state
+        self.socketio = socketio
         self.battles = {}  # Dictionary to store battle instances by battle_id
+
+    def _emit(self, event, data=None, room=None):
+        """Emit via SocketIO so background turn timers work outside request context"""
+        if data is None:
+            self.socketio.emit(event, room=room)
+        else:
+            self.socketio.emit(event, data, room=room)
     
     def start_combat(self, attacker_id, defender_id):
         """Initialize combat between two entities (players or monsters)"""
@@ -97,7 +106,8 @@ class CombatSystem:
             'turn_order': [attacker_id],
             'current_turn_index': 0,
             'status': 'active',
-            'defend_status': {}
+            'defend_status': {},
+            'turn_token': None
         }
         
         # Store the battle
@@ -113,6 +123,9 @@ class CombatSystem:
         # Send combat initiation to defender if it's a player
         if not is_monster_combat:
             self._send_combat_start(defender_id, battle)
+        
+        # Start turn timer for the opening actor (attacker)
+        self._start_turn_timer(battle, attacker_id)
         
         # Update all players' game state
         self._update_all_players()
@@ -175,13 +188,14 @@ class CombatSystem:
         combat_info = {
             'type': 'combat_start',
             'battle_id': battle['battle_id'],
-            'opponents': opponents
+            'opponents': opponents,
+            'turn_timeout': TURN_TIMEOUT_SECONDS
         }
         
         # Add accurate turn information
         self._update_combat_turn_info(combat_info, player_id, battle)
         
-        emit('combat_update', combat_info, room=player_id)
+        self._emit('combat_update', combat_info, room=player_id)
     
     def process_action(self, player_id, action, target_id=None):
         """Process a combat action from a player"""
@@ -216,6 +230,7 @@ class CombatSystem:
         
         # Advance to the next turn if an action was processed and the battle is still active
         if action_processed and battle['status'] == 'active':
+            self._cancel_turn_timer(battle)
             self._advance_turn(battle)
     
     def _infer_target(self, player_id, battle):
@@ -272,7 +287,7 @@ class CombatSystem:
             'targets': targets
         }
         
-        emit('combat_update', target_request, room=player_id)
+        self._emit('combat_update', target_request, room=player_id)
     
     def _handle_attack(self, attacker_id, target_id, battle):
         """Handle an attack action"""
@@ -381,47 +396,116 @@ class CombatSystem:
         for p_id in battle['participants']:
             self._send_defend_update(p_id, battle, player_id)
     
+    def _cancel_turn_timer(self, battle):
+        """Invalidate any pending turn timer for this battle"""
+        battle['turn_token'] = None
+
+    def _turn_timer_expire(self, battle_id, player_id, token):
+        """Background task: forfeit turn after timeout if still pending"""
+        self.socketio.sleep(TURN_TIMEOUT_SECONDS)
+        current = self.battles.get(battle_id)
+        if not current or current.get('status') != 'active':
+            return
+        if current.get('turn_token') != token:
+            return
+        if not current['turn_order']:
+            return
+        idx = current['current_turn_index']
+        if idx >= len(current['turn_order']):
+            return
+        if current['turn_order'][idx] != player_id:
+            return
+        print(f"Turn timeout — forfeiting {player_id}'s turn in battle {battle_id}")
+        self._forfeit_turn(current, player_id)
+
+    def _start_turn_timer(self, battle, player_id):
+        """Start a 6s forfeit timer for the given player's turn"""
+        token = str(uuid.uuid4())
+        battle['turn_token'] = token
+        # Use SocketIO background task so it runs on the server event loop
+        self.socketio.start_background_task(
+            self._turn_timer_expire,
+            battle['battle_id'],
+            player_id,
+            token
+        )
+
+    def _forfeit_turn(self, battle, player_id):
+        """Skip a player's turn after timeout or disconnect"""
+        if battle.get('status') != 'active':
+            return
+
+        display_name = player_id
+        if player_id in self.game_state.players:
+            display_name = self.game_state.players[player_id].id
+
+        self._cancel_turn_timer(battle)
+
+        forfeit_message = f".... {display_name}'s turn was forfeited."
+        for p_id in list(battle['participants']):
+            self.game_state.add_player_message(p_id, forfeit_message)
+            self._emit('combat_update', {
+                'type': 'turn_notification',
+                'battle_id': battle['battle_id'],
+                'message': forfeit_message,
+                'your_turn': False,
+                'active_player': display_name,
+                'turn_timeout': TURN_TIMEOUT_SECONDS
+            }, room=p_id)
+
+        if battle['status'] == 'active':
+            self._advance_turn(battle)
+
+    def forfeit_current_turn_if_player(self, player_id):
+        """Public helper: forfeit if it is this player's turn (e.g. disconnect)"""
+        if player_id not in self.game_state.active_combats:
+            return False
+        battle_id = self.game_state.active_combats[player_id]
+        battle = self.battles.get(battle_id)
+        if not battle or battle.get('status') != 'active' or not battle.get('turn_order'):
+            return False
+        idx = battle['current_turn_index']
+        if idx >= len(battle['turn_order']):
+            return False
+        if battle['turn_order'][idx] != player_id:
+            return False
+        self._forfeit_turn(battle, player_id)
+        return True
+
     def _advance_turn(self, battle):
         """Advance to the next turn in the battle"""
         if not battle['turn_order']:
             return
         
+        self._cancel_turn_timer(battle)
+
         # Move to the next participant
         battle['current_turn_index'] = (battle['current_turn_index'] + 1) % len(battle['turn_order'])
         current_turn_id = battle['turn_order'][battle['current_turn_index']]
 
-        # Check if the current entity still exists and is active
-        entity_exists_and_active = False
+        # Valid if player still exists (online or offline) or monster is in the battle
+        entity_exists = False
         if current_turn_id in self.game_state.players:
-            # Check if player exists AND is active (connected)
-            entity_exists_and_active = current_turn_id in self.game_state.active_players
+            entity_exists = True
         else:
-            # Check if monster exists
             for monster in battle['monsters']:
                 if monster.id == current_turn_id:
-                    entity_exists_and_active = True
+                    entity_exists = True
                     break
 
-        # If entity doesn't exist or is an inactive player, skip their turn
-        if not entity_exists_and_active:
-            print(f"Entity {current_turn_id} not active or found in battle, removing from turn order and skipping turn.")
-            # Remove from turn order
+        # Only remove turn-order entries for missing entities (dead/deleted)
+        if not entity_exists:
+            print(f"Entity {current_turn_id} not found in battle, removing from turn order and skipping turn.")
             original_index = battle['turn_order'].index(current_turn_id)
             battle['turn_order'].pop(original_index)
 
-            # Adjust the index: if the removed player was before or at the current index,
-            # the effective next index remains the same relative to the new list size.
-            # If the removed player was the *last* element and the current_turn_index
-            # pointed to it, wrap around to 0.
             if battle['current_turn_index'] >= len(battle['turn_order']):
                  battle['current_turn_index'] = 0
 
-            # If turn order is now empty, check if battle should end
             if not battle['turn_order']:
                 self._check_battle_end(battle)
                 return
 
-            # Recursively call advance_turn to find the next valid participant
             self._advance_turn(battle)
             return
 
@@ -432,33 +516,33 @@ class CombatSystem:
             self._handle_monster_turn(current_turn_id, battle)
 
     def _handle_player_turn(self, player_id, battle):
-        """Send turn notification to a player"""
+        """Send turn notification to a player and start the forfeit timer"""
         current_player = self.game_state.players[player_id]
         
         # Send notifications to all players in the battle
         for pid in battle['participants']:
             if pid == player_id:
-                # For the player whose turn it is
                 turn_notification = self._create_combat_update(
                     pid, 
                     battle, 
                     'turn_notification',
-                    "It's your turn to act!",
+                    f"It's your turn to act! ({TURN_TIMEOUT_SECONDS}s)",
                     your_turn=True,
                     active_player=current_player.id
                 )
             else:
-                # For other players waiting their turn
                 turn_notification = self._create_combat_update(
                     pid,
                     battle,
                     'turn_notification',
-                    f"Waiting for {current_player.id} to take their turn...",
+                    f"Waiting for {current_player.id} to take their turn... ({TURN_TIMEOUT_SECONDS}s)",
                     your_turn=False,
                     active_player=current_player.id
                 )
-            
-            emit('combat_update', turn_notification, room=pid)
+            turn_notification['turn_timeout'] = TURN_TIMEOUT_SECONDS
+            self._emit('combat_update', turn_notification, room=pid)
+
+        self._start_turn_timer(battle, player_id)
 
     def _handle_monster_turn(self, monster_id, battle):
         """Process a monster's turn"""
@@ -488,7 +572,7 @@ class CombatSystem:
                 your_turn=False,
                 active_player=monster.type
             )
-            emit('combat_update', monster_turn_notification, room=player_id)
+            self._emit('combat_update', monster_turn_notification, room=player_id)
         
         # Monster automatically attacks a random player
         if battle['participants']:
@@ -532,6 +616,7 @@ class CombatSystem:
             update['your_turn'] = (current_turn_id == player_id)
         else:
             update['your_turn'] = False
+        update['active_player'] = self._get_current_active_player(battle)
         
         return update
 
@@ -634,8 +719,8 @@ class CombatSystem:
                 update['damage_taken'] = damage
         
         # Send the update
-        emit('combat_update', update, room=player_id)
-        emit('game_state', self.game_state.get_game_state(player_id), room=player_id)
+        self._emit('combat_update', update, room=player_id)
+        self._emit('game_state', self.game_state.get_game_state(player_id), room=player_id)
     
     def _send_defend_update(self, player_id, battle, defender_id):
         """Send a combat update to a player after a defend action"""
@@ -659,8 +744,8 @@ class CombatSystem:
         )
         
         # Send the update
-        emit('combat_update', update, room=player_id)
-        emit('game_state', self.game_state.get_game_state(player_id), room=player_id)
+        self._emit('combat_update', update, room=player_id)
+        self._emit('game_state', self.game_state.get_game_state(player_id), room=player_id)
     
     def _send_monster_attack_update(self, player_id, battle, monster, target_id, damage):
         """Send a combat update for a monster's attack"""
@@ -695,8 +780,8 @@ class CombatSystem:
             update['damage_taken'] = damage
         
         # Send the update
-        emit('combat_update', update, room=player_id)
-        emit('game_state', self.game_state.get_game_state(player_id), room=player_id)
+        self._emit('combat_update', update, room=player_id)
+        self._emit('game_state', self.game_state.get_game_state(player_id), room=player_id)
     
     def _get_combatants_status(self, battle):
         """Get the status of all combatants in a battle"""
@@ -774,7 +859,7 @@ class CombatSystem:
                 'killer_id': killer.id,
                 'message': f".... The {monster.type} has been defeated by {killer.id}!"
             }
-            emit('combat_update', death_data, room=p_id)
+            self._emit('combat_update', death_data, room=p_id)
         
         # Remove monster from whichever dungeon level it lives on
         self.game_state.remove_monster_at(tuple(monster.pos))
@@ -819,7 +904,7 @@ class CombatSystem:
                 'player_id': player.id,
                 'message': f".... {player.id} has been slain!"
             }
-            emit('combat_update', death_data, room=p_id)
+            self._emit('combat_update', death_data, room=p_id)
         
         # Send death message to the dead player
         death_data = {
@@ -828,7 +913,7 @@ class CombatSystem:
             'player_id': player.id,
             'message': ".... Thou art dead."
         }
-        emit('combat_update', death_data, room=player_id)
+        self._emit('combat_update', death_data, room=player_id)
         
         # Clear the player's tile on their dungeon level (players are overlaid, but keep map clean)
         game_map, _ = self.game_state.ensure_level(player.dungeon_level)
@@ -851,7 +936,7 @@ class CombatSystem:
         self._check_battle_end(battle)
         
         # Notify client of death
-        emit('player_died', room=player_id)
+        self._emit('player_died', room=player_id)
         
         # Update all players
         self._update_all_players()
@@ -861,12 +946,14 @@ class CombatSystem:
         # End if no monsters and only one or zero players
         if len(battle['monsters']) == 0 and len(battle['participants']) <= 1:
             # End the battle
+            self._cancel_turn_timer(battle)
             battle['status'] = 'ended'
             
             # Clear combat flags for remaining player if any
             if battle['participants']:
                 last_player_id = battle['participants'][0]
-                self.game_state.players[last_player_id].in_combat = False
+                if last_player_id in self.game_state.players:
+                    self.game_state.players[last_player_id].in_combat = False
                 
                 # Remove from active combat
                 if last_player_id in self.game_state.active_combats:
@@ -878,7 +965,7 @@ class CombatSystem:
                     'battle_id': battle['battle_id'],
                     'message': ".... The battle has ended."
                 }
-                emit('combat_update', end_data, room=last_player_id)
+                self._emit('combat_update', end_data, room=last_player_id)
             
             # Remove battle
             del self.battles[battle['battle_id']]
@@ -886,4 +973,4 @@ class CombatSystem:
     def _update_all_players(self):
         """Update game state for all active players"""
         for pid in self.game_state.active_players:
-            emit('game_state', self.game_state.get_game_state(pid), room=pid)
+            self._emit('game_state', self.game_state.get_game_state(pid), room=pid)

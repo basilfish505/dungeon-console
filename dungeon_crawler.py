@@ -169,12 +169,11 @@ class GameState:
     def is_combat_scenario(self, player_id, new_pos, monsters):
         player = self.players[player_id]
 
-        # Check for player-player combat (same dungeon level only)
+        # Check for player-player combat (same dungeon level; includes offline players)
         for other_id, other_player in self.players.items():
             if (other_id != player_id and 
                 other_player.dungeon_level == player.dungeon_level and
-                other_player.pos == new_pos and 
-                other_id in self.active_players):
+                other_player.pos == new_pos):
                 combat_system.start_combat(player_id, other_id)
                 return True
         
@@ -224,7 +223,7 @@ class GameState:
 
 # Create game state and combat system
 game_state = GameState()
-combat_system = CombatSystem(game_state)
+combat_system = CombatSystem(game_state, socketio)
 
 class GameStateDisplay:
     def __init__(self, game_state):
@@ -264,28 +263,23 @@ def handle_select_id(player_id):
 def handle_disconnect():
     player_id = session.get('player_id')
     if player_id:
-        # Check if the disconnecting player was in active combat and if it was their turn
+        # Mark offline but keep body/combat participation
+        was_their_turn = False
         if player_id in game_state.active_combats:
             battle_id = game_state.active_combats[player_id]
-            if battle_id in combat_system.battles:
-                battle = combat_system.battles[battle_id]
-                # Check if battle is active and has turns
-                if battle['status'] == 'active' and battle['turn_order']:
-                    current_turn_index = battle['current_turn_index']
-                    # Check bounds for safety
-                    if current_turn_index < len(battle['turn_order']):
-                        current_turn_id = battle['turn_order'][current_turn_index]
-                        if current_turn_id == player_id:
-                            print(f"Player {player_id} disconnected during their turn. Advancing turn.")
-                            # Remove player first so _advance_turn knows they are inactive
-                            game_state.remove_player(player_id)
-                            combat_system._advance_turn(battle)
-                            # Exit early; turn advance notifies remaining combatants
-                            return
-        
-        # If not handled by combat logic above, proceed with normal removal
+            battle = combat_system.battles.get(battle_id)
+            if (battle and battle.get('status') == 'active' and battle.get('turn_order')
+                    and battle['current_turn_index'] < len(battle['turn_order'])
+                    and battle['turn_order'][battle['current_turn_index']] == player_id):
+                was_their_turn = True
+
         game_state.remove_player(player_id)
         print(f"Player {player_id} disconnected.")
+
+        # If they disconnected on their turn, forfeit immediately (stay in battle offline)
+        if was_their_turn:
+            print(f"Player {player_id} disconnected during their turn. Forfeiting turn.")
+            combat_system.forfeit_current_turn_if_player(player_id)
 
 @socketio.on('move')
 def handle_move(direction):

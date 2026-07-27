@@ -22,6 +22,52 @@ const Combat = (function() {
         opponents: [],
         selectedTarget: null
     };
+
+    let countdownTimer = null;
+    let countdownRemaining = 0;
+    let countdownYourTurn = false;
+    let countdownActivePlayer = null;
+
+    function stopCountdown() {
+        if (countdownTimer) {
+            clearInterval(countdownTimer);
+            countdownTimer = null;
+        }
+    }
+
+    function renderCountdownMessage() {
+        const secs = Math.max(0, countdownRemaining);
+        if (countdownYourTurn) {
+            elements.combatMessage.innerHTML = `It's your turn to act! (${secs}s)`;
+            elements.opponentThinking.style.display = 'none';
+        } else {
+            const name = countdownActivePlayer || 'opponent';
+            const msg = `Waiting for ${name} to take their turn... (${secs}s)`;
+            elements.combatMessage.innerHTML = msg;
+            elements.opponentThinking.style.display = 'block';
+            elements.opponentThinking.textContent = msg;
+        }
+    }
+
+    function startCountdown(seconds, isYourTurn, activePlayer) {
+        stopCountdown();
+        if (!seconds || seconds <= 0) {
+            return;
+        }
+        countdownRemaining = seconds;
+        countdownYourTurn = !!isYourTurn;
+        countdownActivePlayer = activePlayer || null;
+        renderCountdownMessage();
+        countdownTimer = setInterval(function() {
+            countdownRemaining -= 1;
+            if (countdownRemaining <= 0) {
+                renderCountdownMessage();
+                stopCountdown();
+                return;
+            }
+            renderCountdownMessage();
+        }, 1000);
+    }
     
     // Update combat buttons based on turn
     function updateButtonStates(isYourTurn) {
@@ -35,7 +81,9 @@ const Combat = (function() {
             
             // Show opponent thinking message
             elements.opponentThinking.style.display = 'block';
-            elements.opponentThinking.textContent = "Waiting for opponent's move...";
+            if (!countdownTimer) {
+                elements.opponentThinking.textContent = "Waiting for opponent's move...";
+            }
         } else if (isYourTurn === true) {
             // It's your turn - enable attack and defend, disable others
             elements.attackBtn.disabled = false;
@@ -61,11 +109,15 @@ const Combat = (function() {
         // Update opponents list
         updateOpponentsList();
         
-        // Set initial message
-        elements.combatMessage.innerHTML = "Combat has begun! Select your target and action.";
-        
-        // Update button states
+        // Update button states and live countdown
         updateButtonStates(data.your_turn);
+        if (data.turn_timeout) {
+            startCountdown(data.turn_timeout, data.your_turn, data.active_player);
+        } else if (data.your_turn) {
+            elements.combatMessage.innerHTML = "Combat has begun! It's your turn to act!";
+        } else {
+            elements.combatMessage.innerHTML = "Combat has begun! Select your target and action.";
+        }
     }
     
     // Update the list of opponents
@@ -233,6 +285,8 @@ const Combat = (function() {
     
     // Handle combat end
     function handleCombatEnd(data) {
+        stopCountdown();
+
         // Hide combat UI
         elements.combatBox.style.display = 'none';
         
@@ -255,12 +309,22 @@ const Combat = (function() {
     function handleTurnNotification(data) {
         // Update button states to enable actions
         updateButtonStates(data.your_turn);
-        
-        // Show turn message
-        if (data.message) {
+
+        // Forfeit / status lines without a new timeout just show the message
+        const isForfeit = data.message && data.message.indexOf('forfeited') !== -1;
+        if (isForfeit) {
+            stopCountdown();
             elements.combatMessage.innerHTML = data.message;
-            
-            // Also update the opponent thinking message if it's not our turn
+            if (data.message) {
+                const messageLog = document.getElementById('message-log');
+                messageLog.innerHTML += `<div>${data.message}</div>`;
+                messageLog.scrollTop = messageLog.scrollHeight;
+            }
+        } else if (data.turn_timeout) {
+            startCountdown(data.turn_timeout, data.your_turn, data.active_player);
+        } else if (data.message) {
+            stopCountdown();
+            elements.combatMessage.innerHTML = data.message;
             if (!data.your_turn) {
                 elements.opponentThinking.style.display = 'block';
                 elements.opponentThinking.textContent = data.message;
