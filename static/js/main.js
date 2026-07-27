@@ -1,87 +1,54 @@
 // main.js - Main game initialization
-const Game = (function() {
-    // Initialize game
+const Game = (function () {
     function init() {
-        // Hide game elements initially
         UI.hideGameElements();
-        
-        // Set up socket events
         SocketHandler.setupSocketEvents();
-        
-        // Set up UI event handlers
         setupEventListeners();
-        
-        // Make socket globally available
         window.socket = SocketHandler.socket;
     }
-    
-    // Set up event listeners
+
     function setupEventListeners() {
-        // Join button click
-        const joinBtn = document.querySelector('#player-login button');
-        joinBtn.addEventListener('click', submitName);
-        
-        // Player name input Enter key
-        const playerNameInput = document.getElementById('player-name');
-        playerNameInput.addEventListener('keypress', function(e) {
-            if (e.key === 'Enter') {
-                submitName();
-            }
+        document.querySelector('#player-login button').addEventListener('click', submitName);
+
+        document.getElementById('player-name').addEventListener('keypress', function (e) {
+            if (e.key === 'Enter') submitName();
         });
-        
-        // Movement keys
-        document.addEventListener('keydown', function(e) {
-            if (['w', 'a', 's', 'd'].includes(e.key)) {
-                move(e.key);
-            }
+
+        document.addEventListener('keydown', function (e) {
+            if (['w', 'a', 's', 'd'].includes(e.key)) move(e.key);
         });
-        
-        // Movement buttons
-        const mobileBtns = document.querySelectorAll('.mobile-btn');
-        mobileBtns.forEach(btn => {
+
+        document.querySelectorAll('.mobile-btn').forEach(btn => {
             const direction = btn.getAttribute('data-direction');
             if (direction) {
-                btn.addEventListener('click', function() {
-                    move(direction);
-                });
+                btn.addEventListener('click', function () { move(direction); });
             }
         });
-        
-        // Combat buttons
-        const combatBtns = document.querySelectorAll('#combat-controls button');
-        combatBtns.forEach(btn => {
-            btn.addEventListener('click', function() {
-                const action = this.id.replace('-btn', '');
-                Combat.sendAction(action);
+
+        document.querySelectorAll('#combat-controls button').forEach(btn => {
+            btn.addEventListener('click', function () {
+                Combat.sendAction(this.id.replace('-btn', ''));
             });
         });
     }
-    
-    // Submit player name
+
     function submitName() {
-        const playerNameInput = document.getElementById('player-name');
-        const name = playerNameInput.value.trim();
-        if (name) {
-            SocketHandler.selectPlayerId(name);
-            UI.showGameElements();
-        }
+        const name = document.getElementById('player-name').value.trim();
+        if (!name) return;
+        Sound.warm(); // silent unlock + preload — no audible blip
+        SocketHandler.selectPlayerId(name);
+        UI.showGameElements();
     }
-    
-    // Movement with throttling
-    const move = Utils.throttle(function(direction) {
+
+    const move = Utils.throttle(function (direction) {
         SocketHandler.sendMove(direction);
     }, 100);
-    
-    // Expose for console/debug access (UI uses addEventListener, not onclick)
+
     window.submitName = submitName;
     window.move = move;
     window.sendCombatAction = Combat.sendAction;
-    
-    // Return public API
-    return {
-        init
-    };
+
+    return { init };
 })();
 
-// Initialize the game when the DOM is loaded
 document.addEventListener('DOMContentLoaded', Game.init);

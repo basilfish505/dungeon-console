@@ -1,13 +1,11 @@
-// combat.js - Handles combat interactions
-const Combat = (function() {
-    // Cache combat elements
+// combat.js - Combat UI and actions
+const Combat = (function () {
     const elements = {
         combatBox: document.getElementById('combat-box'),
         opponentName: document.getElementById('opponent-name'),
         opponentHP: document.getElementById('opponent-hp'),
         combatMessage: document.getElementById('combat-message'),
         opponentThinking: document.getElementById('opponent-thinking'),
-        targetSelection: document.getElementById('target-selection'),
         opponentsList: document.getElementById('opponents-list'),
         attackBtn: document.getElementById('attack-btn'),
         defendBtn: document.getElementById('defend-btn'),
@@ -15,18 +13,20 @@ const Combat = (function() {
         itemBtn: document.getElementById('item-btn'),
         runBtn: document.getElementById('run-btn')
     };
-    
-    // Track current battle state
-    let currentBattle = {
-        battleId: null,
-        opponents: [],
-        selectedTarget: null
-    };
 
+    let currentBattle = { battleId: null, opponents: [], selectedTarget: null };
     let countdownTimer = null;
     let countdownRemaining = 0;
     let countdownYourTurn = false;
     let countdownActivePlayer = null;
+
+    function shakeCombatWindow() {
+        if (!elements.combatBox) return;
+        elements.combatBox.classList.remove('combat-shake');
+        void elements.combatBox.offsetWidth;
+        elements.combatBox.classList.add('combat-shake');
+        setTimeout(() => elements.combatBox.classList.remove('combat-shake'), 500);
+    }
 
     function stopCountdown() {
         if (countdownTimer) {
@@ -41,8 +41,7 @@ const Combat = (function() {
             elements.combatMessage.innerHTML = `It's your turn to act! (${secs}s)`;
             elements.opponentThinking.style.display = 'none';
         } else {
-            const name = countdownActivePlayer || 'opponent';
-            const msg = `Waiting for ${name} to take their turn... (${secs}s)`;
+            const msg = `Waiting for ${countdownActivePlayer || 'opponent'} to take their turn... (${secs}s)`;
             elements.combatMessage.innerHTML = msg;
             elements.opponentThinking.style.display = 'block';
             elements.opponentThinking.textContent = msg;
@@ -51,351 +50,195 @@ const Combat = (function() {
 
     function startCountdown(seconds, isYourTurn, activePlayer) {
         stopCountdown();
-        if (!seconds || seconds <= 0) {
-            return;
-        }
+        if (!seconds || seconds <= 0) return;
         countdownRemaining = seconds;
         countdownYourTurn = !!isYourTurn;
         countdownActivePlayer = activePlayer || null;
         renderCountdownMessage();
-        countdownTimer = setInterval(function() {
+        countdownTimer = setInterval(function () {
             countdownRemaining -= 1;
-            if (countdownRemaining <= 0) {
-                renderCountdownMessage();
-                stopCountdown();
-                return;
-            }
             renderCountdownMessage();
+            if (countdownRemaining <= 0) stopCountdown();
         }, 1000);
     }
-    
-    // Update combat buttons based on turn
+
     function updateButtonStates(isYourTurn) {
-        if (isYourTurn === false) {
-            // It's NOT your turn - disable ALL buttons
-            elements.attackBtn.disabled = true;
-            elements.defendBtn.disabled = true;
-            elements.spellBtn.disabled = true;
-            elements.itemBtn.disabled = true;
-            elements.runBtn.disabled = true;
-            
-            // Show opponent thinking message
+        const disableAll = isYourTurn === false;
+        elements.attackBtn.disabled = disableAll;
+        elements.defendBtn.disabled = disableAll;
+        elements.spellBtn.disabled = true;
+        elements.itemBtn.disabled = true;
+        elements.runBtn.disabled = true;
+        if (disableAll) {
             elements.opponentThinking.style.display = 'block';
             if (!countdownTimer) {
                 elements.opponentThinking.textContent = "Waiting for opponent's move...";
             }
         } else if (isYourTurn === true) {
-            // It's your turn - enable attack and defend, disable others
-            elements.attackBtn.disabled = false;
-            elements.defendBtn.disabled = false;
-            elements.spellBtn.disabled = true;
-            elements.itemBtn.disabled = true;
-            elements.runBtn.disabled = true;
-            
-            // Hide opponent thinking message when it's your turn
             elements.opponentThinking.style.display = 'none';
         }
     }
-    
-    // Handle combat start
-    function handleCombatStart(data) {
-        // Store battle info
-        currentBattle.battleId = data.battle_id;
-        currentBattle.opponents = data.opponents;
-        
-        // Show combat UI
-        elements.combatBox.style.display = 'block';
-        
-        // Update opponents list
-        updateOpponentsList();
-        
-        // Update button states and live countdown
-        updateButtonStates(data.your_turn);
-        if (data.turn_timeout) {
-            startCountdown(data.turn_timeout, data.your_turn, data.active_player);
-        } else if (data.your_turn) {
-            elements.combatMessage.innerHTML = "Combat has begun! It's your turn to act!";
-        } else {
-            elements.combatMessage.innerHTML = "Combat has begun! Select your target and action.";
-        }
-    }
-    
-    // Update the list of opponents
+
     function updateOpponentsList() {
         if (!elements.opponentsList) {
-            // Create opponents list if it doesn't exist
             elements.opponentsList = document.createElement('div');
             elements.opponentsList.id = 'opponents-list';
             elements.opponentsList.className = 'opponents-list';
             elements.combatBox.appendChild(elements.opponentsList);
         }
-        
-        // Clear existing list
+
         elements.opponentsList.innerHTML = '<h4>Combatants:</h4>';
-        
-        // Add each opponent to the list
         currentBattle.opponents.forEach((opponent, index) => {
-            const opponentEl = document.createElement('div');
-            opponentEl.className = 'opponent-entry';
-            opponentEl.dataset.id = opponent.is_monster ? opponent.monster_id || opponent.id : opponent.id;
-            opponentEl.dataset.index = index;
-            
-            // Mark selected target
-            if (currentBattle.selectedTarget === opponent.id) {
-                opponentEl.classList.add('selected-target');
-            }
-            
-            // Mark current turn
-            if (opponent.is_current_turn) {
-                opponentEl.classList.add('current-turn');
-            }
-            
-            // Create display name with current turn indicator
-            const turnIndicator = opponent.is_current_turn ? '→ ' : '';
-            const typeIndicator = opponent.is_monster ? ' (Monster)' : '';
-            const defendIndicator = opponent.defending ? ' 🛡️' : '';
-            
-            opponentEl.innerHTML = `
-                <span class="opponent-name">${turnIndicator}${opponent.id}${typeIndicator}${defendIndicator}</span>
-                <span class="opponent-hp">HP: ${opponent.hp}</span>
-            `;
-            
-            // Add click handler for target selection (but only if it's a valid target)
-            opponentEl.addEventListener('click', function() {
-                // Update selected target
+            const el = document.createElement('div');
+            el.className = 'opponent-entry';
+            el.dataset.id = opponent.is_monster ? (opponent.monster_id || opponent.id) : opponent.id;
+            if (currentBattle.selectedTarget === opponent.id) el.classList.add('selected-target');
+            if (opponent.is_current_turn) el.classList.add('current-turn');
+
+            const turn = opponent.is_current_turn ? '→ ' : '';
+            const kind = opponent.is_monster ? ' (Monster)' : '';
+            el.innerHTML =
+                `<span class="opponent-name">${turn}${opponent.id}${kind}</span>` +
+                `<span class="opponent-hp">HP: ${opponent.hp}</span>`;
+
+            el.addEventListener('click', function () {
                 currentBattle.selectedTarget = opponent.id;
-                
-                // Update visual selection
-                document.querySelectorAll('.opponent-entry').forEach(el => {
-                    el.classList.remove('selected-target');
-                });
+                document.querySelectorAll('.opponent-entry').forEach(n => n.classList.remove('selected-target'));
                 this.classList.add('selected-target');
-                
-                // Update primary display
                 elements.opponentName.textContent = opponent.id;
                 elements.opponentHP.textContent = opponent.hp;
             });
-            
-            elements.opponentsList.appendChild(opponentEl);
+            elements.opponentsList.appendChild(el);
         });
-        
-        // Select first opponent by default if none selected
+
         if (!currentBattle.selectedTarget && currentBattle.opponents.length > 0) {
             currentBattle.selectedTarget = currentBattle.opponents[0].id;
-            const firstOpponent = elements.opponentsList.querySelector('.opponent-entry');
-            if (firstOpponent) {
-                firstOpponent.classList.add('selected-target');
-                
-                // Update primary display
-                elements.opponentName.textContent = currentBattle.opponents[0].id;
-                elements.opponentHP.textContent = currentBattle.opponents[0].hp;
-            }
+            const first = elements.opponentsList.querySelector('.opponent-entry');
+            if (first) first.classList.add('selected-target');
+            elements.opponentName.textContent = currentBattle.opponents[0].id;
+            elements.opponentHP.textContent = currentBattle.opponents[0].hp;
         }
     }
-    
-    // Handle target selection request
-    function handleTargetRequest(data) {
-        // Store opponents data
-        currentBattle.opponents = data.targets;
-        
-        // Update opponents list
+
+    function handleCombatStart(data) {
+        Sound.warm();
+        currentBattle.battleId = data.battle_id;
+        currentBattle.opponents = data.opponents;
+        elements.combatBox.style.display = 'block';
         updateOpponentsList();
-        
-        // Show target selection message
-        elements.combatMessage.innerHTML = "Select a target for your action.";
-    }
-    
-    // Handle combat action
-    function handleCombatAction(data) {
-        // Update button states
         updateButtonStates(data.your_turn);
-        
-        // Update combat message
-        if (data.message) {
-            elements.combatMessage.innerHTML = data.message;
+        if (data.turn_timeout) {
+            startCountdown(data.turn_timeout, data.your_turn, data.active_player);
+        } else {
+            elements.combatMessage.innerHTML = data.your_turn
+                ? "Combat has begun! It's your turn to act!"
+                : 'Combat has begun! Select your target and action.';
         }
-        
-        // Show opponent thinking message if it's not our turn
+    }
+
+    function handleTargetRequest(data) {
+        currentBattle.opponents = data.targets;
+        updateOpponentsList();
+        elements.combatMessage.innerHTML = 'Select a target for your action.';
+    }
+
+    function handleCombatAction(data) {
+        // FX first — same flags for attacker and defender keep them in sync
+        if (data.play_hit_sound) Sound.play('hit');
+        if (data.shake_combat) shakeCombatWindow();
+
+        updateButtonStates(data.your_turn);
+        if (data.message) elements.combatMessage.innerHTML = data.message;
+
         if (!data.your_turn) {
             elements.opponentThinking.style.display = 'block';
-            if (data.target_id) {
-                elements.opponentThinking.textContent = `Waiting for next turn...`;
-            }
+            elements.opponentThinking.textContent = 'Waiting for next turn...';
         } else {
             elements.opponentThinking.style.display = 'none';
         }
-        
-        // Update combatants status if provided
+
         if (data.combatants) {
-            // Update our tracking of opponents
-            currentBattle.opponents = data.combatants.filter(c => 
-                c.id !== document.getElementById('player-id').value // Filter out the current player
-            );
-            
-            // Update the opponents list
+            const me = document.getElementById('player-id').value;
+            currentBattle.opponents = data.combatants.filter(c => c.id !== me);
             updateOpponentsList();
         }
-        
-        // Update player HP if provided
         if (data.your_hp) {
-            const playerHP = document.getElementById('player-hp');
-            if (playerHP) {
-                playerHP.textContent = data.your_hp;
-            }
+            const hp = document.getElementById('player-hp');
+            if (hp) hp.textContent = data.your_hp;
         }
     }
-    
-    // Handle monster death
+
     function handleMonsterDeath(data) {
-        // Show death message
         elements.combatMessage.innerHTML = data.message;
-        
-        // Remove the monster from our opponents list
-        currentBattle.opponents = currentBattle.opponents.filter(opponent => 
-            !(opponent.is_monster && opponent.id === data.monster_id)
+        currentBattle.opponents = currentBattle.opponents.filter(
+            o => !(o.is_monster && o.id === data.monster_id)
         );
-        
-        // Update the opponents list
         updateOpponentsList();
-        
-        // Add message to log
-        const messageLog = document.getElementById('message-log');
-        messageLog.innerHTML += `<div>${data.message}</div>`;
-        messageLog.scrollTop = messageLog.scrollHeight;
     }
-    
-    // Handle player death
+
     function handlePlayerDeath(data) {
-        // Show death message
         elements.combatMessage.innerHTML = data.message;
-        
-        // Remove the player from our opponents list
-        currentBattle.opponents = currentBattle.opponents.filter(opponent => 
-            opponent.is_monster || opponent.id !== data.player_id
+        currentBattle.opponents = currentBattle.opponents.filter(
+            o => o.is_monster || o.id !== data.player_id
         );
-        
-        // Update the opponents list
         updateOpponentsList();
-        
-        // Add message to log
-        const messageLog = document.getElementById('message-log');
-        messageLog.innerHTML += `<div>${data.message}</div>`;
-        messageLog.scrollTop = messageLog.scrollHeight;
     }
-    
-    // Handle combat end
+
     function handleCombatEnd(data) {
         stopCountdown();
-
-        // Hide combat UI
+        if (data.victory) Sound.play('victory');
         elements.combatBox.style.display = 'none';
-        
-        // Reset battle state
-        currentBattle = {
-            battleId: null,
-            opponents: [],
-            selectedTarget: null
-        };
-        
-        // Add the message to log
-        if (data.message) {
-            const messageLog = document.getElementById('message-log');
-            messageLog.innerHTML += `<div>${data.message}</div>`;
-            messageLog.scrollTop = messageLog.scrollHeight;
-        }
+        currentBattle = { battleId: null, opponents: [], selectedTarget: null };
     }
-    
-    // Handle turn notification
-    function handleTurnNotification(data) {
-        // Update button states to enable actions
-        updateButtonStates(data.your_turn);
 
-        // Forfeit / status lines without a new timeout just show the message
-        const isForfeit = data.message && data.message.indexOf('forfeited') !== -1;
-        if (isForfeit) {
+    function handleTurnNotification(data) {
+        updateButtonStates(data.your_turn);
+        if (data.message && data.message.indexOf('forfeited') !== -1) {
             stopCountdown();
             elements.combatMessage.innerHTML = data.message;
-            if (data.message) {
-                const messageLog = document.getElementById('message-log');
-                messageLog.innerHTML += `<div>${data.message}</div>`;
-                messageLog.scrollTop = messageLog.scrollHeight;
-            }
         } else if (data.turn_timeout) {
             startCountdown(data.turn_timeout, data.your_turn, data.active_player);
         } else if (data.message) {
             stopCountdown();
             elements.combatMessage.innerHTML = data.message;
-            if (!data.your_turn) {
-                elements.opponentThinking.style.display = 'block';
-                elements.opponentThinking.textContent = data.message;
-            } else {
-                elements.opponentThinking.style.display = 'none';
-            }
+            elements.opponentThinking.style.display = data.your_turn ? 'none' : 'block';
+            if (!data.your_turn) elements.opponentThinking.textContent = data.message;
         }
-        
-        // Play a sound or add some visual effect to get attention (optional)
+
         if (data.your_turn) {
-            // Flash the message if it's our turn
-            elements.combatMessage.style.color = "#ffff00";  // Yellow flash
-            setTimeout(() => {
-                elements.combatMessage.style.color = "#00ff00";  // Back to green
-            }, 500);
+            elements.combatMessage.style.color = '#ffff00';
+            setTimeout(() => { elements.combatMessage.style.color = '#00ff00'; }, 500);
         }
-        
-        // Update the combatants list to highlight the active player
+
         if (data.active_player && currentBattle.opponents) {
-            // Update current turn indicators
-            currentBattle.opponents.forEach(opponent => {
-                opponent.is_current_turn = (opponent.id === data.active_player);
+            currentBattle.opponents.forEach(o => {
+                o.is_current_turn = (o.id === data.active_player);
             });
-            
-            // Refresh the opponents list UI
             updateOpponentsList();
         }
     }
-    
-    // Process combat update
+
     function processCombatUpdate(data) {
-        console.log("Combat update:", data);
-        
-        switch(data.type) {
-            case 'combat_start':
-                handleCombatStart(data);
-                break;
-            case 'target_request':
-                handleTargetRequest(data);
-                break;
-            case 'combat_action':
-                handleCombatAction(data);
-                break;
-            case 'monster_death':
-                handleMonsterDeath(data);
-                break;
-            case 'player_death':
-                handlePlayerDeath(data);
-                break;
-            case 'combat_end':
-                handleCombatEnd(data);
-                break;
-            case 'turn_notification':
-                handleTurnNotification(data);
-                break;
+        switch (data.type) {
+            case 'combat_start': handleCombatStart(data); break;
+            case 'target_request': handleTargetRequest(data); break;
+            case 'combat_action': handleCombatAction(data); break;
+            case 'monster_death': handleMonsterDeath(data); break;
+            case 'player_death': handlePlayerDeath(data); break;
+            case 'combat_end': handleCombatEnd(data); break;
+            case 'turn_notification': handleTurnNotification(data); break;
         }
     }
-    
-    // Send combat action to server
+
     function sendAction(action) {
+        Sound.warm();
         if (window.socket) {
-            window.socket.emit('combat_action', { 
+            window.socket.emit('combat_action', {
                 action: action,
-                target_id: currentBattle.selectedTarget 
+                target_id: currentBattle.selectedTarget
             });
         }
     }
-    
-    // Return public API
-    return {
-        processCombatUpdate,
-        sendAction
-    };
+
+    return { processCombatUpdate, sendAction };
 })();

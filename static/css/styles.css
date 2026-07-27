@@ -175,6 +175,18 @@ body {
     overflow-y: auto;
 }
 
+@keyframes combat-shake {
+    0%, 100% { transform: translate(-50%, -50%); }
+    20% { transform: translate(calc(-50% - 5px), calc(-50% + 3px)); }
+    40% { transform: translate(calc(-50% + 5px), calc(-50% - 3px)); }
+    60% { transform: translate(calc(-50% - 4px), calc(-50% - 2px)); }
+    80% { transform: translate(calc(-50% + 4px), calc(-50% + 2px)); }
+}
+
+#combat-box.combat-shake {
+    animation: combat-shake 0.5s ease;
+}
+
 #combat-controls {
     margin: 10px 0;
 }
