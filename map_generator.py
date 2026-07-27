@@ -1,10 +1,25 @@
+import math
 import random
+from collections import deque
 from monster import Monster
 
 # Constants
-MAP_SIZE = 20
-BOULDER_PROBABILITY = 0.03  # 3% chance of boulder per interior tile
-MONSTER_PROBABILITY = 0.01  # 1% chance of monster spawn per empty tile
+MAP_SIZE = 20  # Top-level / viewport footprint
+MONSTER_PROBABILITY = 0.01
+MIN_FLOOR_AREA = 300
+MAX_FLOOR_AREA = 500
+MAX_GEN_ATTEMPTS = 50
+
+# Temporary testing toggle: True = classic 20x20 rectangle with random boulders.
+# False = procedural rooms/tunnels (1k–5k tiles) + scrolling camera on large maps.
+USE_SIMPLE_LOWER_LEVELS = True
+BOULDER_PROBABILITY = 0.03  # simple-mode only
+
+MONSTER_TYPES = [
+    "Skeleton", "Ghoul", "Zombie", "Goblin", "Orc",
+    "Troll", "Wraith", "Lich", "Giant Spider", "Slime",
+]
+
 
 class MapGenerator:
     def __init__(self, map_size=MAP_SIZE):
@@ -13,82 +28,447 @@ class MapGenerator:
         self.monsters = {}
 
     def generate_level(self, stairs_up_pos=None):
-        """Generate a new level with walls, boulders, monsters, and stairs both ways"""
-        self.game_map = self.create_empty_map_with_walls()
-        self.monsters = {}  # Fresh dict so earlier levels keep their monsters
-        self.populate_map_with_boulders()
+        """Generate a lower level (simple rectangle or procedural rooms/tunnels)."""
+        if USE_SIMPLE_LOWER_LEVELS:
+            return self._generate_simple_level(stairs_up_pos)
+
+        self.monsters = {}
+        for _ in range(MAX_GEN_ATTEMPTS):
+            game_map = self._carve_rooms_and_tunnels()
+            if game_map is None:
+                continue
+            self.game_map = game_map
+            self.monsters = {}
+            self.spawn_monsters()
+            if self._place_and_validate_stairs(stairs_up_pos):
+                return self.game_map, self.monsters
+
+        self.game_map = self._carve_rooms_and_tunnels() or self._fallback_dungeon()
+        self.monsters = {}
+        self.spawn_monsters()
+        self._place_and_validate_stairs(stairs_up_pos, repair=True)
+        return self.game_map, self.monsters
+
+    def generate_top_level(self):
+        """Generate the top level without boulders or monsters, but with stairs down."""
+        self.game_map = [['.' for _ in range(self.map_size)] for _ in range(self.map_size)]
+        for i in range(self.map_size):
+            self.game_map[0][i] = '#'
+            self.game_map[self.map_size - 1][i] = '#'
+            self.game_map[i][0] = '#'
+            self.game_map[i][self.map_size - 1] = '#'
+
+        self.monsters = {}
+        self.place_stair('↓')
+        return self.game_map, self.monsters
+
+    def _generate_simple_level(self, stairs_up_pos=None):
+        """Classic fixed 20x20 map: wall border, random interior boulders, stairs both ways."""
+        self.game_map = [['#' for _ in range(self.map_size)] for _ in range(self.map_size)]
+        self.monsters = {}
+        for i in range(1, self.map_size - 1):
+            for j in range(1, self.map_size - 1):
+                self.game_map[i][j] = '#' if random.random() < BOULDER_PROBABILITY else '.'
         self.spawn_monsters()
         up_pos = self.place_stair('↑', preferred_pos=stairs_up_pos)
         self.place_stair('↓', avoid_pos=up_pos)
         return self.game_map, self.monsters
 
-    def generate_top_level(self):
-        """Generate the top level without boulders or monsters, but with stairs down"""
-        # Create a map with only border walls
-        self.game_map = [['.' for _ in range(self.map_size)] for _ in range(self.map_size)]
-        # Add walls around the border
-        for i in range(self.map_size):
-            self.game_map[0][i] = '#'  # Top border
-            self.game_map[self.map_size-1][i] = '#'  # Bottom border
-            self.game_map[i][0] = '#'  # Left border
-            self.game_map[i][self.map_size-1] = '#'  # Right border
-        
-        self.monsters = {}  # Clear any existing monsters
-        
-        # Place stairs down in a random position
-        self.place_stair('↓')
-        
-        return self.game_map, self.monsters
+    # --- Rooms & tunnels -------------------------------------------------
 
-    def create_empty_map_with_walls(self):
-        """Create a map filled with walls (interior carved later)."""
-        return [['#' for _ in range(self.map_size)] for _ in range(self.map_size)]
+    def _carve_rooms_and_tunnels(self):
+        """Build irregular rooms linked by narrow tunnels; target floor count in range."""
+        target = random.randint(MIN_FLOOR_AREA, MAX_FLOOR_AREA)
 
-    def populate_map_with_boulders(self):
-        """Add boulders to the map"""
-        for i in range(1, self.map_size-1):
-            for j in range(1, self.map_size-1):
-                self.game_map[i][j] = '#' if random.random() < BOULDER_PROBABILITY else '.'
+        # Bounding box large enough for scattered rooms + corridors
+        side = int(math.sqrt(target) * random.uniform(2.2, 2.8)) + 10
+        height = max(45, side + random.randint(-5, 15))
+        width = max(45, side + random.randint(-5, 20))
+        game_map = [['#' for _ in range(width)] for _ in range(height)]
 
-    def spawn_monsters(self):
-        """Add monsters to the map"""
-        for i in range(1, self.map_size-1):
-            for j in range(1, self.map_size-1):
-                # Only spawn monsters on empty spaces
-                if self.game_map[i][j] == '.' and random.random() < MONSTER_PROBABILITY:
-                    # Select a random monster type
-                    monster_types = ["Skeleton", "Ghoul", "Zombie", "Goblin", "Orc", 
-                                   "Troll", "Wraith", "Lich", "Giant Spider", "Slime"]
-                    monster_type = random.choice(monster_types)
-                    monster_id = f"{monster_type}-{i},{j}"
-                    monster = Monster(monster_id, monster_type, [i, j])
-                    
-                    # Store the monster in the monsters dictionary
-                    self.monsters[(i, j)] = monster
-                    
-                    # Mark the monster's position on the map
-                    self.game_map[i][j] = '&'
+        floor = set()
+        rooms = []  # list of (cy, cx, floors_in_room)
+
+        # Modest rooms so layout stays tunnels + chambers, not open cavern
+        avg_room = random.randint(25, 55)
+        num_rooms = max(8, min(40, target // avg_room))
+
+        attempts = 0
+        while len(rooms) < num_rooms and attempts < num_rooms * 40:
+            attempts += 1
+            ry = random.randint(2, 5)
+            rx = random.randint(2, 6)
+            cy = random.randint(ry + 2, height - ry - 3)
+            cx = random.randint(rx + 2, width - rx - 3)
+
+            # Reject heavy overlap with existing rooms
+            if any(abs(cy - oy) < ry + ory + 2 and abs(cx - ox) < rx + orx + 2
+                   for oy, ox, _tiles, ory, orx in rooms):
+                continue
+
+            room_tiles = self._carve_irregular_room(cy, cx, ry, rx, height, width)
+            if len(room_tiles) < 8:
+                continue
+            floor |= room_tiles
+            rooms.append((cy, cx, room_tiles, ry, rx))
+
+        if len(rooms) < 4:
+            return None
+
+        # Connect rooms in a spanning tree, then add a few extra links / dead ends
+        order = list(range(len(rooms)))
+        random.shuffle(order)
+        connected = {order[0]}
+        while len(connected) < len(rooms):
+            best = None
+            best_d = None
+            for i in connected:
+                for j in order:
+                    if j in connected:
+                        continue
+                    d = abs(rooms[i][0] - rooms[j][0]) + abs(rooms[i][1] - rooms[j][1])
+                    if best_d is None or d < best_d:
+                        best_d = d
+                        best = (i, j)
+            i, j = best
+            self._carve_narrow_tunnel(floor, rooms[i][0], rooms[i][1],
+                                     rooms[j][0], rooms[j][1], height, width)
+            connected.add(j)
+
+        # Extra branches and dead ends
+        extras = max(2, len(rooms) // 3)
+        for _ in range(extras):
+            a, b = random.sample(range(len(rooms)), 2)
+            self._carve_narrow_tunnel(floor, rooms[a][0], rooms[a][1],
+                                     rooms[b][0], rooms[b][1], height, width)
+
+        for _ in range(max(2, len(rooms) // 4)):
+            r = random.choice(rooms)
+            ey = random.randint(2, height - 3)
+            ex = random.randint(2, width - 3)
+            self._carve_narrow_tunnel(floor, r[0], r[1], ey, ex, height, width,
+                                      max_steps=40)
+
+        # Trim or grow toward target floor area without flooding open space
+        floor = self._largest_component(floor)
+        if len(floor) > target:
+            # Prefer removing dead-end corridor tiles first is hard; randomly
+            # discard leaf-like tiles until near target while keeping connectivity
+            floor = self._shrink_floor(floor, target)
+        elif len(floor) < MIN_FLOOR_AREA * 0.85:
+            # Add a few more small rooms connected by tunnels
+            while len(floor) < target * 0.9 and len(rooms) < num_rooms + 15:
+                ry, rx = random.randint(2, 4), random.randint(2, 5)
+                cy = random.randint(ry + 2, height - ry - 3)
+                cx = random.randint(rx + 2, width - rx - 3)
+                room_tiles = self._carve_irregular_room(cy, cx, ry, rx, height, width)
+                if len(room_tiles) < 6:
+                    continue
+                # Connect to nearest existing floor
+                if floor:
+                    nearest = min(floor, key=lambda p: abs(p[0] - cy) + abs(p[1] - cx))
+                    self._carve_narrow_tunnel(floor, cy, cx, nearest[0], nearest[1],
+                                             height, width)
+                floor |= room_tiles
+                rooms.append((cy, cx, room_tiles, ry, rx))
+            floor = self._largest_component(floor)
+
+        if len(floor) < MIN_FLOOR_AREA * 0.5:
+            return None
+
+        for y, x in floor:
+            game_map[y][x] = '.'
+
+        # Seal map edge — no escapes
+        for x in range(width):
+            game_map[0][x] = '#'
+            game_map[height - 1][x] = '#'
+        for y in range(height):
+            game_map[y][0] = '#'
+            game_map[y][width - 1] = '#'
+
+        return game_map
+
+    def _carve_irregular_room(self, cy, cx, ry, rx, height, width):
+        """Carve a jagged, asymmetrical chamber around (cy, cx)."""
+        tiles = set()
+        angles = 24
+        radii_y = [ry * random.uniform(0.65, 1.15) for _ in range(angles)]
+        radii_x = [rx * random.uniform(0.65, 1.15) for _ in range(angles)]
+        for y in range(cy - ry - 2, cy + ry + 3):
+            for x in range(cx - rx - 2, cx + rx + 3):
+                if not (1 <= y < height - 1 and 1 <= x < width - 1):
+                    continue
+                dy, dx = y - cy, x - cx
+                dist = math.hypot(dx / max(rx, 1), dy / max(ry, 1))
+                angle = math.atan2(dy, dx)
+                idx = int((angle + math.pi) / (2 * math.pi) * angles) % angles
+                idx2 = (idx + 1) % angles
+                t = ((angle + math.pi) / (2 * math.pi) * angles) % 1.0
+                limit = (radii_y[idx] / max(ry, 1) * (1 - t) +
+                         radii_y[idx2] / max(ry, 1) * t)
+                # Mix x radius into limit for asymmetry
+                limit_x = (radii_x[idx] / max(rx, 1) * (1 - t) +
+                           radii_x[idx2] / max(rx, 1) * t)
+                limit = (limit + limit_x) / 2
+                if dist <= limit:
+                    tiles.add((y, x))
+        # Occasional bite / protrusion
+        if tiles and random.random() < 0.5:
+            for _ in range(random.randint(2, 6)):
+                y, x = random.choice(tuple(tiles))
+                for dy, dx in ((0, 1), (0, -1), (1, 0), (-1, 0)):
+                    ny, nx = y + dy, x + dx
+                    if 1 <= ny < height - 1 and 1 <= nx < width - 1 and random.random() < 0.5:
+                        tiles.add((ny, nx))
+        return tiles
+
+    def _carve_narrow_tunnel(self, floor, y0, x0, y1, x1, height, width, max_steps=None):
+        """1-tile corridor with occasional 2-tile widenings; biased drunkard toward goal."""
+        y, x = y0, x0
+        steps = 0
+        limit = max_steps if max_steps is not None else (abs(y1 - y0) + abs(x1 - x0)) * 4 + 40
+        while steps < limit:
+            steps += 1
+            if 1 <= y < height - 1 and 1 <= x < width - 1:
+                floor.add((y, x))
+                if random.random() < 0.12:
+                    # Occasional wider spot
+                    for dy, dx in ((0, 1), (0, -1), (1, 0), (-1, 0)):
+                        ny, nx = y + dy, x + dx
+                        if 1 <= ny < height - 1 and 1 <= nx < width - 1 and random.random() < 0.5:
+                            floor.add((ny, nx))
+            if (y, x) == (y1, x1):
+                break
+            if random.random() < 0.75:
+                if abs(y1 - y) > abs(x1 - x):
+                    y += 1 if y1 > y else -1
+                elif x != x1:
+                    x += 1 if x1 > x else -1
+                else:
+                    y += 1 if y1 > y else -1
+            else:
+                y += random.choice((-1, 0, 1))
+                x += random.choice((-1, 0, 1))
+            y = max(1, min(height - 2, y))
+            x = max(1, min(width - 2, x))
+        if 1 <= y1 < height - 1 and 1 <= x1 < width - 1:
+            floor.add((y1, x1))
+
+    def _largest_component(self, floor):
+        if not floor:
+            return floor
+        seen = set()
+        best = set()
+        for start in floor:
+            if start in seen:
+                continue
+            comp = set()
+            q = deque([start])
+            seen.add(start)
+            while q:
+                y, x = q.popleft()
+                comp.add((y, x))
+                for dy, dx in ((0, 1), (0, -1), (1, 0), (-1, 0)):
+                    n = (y + dy, x + dx)
+                    if n in floor and n not in seen:
+                        seen.add(n)
+                        q.append(n)
+            if len(comp) > len(best):
+                best = comp
+        return best
+
+    def _shrink_floor(self, floor, target):
+        """Remove low-connectivity tiles until near target; preserve one component."""
+        floor = set(floor)
+        # Build neighbor counts
+        while len(floor) > target + 50:
+            candidates = []
+            for y, x in floor:
+                n = sum(1 for dy, dx in ((0, 1), (0, -1), (1, 0), (-1, 0))
+                        if (y + dy, x + dx) in floor)
+                if n <= 2:
+                    candidates.append((y, x))
+            if not candidates:
+                break
+            random.shuffle(candidates)
+            for tile in candidates[:max(1, len(candidates) // 4)]:
+                floor.discard(tile)
+                if len(floor) <= target:
+                    break
+        return self._largest_component(floor)
+
+    def _fallback_dungeon(self):
+        """Simple connected rooms if generation fails repeatedly."""
+        h = w = 60
+        game_map = [['#' for _ in range(w)] for _ in range(h)]
+        floor = set()
+        centers = [(15, 15), (15, 45), (45, 15), (45, 45), (30, 30)]
+        for cy, cx in centers:
+            for y in range(cy - 3, cy + 4):
+                for x in range(cx - 4, cx + 5):
+                    if 1 <= y < h - 1 and 1 <= x < w - 1:
+                        floor.add((y, x))
+        for i in range(1, len(centers)):
+            self._carve_narrow_tunnel(floor, centers[i - 1][0], centers[i - 1][1],
+                                     centers[i][0], centers[i][1], h, w)
+        for y, x in floor:
+            game_map[y][x] = '.'
+        return game_map
+
+    # --- Stairs & connectivity -------------------------------------------
+
+    def _walkable_tiles(self, game_map=None):
+        m = game_map if game_map is not None else self.game_map
+        return [
+            (y, x)
+            for y, row in enumerate(m)
+            for x, cell in enumerate(row)
+            if cell in ('.', '&')
+        ]
+
+    def _is_walkable_cell(self, y, x, game_map=None):
+        m = game_map if game_map is not None else self.game_map
+        h, w = len(m), len(m[0])
+        if not (0 <= y < h and 0 <= x < w):
+            return False
+        return m[y][x] != '#'
+
+    def _nearest_walkable(self, preferred, game_map=None):
+        m = game_map if game_map is not None else self.game_map
+        if preferred is None:
+            return None
+        py, px = preferred
+        if self._is_walkable_cell(py, px, m) and m[py][px] in ('.', '&'):
+            return [py, px]
+        best = None
+        best_d = None
+        for y, x in self._walkable_tiles(m):
+            d = abs(y - py) + abs(x - px)
+            if best_d is None or d < best_d:
+                best_d = d
+                best = [y, x]
+        return best
+
+    def _bfs_reachable(self, start, goal, game_map=None):
+        m = game_map if game_map is not None else self.game_map
+        if start is None or goal is None:
+            return False
+        sy, sx = start[0], start[1]
+        gy, gx = goal[0], goal[1]
+        if not self._is_walkable_cell(sy, sx, m) or not self._is_walkable_cell(gy, gx, m):
+            return False
+        q = deque([(sy, sx)])
+        seen = {(sy, sx)}
+        while q:
+            y, x = q.popleft()
+            if (y, x) == (gy, gx):
+                return True
+            for dy, dx in ((0, 1), (0, -1), (1, 0), (-1, 0)):
+                ny, nx = y + dy, x + dx
+                if (ny, nx) not in seen and self._is_walkable_cell(ny, nx, m):
+                    seen.add((ny, nx))
+                    q.append((ny, nx))
+        return False
+
+    def _carve_path(self, start, end, game_map=None):
+        m = game_map if game_map is not None else self.game_map
+        y, x = start[0], start[1]
+        ey, ex = end[0], end[1]
+        while (y, x) != (ey, ex):
+            if m[y][x] == '#':
+                m[y][x] = '.'
+            if abs(ey - y) > abs(ex - x):
+                y += 1 if ey > y else -1
+            elif x != ex:
+                x += 1 if ex > x else -1
+            else:
+                y += 1 if ey > y else -1
+        if m[ey][ex] == '#':
+            m[ey][ex] = '.'
+
+    def _place_and_validate_stairs(self, stairs_up_pos, repair=False):
+        floors = [(y, x) for y, x in self._walkable_tiles() if self.game_map[y][x] == '.']
+        if len(floors) < 2:
+            return False
+
+        for y, row in enumerate(self.game_map):
+            for x, cell in enumerate(row):
+                if cell in ('↑', '↓'):
+                    self.game_map[y][x] = '.'
+
+        up = self._nearest_walkable(stairs_up_pos) if stairs_up_pos else None
+        if up is None:
+            uy, ux = random.choice(floors)
+            up = [uy, ux]
+        uy, ux = up
+        if (uy, ux) in self.monsters:
+            del self.monsters[(uy, ux)]
+        if self.game_map[uy][ux] == '#':
+            return False
+        self.game_map[uy][ux] = '↑'
+
+        down_candidates = [p for p in floors if p != (uy, ux)]
+        if not down_candidates:
+            return False
+        down_candidates.sort(key=lambda p: -(abs(p[0] - uy) + abs(p[1] - ux)))
+        dy, dx = down_candidates[random.randint(0, min(25, len(down_candidates) - 1))]
+        if (dy, dx) in self.monsters:
+            del self.monsters[(dy, dx)]
+        self.game_map[dy][dx] = '↓'
+
+        if self._bfs_reachable(up, [dy, dx]):
+            return True
+
+        if repair:
+            self._carve_path(up, [dy, dx])
+            self.game_map[uy][ux] = '↑'
+            self.game_map[dy][dx] = '↓'
+            return self._bfs_reachable(up, [dy, dx])
+
+        return False
 
     def place_stair(self, symbol, preferred_pos=None, avoid_pos=None):
-        """Place a stair tile, preferring a position when provided. Returns [y, x]."""
+        """Place a stair on a walkable floor tile. Returns [y, x]."""
+        h, w = self._dims()
+
         if preferred_pos is not None:
-            y, x = preferred_pos
-            if 1 <= y < self.map_size - 1 and 1 <= x < self.map_size - 1:
+            nearest = self._nearest_walkable(preferred_pos)
+            if nearest is not None and (avoid_pos is None or nearest != avoid_pos):
+                y, x = nearest
                 if (y, x) in self.monsters:
                     del self.monsters[(y, x)]
-                self.game_map[y][x] = symbol
-                return [y, x]
+                if self.game_map[y][x] in ('.', '&'):
+                    self.game_map[y][x] = symbol
+                    return [y, x]
 
-        while True:
-            x, y = self.get_random_position()
-            if avoid_pos is not None and [y, x] == avoid_pos:
-                continue
-            if self.game_map[y][x] == '.':
-                self.game_map[y][x] = symbol
-                return [y, x]
+        floors = [
+            (y, x)
+            for y, x in self._walkable_tiles()
+            if self.game_map[y][x] == '.'
+            and (avoid_pos is None or [y, x] != avoid_pos)
+        ]
+        if not floors:
+            y, x = h // 2, w // 2
+            self.game_map[y][x] = symbol
+            return [y, x]
+
+        y, x = random.choice(floors)
+        self.game_map[y][x] = symbol
+        return [y, x]
+
+    def spawn_monsters(self):
+        h, w = self._dims()
+        for i in range(h):
+            for j in range(w):
+                if self.game_map[i][j] == '.' and random.random() < MONSTER_PROBABILITY:
+                    monster_type = random.choice(MONSTER_TYPES)
+                    monster_id = f"{monster_type}-{i},{j}"
+                    monster = Monster(monster_id, monster_type, [i, j])
+                    self.monsters[(i, j)] = monster
+                    self.game_map[i][j] = '&'
 
     def find_tile(self, game_map, symbol):
-        """Find the first tile matching symbol; returns [y, x] or None"""
         for y, row in enumerate(game_map):
             for x, cell in enumerate(row):
                 if cell == symbol:
@@ -96,19 +476,39 @@ class MapGenerator:
         return None
 
     def find_random_start(self, players, existing_monsters, game_map=None):
-        """Find a random starting position that's free of players and monsters"""
-        while True:
-            x, y = self.get_random_position()
-            if self.is_position_free(x, y, players, existing_monsters, game_map):
+        check_map = game_map if game_map is not None else self.game_map
+        floors = [
+            (y, x)
+            for y, row in enumerate(check_map)
+            for x, cell in enumerate(row)
+            if cell == '.'
+        ]
+        random.shuffle(floors)
+        for y, x in floors:
+            if self.is_position_free(x, y, players, existing_monsters, check_map):
                 return [y, x]
+        for y, x in floors:
+            return [y, x]
+        h, w = len(check_map), len(check_map[0])
+        return [h // 2, w // 2]
 
-    def get_random_position(self):
-        """Get a random position within the map bounds"""
-        return random.randint(1, self.map_size-2), random.randint(1, self.map_size-2)
+    def get_random_position(self, game_map=None):
+        h, w = self._dims(game_map)
+        return random.randint(1, max(1, w - 2)), random.randint(1, max(1, h - 2))
 
     def is_position_free(self, x, y, players, existing_monsters, game_map=None):
-        """Check if a position is free of walls, players, and monsters"""
         check_map = game_map if game_map is not None else self.game_map
-        return (check_map[y][x] == '.' and 
-                not any(p.pos == [y, x] for p in players.values()) and
-                (y, x) not in existing_monsters)
+        h, w = len(check_map), len(check_map[0])
+        if not (0 <= y < h and 0 <= x < w):
+            return False
+        return (
+            check_map[y][x] == '.'
+            and not any(p.pos == [y, x] for p in players.values())
+            and (y, x) not in existing_monsters
+        )
+
+    def _dims(self, game_map=None):
+        m = game_map if game_map is not None else self.game_map
+        if not m:
+            return self.map_size, self.map_size
+        return len(m), len(m[0])

@@ -24,6 +24,8 @@ body {
     margin-bottom: 15px;
     font-family: monospace;
     overflow: hidden;  /* Remove scroll, hide overflow */
+    width: 20ch;
+    height: 20em;
 }
 
 .mobile-controls {

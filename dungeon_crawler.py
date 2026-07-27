@@ -9,6 +9,7 @@ from player import Player
 from combat import CombatSystem
 import ssl
 from map_generator import MapGenerator
+from camera import update_camera, slice_map
 
 # Constants (map spawn rates live in map_generator.py)
 SECRET_KEY = 'your-secret-key-here'
@@ -27,6 +28,7 @@ class GameState:
         self.monsters = {}
         self.game_map = None
         self.levels = {}  # Dictionary to store generated levels
+        self.cameras = {}  # player_id -> (cam_y, cam_x) viewport origin
         self.generate_top_level()
 
     def generate_top_level(self):
@@ -58,6 +60,10 @@ class GameState:
         game_map, monsters = self.ensure_level(level_number)
         stair_pos = self.map_generator.find_tile(game_map, stair_symbol)
         player.dungeon_level = level_number
+        # Fresh camera when entering a level so viewport recenters
+        if player.id in self.cameras:
+            del self.cameras[player.id]
+
         if stair_pos is None:
             player.pos = self.find_random_start(level_number)
             return
@@ -162,8 +168,10 @@ class GameState:
         return False
 
     def is_valid_move(self, new_pos, game_map):
-        return (0 <= new_pos[0] < self.map_generator.map_size and 
-                0 <= new_pos[1] < self.map_generator.map_size and 
+        h = len(game_map)
+        w = len(game_map[0]) if h else 0
+        return (0 <= new_pos[0] < h and
+                0 <= new_pos[1] < w and
                 game_map[new_pos[0]][new_pos[1]] != '#')
 
     def is_combat_scenario(self, player_id, new_pos, monsters):
@@ -189,30 +197,43 @@ class GameState:
     def get_game_state(self, current_player_id):
         if current_player_id and current_player_id in self.players:
             level = self.players[current_player_id].dungeon_level
+            focus_pos = self.players[current_player_id].pos
         else:
             level = 0  # Pre-join / spectator view is the top level
+            focus_pos = None
 
         game_map, monsters = self.ensure_level(level)
         visible_map = [row[:] for row in game_map]
-        
+
         # Show players on this level as "@"
         for player in self.players.values():
             if player.dungeon_level == level:
                 pos = player.pos
                 visible_map[pos[0]][pos[1]] = '@'
-        
+
         # Show monsters on this level as "&"
         for pos, monster in monsters.items():
             visible_map[pos[0]][pos[1]] = '&'
-        
+
+        # Per-player scrolling camera (viewport slice)
+        map_h = len(visible_map)
+        map_w = len(visible_map[0]) if map_h else 0
+        if focus_pos is not None:
+            prev = self.cameras.get(current_player_id)
+            cam = update_camera(prev, focus_pos, map_h, map_w)
+            self.cameras[current_player_id] = cam
+            visible_map = slice_map(visible_map, cam[0], cam[1])
+        else:
+            visible_map = slice_map(visible_map, 0, 0)
+
         # Include current player's data if they exist
         player_data = None
         if current_player_id and current_player_id in self.players:
             player_data = self.players[current_player_id].to_dict()
-        
+
         # Get player-specific messages
         player_messages = self.player_messages.get(current_player_id, []) if current_player_id else []
-        
+
         return {
             'map': visible_map,
             'messages': player_messages,
