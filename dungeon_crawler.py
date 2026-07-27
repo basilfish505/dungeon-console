@@ -376,8 +376,9 @@ if __name__ == '__main__':
                     debug=False,
                     use_reloader=False)
     else:
+        # Listen on all interfaces so phones on the same Wi-Fi can connect
         socketio.run(app, 
-                    host='127.0.0.1',
+                    host='0.0.0.0',
                     port=port,
                     debug=True)
 
