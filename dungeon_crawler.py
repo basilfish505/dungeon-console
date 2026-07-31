@@ -9,7 +9,13 @@ from player import Player
 from combat import CombatSystem
 import ssl
 from map_generator import MapGenerator
-from camera import update_camera, slice_map
+from camera import update_camera, slice_map, VIEWPORT_H, VIEWPORT_W
+from visibility import (
+    VISIBILITY_SYSTEM_ENABLED,
+    compute_fov,
+    update_explored,
+    remembered_terrain,
+)
 
 # Constants (map spawn rates live in map_generator.py)
 SECRET_KEY = 'your-secret-key-here'
@@ -66,6 +72,7 @@ class GameState:
 
         if stair_pos is None:
             player.pos = self.find_random_start(level_number)
+            self.recompute_visibility(player)
             return
 
         # Prefer an adjacent open tile so the stair stays visible and usable
@@ -75,9 +82,22 @@ class GameState:
             ny, nx = y + dy, x + dx
             if self.map_generator.is_position_free(nx, ny, players_here, monsters, game_map):
                 player.pos = [ny, nx]
+                self.recompute_visibility(player)
                 return
 
         player.pos = stair_pos
+        self.recompute_visibility(player)
+
+    def recompute_visibility(self, player):
+        """Recalculate LOS and mark newly seen tiles explored for this level."""
+        if not VISIBILITY_SYSTEM_ENABLED:
+            return
+        game_map, _monsters = self.ensure_level(player.dungeon_level)
+        player.visible = compute_fov(game_map, player.pos, player.sight_range)
+        level = player.dungeon_level
+        if level not in player.explored:
+            player.explored[level] = set()
+        update_explored(player.explored[level], player.visible)
 
     def find_random_start(self, level_number=0):
         """Find a random starting position on the given dungeon level"""
@@ -113,7 +133,8 @@ class GameState:
             self.player_messages[player_id] = []
             # Add welcome message only to this player's messages
             self.add_player_message(player_id, f"Welcome, {player_id}, to the realm of PermaQuest. Thy quest begins, and glory or ruin lies ahead.")
-        
+            self.recompute_visibility(new_player)
+
         # Mark player as active
         self.active_players[player_id] = self.players[player_id]
         return self.players[player_id]
@@ -164,6 +185,7 @@ class GameState:
             if self.is_combat_scenario(player_id, new_pos, monsters):
                 return True
             player.pos = new_pos
+            self.recompute_visibility(player)
             return True
         return False
 
@@ -196,46 +218,88 @@ class GameState:
 
     def get_game_state(self, current_player_id):
         if current_player_id and current_player_id in self.players:
-            level = self.players[current_player_id].dungeon_level
-            focus_pos = self.players[current_player_id].pos
+            viewer = self.players[current_player_id]
+            level = viewer.dungeon_level
+            focus_pos = viewer.pos
         else:
+            viewer = None
             level = 0  # Pre-join / spectator view is the top level
             focus_pos = None
 
         game_map, monsters = self.ensure_level(level)
-        visible_map = [row[:] for row in game_map]
+        map_h = len(game_map)
+        map_w = len(game_map[0]) if map_h else 0
 
-        # Show players on this level as "@"
-        for player in self.players.values():
-            if player.dungeon_level == level:
-                pos = player.pos
-                visible_map[pos[0]][pos[1]] = '@'
-
-        # Show monsters on this level as "&"
-        for pos, monster in monsters.items():
-            visible_map[pos[0]][pos[1]] = '&'
-
-        # Per-player scrolling camera (viewport slice)
-        map_h = len(visible_map)
-        map_w = len(visible_map[0]) if map_h else 0
         if focus_pos is not None:
             prev = self.cameras.get(current_player_id)
-            cam = update_camera(prev, focus_pos, map_h, map_w)
-            self.cameras[current_player_id] = cam
-            visible_map = slice_map(visible_map, cam[0], cam[1])
+            cam_y, cam_x = update_camera(prev, focus_pos, map_h, map_w)
+            self.cameras[current_player_id] = (cam_y, cam_x)
         else:
-            visible_map = slice_map(visible_map, 0, 0)
+            cam_y, cam_x = 0, 0
 
-        # Include current player's data if they exist
-        player_data = None
-        if current_player_id and current_player_id in self.players:
-            player_data = self.players[current_player_id].to_dict()
+        vh = min(VIEWPORT_H, map_h)
+        vw = min(VIEWPORT_W, map_w)
 
-        # Get player-specific messages
+        # Single gate: disabled toggle or no viewer → today's full-map behavior
+        use_fog = VISIBILITY_SYSTEM_ENABLED and viewer is not None
+
+        if not use_fog:
+            visible_map = [row[:] for row in game_map]
+            for player in self.players.values():
+                if player.dungeon_level == level:
+                    pos = player.pos
+                    visible_map[pos[0]][pos[1]] = '@'
+            for pos, monster in monsters.items():
+                visible_map[pos[0]][pos[1]] = '&'
+            visible_map = slice_map(visible_map, cam_y, cam_x)
+            fog = [['visible' for _ in row] for row in visible_map]
+        else:
+            explored = viewer.explored.get(level, set())
+            los = viewer.visible
+            entity_at = {}
+            for pos, monster in monsters.items():
+                if pos in los:
+                    entity_at[pos] = '&'
+            for player in self.players.values():
+                if player.dungeon_level == level:
+                    py, px = player.pos[0], player.pos[1]
+                    if (py, px) in los or player.id == viewer.id:
+                        entity_at[(py, px)] = '@'
+
+            visible_map = []
+            fog = []
+            for vy in range(vh):
+                row_chars = []
+                row_fog = []
+                wy = cam_y + vy
+                for vx in range(vw):
+                    wx = cam_x + vx
+                    key = (wy, wx)
+                    if key in los:
+                        char = remembered_terrain(game_map, wy, wx)
+                        if key in entity_at:
+                            char = entity_at[key]
+                        state = 'visible'
+                    elif key in explored:
+                        char = remembered_terrain(game_map, wy, wx)
+                        state = 'explored'
+                    else:
+                        char = ' '
+                        state = 'unexplored'
+                    if key == (viewer.pos[0], viewer.pos[1]):
+                        char = '@'
+                        state = 'visible'
+                    row_chars.append(char)
+                    row_fog.append(state)
+                visible_map.append(row_chars)
+                fog.append(row_fog)
+
+        player_data = viewer.to_dict() if viewer is not None else None
         player_messages = self.player_messages.get(current_player_id, []) if current_player_id else []
 
         return {
             'map': visible_map,
+            'fog': fog,
             'messages': player_messages,
             'players': len(self.active_players),
             'player': player_data,

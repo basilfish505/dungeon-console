@@ -33,11 +33,39 @@ const UI = (function() {
         elements.playerProperties.style.display = 'block';
     }
     
-    // Update map display
-    function updateMap(mapData) {
-        if(mapData) {
-            elements.mapDisplay.textContent = mapData.map(row => row.join('')).join('\n');
+    // Update map display (optional fog grid for LOS coloring)
+    function updateMap(mapData, fogData) {
+        if (!mapData) {
+            return;
         }
+        if (!fogData) {
+            elements.mapDisplay.textContent = mapData.map(row => row.join('')).join('\n');
+            return;
+        }
+        const parts = [];
+        for (let y = 0; y < mapData.length; y++) {
+            if (y > 0) {
+                parts.push('\n');
+            }
+            const row = mapData[y];
+            const fogRow = fogData[y] || [];
+            for (let x = 0; x < row.length; x++) {
+                const state = fogRow[x] || 'visible';
+                const cls = state === 'explored' ? 'fog-explored'
+                    : state === 'unexplored' ? 'fog-unexplored'
+                    : 'fog-visible';
+                const ch = row[x] === ' ' ? '\u00a0' : row[x];
+                parts.push(`<span class="${cls}">${escapeHtml(ch)}</span>`);
+            }
+        }
+        elements.mapDisplay.innerHTML = parts.join('');
+    }
+
+    function escapeHtml(ch) {
+        if (ch === '&') return '&amp;';
+        if (ch === '<') return '&lt;';
+        if (ch === '>') return '&gt;';
+        return ch;
     }
     
     // Update message log

@@ -20,7 +20,11 @@ class Player:
         self.dex = random.randint(1, 10)
         self.agi = random.randint(1, 10)
         self.in_combat = False
-    
+        # Vision / fog-of-war (per-player; sight_range is dynamic)
+        self.sight_range = 4
+        self.explored = {}  # dungeon_level -> set of (y, x)
+        self.visible = set()  # current LOS tiles (y, x)
+
     def to_dict(self):
         return {
             'id': self.id,
@@ -33,7 +37,8 @@ class Player:
             'wis': self.wis,
             'chr': self.chr,
             'dex': self.dex,
-            'agi': self.agi
+            'agi': self.agi,
+            'sight_range': self.sight_range,
         }
 
     def move(self, direction):

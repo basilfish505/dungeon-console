@@ -13,7 +13,7 @@ const SocketHandler = (function() {
         
         // Game state update
         socket.on('game_state', function(data) {
-            UI.updateMap(data.map);
+            UI.updateMap(data.map, data.fog);
             UI.updateMessages(data.messages);
             UI.updatePlayerProperties(data.player);
             UI.updateGameInfo(data.game_info);

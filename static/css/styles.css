@@ -28,6 +28,18 @@ body {
     height: 20em;
 }
 
+#map-display .fog-visible {
+    color: #00ff00;
+}
+
+#map-display .fog-explored {
+    color: #006600;
+}
+
+#map-display .fog-unexplored {
+    color: #000000;
+}
+
 .mobile-controls {
     display: grid;
     grid-template-columns: repeat(3, 50px);
