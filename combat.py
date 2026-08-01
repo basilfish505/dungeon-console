@@ -5,7 +5,6 @@ from monster import Monster
 import uuid
 
 TURN_TIMEOUT_SECONDS = 6
-MONSTER_ATTACK_READ_SECONDS = 2
 MONSTER_TURN_DELAY_SECONDS = 1  # pause before monster acts after another turn
 KILLING_BLOW_PAUSE_SECONDS = 1  # pause so killer can read damage before combat closes
 
@@ -109,7 +108,6 @@ class CombatSystem:
             'status': 'active',
             'defend_status': {},
             'turn_token': None,
-            'monster_delay_token': None,
             'monster_turn_delay_token': None
         }
         
@@ -367,7 +365,6 @@ class CombatSystem:
     def _cancel_turn_timer(self, battle):
         """Invalidate any pending turn timer for this battle"""
         battle['turn_token'] = None
-        battle['monster_delay_token'] = None
         battle['monster_turn_delay_token'] = None
 
     def _turn_timer_expire(self, battle_id, player_id, token):
@@ -554,18 +551,6 @@ class CombatSystem:
             self._advance_turn(battle)
             return
         
-        # Notify all players that a monster is taking its turn
-        for player_id in battle['participants']:
-            monster_turn_notification = self._create_combat_update(
-                player_id,
-                battle,
-                'turn_notification',
-                f"The {monster.type} is preparing to attack!",
-                your_turn=False,
-                active_player=monster.type
-            )
-            self._emit('combat_update', monster_turn_notification, room=player_id)
-        
         # Monster automatically attacks a random player
         if battle['participants']:
             # Choose a target
@@ -583,29 +568,11 @@ class CombatSystem:
             if target.hp <= 0:
                 self._handle_player_death(target_id, battle)
             elif battle['status'] == 'active':
-                self._schedule_monster_turn_advance(battle)
+                self._advance_turn(battle)
         else:
             # No players left to attack, end battle
             self._check_battle_end(battle)
 
-    def _schedule_monster_turn_advance(self, battle):
-        """Wait briefly after a monster attack before returning to the next turn"""
-        token = str(uuid.uuid4())
-        battle['monster_delay_token'] = token
-        battle_id = battle['battle_id']
-
-        def advance_after_delay():
-            self.socketio.sleep(MONSTER_ATTACK_READ_SECONDS)
-            current = self.battles.get(battle_id)
-            if not current or current.get('status') != 'active':
-                return
-            if current.get('monster_delay_token') != token:
-                return
-            current['monster_delay_token'] = None
-            self._advance_turn(current)
-
-        self.socketio.start_background_task(advance_after_delay)
-    
     def _update_combat_turn_info(self, update, player_id, battle):
         """Add current turn information to a combat update"""
         # Determine if it's this player's turn

@@ -223,6 +223,32 @@ body {
 #combat-message-container {
     margin-top: 10px;
     min-height: 60px;  /* Ensure space for messages */
+    text-align: left;
+}
+
+#combat-log {
+    max-height: 7.5em;  /* ~5 lines visible; scroll for more */
+    overflow-y: auto;
+    margin-bottom: 8px;
+    padding: 6px 8px;
+    border: 1px solid #003300;
+    background-color: #000800;
+    font-size: 0.95em;
+    line-height: 1.35;
+}
+
+#combat-log .combat-log-line {
+    color: #00cc00;
+    margin: 0 0 2px 0;
+}
+
+#combat-log .combat-log-line:last-child {
+    color: #00ff00;
+}
+
+#combat-message {
+    text-align: center;
+    margin: 4px 0 0 0;
 }
 
 #opponent-thinking {

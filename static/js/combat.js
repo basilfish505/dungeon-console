@@ -1,9 +1,12 @@
 // combat.js - Combat UI and actions
 const Combat = (function () {
+    const MAX_COMBAT_LOG_LINES = 12;
+
     const elements = {
         combatBox: document.getElementById('combat-box'),
         opponentName: document.getElementById('opponent-name'),
         opponentHP: document.getElementById('opponent-hp'),
+        combatLog: document.getElementById('combat-log'),
         combatMessage: document.getElementById('combat-message'),
         opponentThinking: document.getElementById('opponent-thinking'),
         opponentsList: document.getElementById('opponents-list'),
@@ -15,10 +18,52 @@ const Combat = (function () {
     };
 
     let currentBattle = { battleId: null, opponents: [], selectedTarget: null };
+    let combatLogLines = [];
     let countdownTimer = null;
     let countdownRemaining = 0;
     let countdownYourTurn = false;
     let countdownActivePlayer = null;
+
+    function stripHtml(html) {
+        const tmp = document.createElement('div');
+        tmp.innerHTML = html;
+        return (tmp.textContent || tmp.innerText || '').replace(/\s+/g, ' ').trim();
+    }
+
+    function escapeHtml(text) {
+        return String(text)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;');
+    }
+
+    function renderCombatLog() {
+        if (!elements.combatLog) return;
+        elements.combatLog.innerHTML = combatLogLines
+            .map(line => `<div class="combat-log-line">${escapeHtml(line)}</div>`)
+            .join('');
+        elements.combatLog.scrollTop = elements.combatLog.scrollHeight;
+    }
+
+    function clearCombatLog() {
+        combatLogLines = [];
+        renderCombatLog();
+    }
+
+    function appendCombatLog(message) {
+        if (!message) return;
+        const text = stripHtml(message);
+        if (!text) return;
+        // Skip noisy status/countdown lines
+        if (/^\d+s\)?$/.test(text) || text.indexOf('to take their turn') !== -1) return;
+        if (text.indexOf("It's your turn to act!") === 0 && text.indexOf('(') !== -1) return;
+        if (combatLogLines.length && combatLogLines[combatLogLines.length - 1] === text) return;
+        combatLogLines.push(text);
+        while (combatLogLines.length > MAX_COMBAT_LOG_LINES) {
+            combatLogLines.shift();
+        }
+        renderCombatLog();
+    }
 
     function shakeCombatWindow() {
         if (!elements.combatBox) return;
@@ -122,17 +167,20 @@ const Combat = (function () {
 
     function handleCombatStart(data) {
         Sound.warm();
+        clearCombatLog();
         currentBattle.battleId = data.battle_id;
         currentBattle.opponents = data.opponents;
         elements.combatBox.style.display = 'block';
         updateOpponentsList();
         updateButtonStates(data.your_turn);
+        const startMsg = data.your_turn
+            ? "Combat has begun! It's your turn to act!"
+            : 'Combat has begun! Select your target and action.';
+        appendCombatLog(data.message || startMsg);
         if (data.turn_timeout) {
             startCountdown(data.turn_timeout, data.your_turn, data.active_player);
         } else {
-            elements.combatMessage.innerHTML = data.your_turn
-                ? "Combat has begun! It's your turn to act!"
-                : 'Combat has begun! Select your target and action.';
+            elements.combatMessage.innerHTML = startMsg;
         }
     }
 
@@ -140,6 +188,7 @@ const Combat = (function () {
         currentBattle.opponents = data.targets;
         updateOpponentsList();
         elements.combatMessage.innerHTML = 'Select a target for your action.';
+        appendCombatLog('Select a target for your action.');
     }
 
     function handleCombatAction(data) {
@@ -148,7 +197,10 @@ const Combat = (function () {
         if (data.shake_combat) shakeCombatWindow();
 
         updateButtonStates(data.your_turn);
-        if (data.message) elements.combatMessage.innerHTML = data.message;
+        if (data.message) {
+            elements.combatMessage.innerHTML = data.message;
+            appendCombatLog(data.message);
+        }
 
         if (!data.your_turn) {
             elements.opponentThinking.style.display = 'block';
@@ -170,6 +222,7 @@ const Combat = (function () {
 
     function handleMonsterDeath(data) {
         elements.combatMessage.innerHTML = data.message;
+        appendCombatLog(data.message);
         currentBattle.opponents = currentBattle.opponents.filter(
             o => !(o.is_monster && o.id === data.monster_id)
         );
@@ -178,6 +231,7 @@ const Combat = (function () {
 
     function handlePlayerDeath(data) {
         elements.combatMessage.innerHTML = data.message;
+        appendCombatLog(data.message);
         currentBattle.opponents = currentBattle.opponents.filter(
             o => o.is_monster || o.id !== data.player_id
         );
@@ -187,8 +241,10 @@ const Combat = (function () {
     function handleCombatEnd(data) {
         stopCountdown();
         if (data.victory) Sound.play('victory');
+        if (data.message) appendCombatLog(data.message);
         elements.combatBox.style.display = 'none';
         currentBattle = { battleId: null, opponents: [], selectedTarget: null };
+        clearCombatLog();
     }
 
     function handleTurnNotification(data) {
@@ -196,11 +252,13 @@ const Combat = (function () {
         if (data.message && data.message.indexOf('forfeited') !== -1) {
             stopCountdown();
             elements.combatMessage.innerHTML = data.message;
+            appendCombatLog(data.message);
         } else if (data.turn_timeout) {
             startCountdown(data.turn_timeout, data.your_turn, data.active_player);
         } else if (data.message) {
             stopCountdown();
             elements.combatMessage.innerHTML = data.message;
+            appendCombatLog(data.message);
             elements.opponentThinking.style.display = data.your_turn ? 'none' : 'block';
             if (!data.your_turn) elements.opponentThinking.textContent = data.message;
         }
