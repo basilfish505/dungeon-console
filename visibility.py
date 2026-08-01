@@ -7,7 +7,7 @@ Toggle VISIBILITY_SYSTEM_ENABLED to False for developer full-map mode.
 """
 
 # Single config switch — when False, rendering shows the full map (no FOW).
-VISIBILITY_SYSTEM_ENABLED = False
+VISIBILITY_SYSTEM_ENABLED = True
 
 # Permanent map features remembered in fog (monsters/players are not terrain)
 PERMANENT_TERRAIN = frozenset({'#', '.', '↓', '↑'})
