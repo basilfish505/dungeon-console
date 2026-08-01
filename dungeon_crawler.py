@@ -16,6 +16,7 @@ from visibility import (
     update_explored,
     remembered_terrain,
 )
+from monster_ai import monster_ai_loop
 
 # Constants (map spawn rates live in map_generator.py)
 SECRET_KEY = 'your-secret-key-here'
@@ -121,6 +122,44 @@ class GameState:
                 game_map[position[0]][position[1]] = '.'
                 return True
         return False
+
+    def move_monster(self, level_number, monster, dest):
+        """
+        Move monster to dest (y, x). Updates dict key, pos, and map markers.
+        Returns False if blocked or dest occupied by another monster.
+        """
+        game_map, monsters = self.ensure_level(level_number)
+        old_key = (monster.pos[0], monster.pos[1])
+        new_key = (dest[0], dest[1])
+        if new_key == old_key:
+            return False
+        if new_key in monsters:
+            return False
+        h = len(game_map)
+        w = len(game_map[0]) if h else 0
+        if not (0 <= dest[0] < h and 0 <= dest[1] < w):
+            return False
+        if game_map[dest[0]][dest[1]] == '#':
+            return False
+
+        # Remove from old slot
+        if old_key in monsters and monsters[old_key] is monster:
+            del monsters[old_key]
+            if game_map[old_key[0]][old_key[1]] == '&':
+                game_map[old_key[0]][old_key[1]] = '.'
+
+        monster.pos = [dest[0], dest[1]]
+        monsters[new_key] = monster
+        # Preserve stairs if present; otherwise mark monster
+        cell = game_map[dest[0]][dest[1]]
+        if cell not in ('↓', '↑'):
+            game_map[dest[0]][dest[1]] = '&'
+        return True
+
+    def broadcast_active_players(self, socketio_ref):
+        """Push game_state to all currently active (connected) players."""
+        for pid in list(self.active_players.keys()):
+            socketio_ref.emit('game_state', self.get_game_state(pid), room=pid)
 
     def add_player(self, player_id):
         if player_id not in self.players:
@@ -309,6 +348,9 @@ class GameState:
 # Create game state and combat system
 game_state = GameState()
 combat_system = CombatSystem(game_state, socketio)
+
+# Background monster AI (independent per-monster timers)
+socketio.start_background_task(monster_ai_loop, socketio, game_state, combat_system)
 
 class GameStateDisplay:
     def __init__(self, game_state):
