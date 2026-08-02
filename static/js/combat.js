@@ -82,14 +82,13 @@ const Combat = (function () {
 
     function renderCountdownMessage() {
         const secs = Math.max(0, countdownRemaining);
+        // Status line only — never mirror into opponent-thinking (avoids duplicate text)
+        elements.opponentThinking.style.display = 'none';
         if (countdownYourTurn) {
             elements.combatMessage.innerHTML = `It's your turn to act! (${secs}s)`;
-            elements.opponentThinking.style.display = 'none';
         } else {
-            const msg = `Waiting for ${countdownActivePlayer || 'opponent'} to take their turn... (${secs}s)`;
-            elements.combatMessage.innerHTML = msg;
-            elements.opponentThinking.style.display = 'block';
-            elements.opponentThinking.textContent = msg;
+            elements.combatMessage.innerHTML =
+                `Waiting for ${countdownActivePlayer || 'opponent'} to take their turn... (${secs}s)`;
         }
     }
 
@@ -114,13 +113,10 @@ const Combat = (function () {
         elements.spellBtn.disabled = true;
         elements.itemBtn.disabled = true;
         elements.runBtn.disabled = true;
-        if (disableAll) {
-            elements.opponentThinking.style.display = 'block';
-            if (!countdownTimer) {
-                elements.opponentThinking.textContent = "Waiting for opponent's move...";
-            }
-        } else if (isYourTurn === true) {
-            elements.opponentThinking.style.display = 'none';
+        // Keep a single status line in #combat-message; hide the secondary thinking line
+        elements.opponentThinking.style.display = 'none';
+        if (disableAll && !countdownTimer) {
+            elements.combatMessage.innerHTML = "Waiting for opponent's move...";
         }
     }
 
@@ -202,12 +198,7 @@ const Combat = (function () {
             appendCombatLog(data.message);
         }
 
-        if (!data.your_turn) {
-            elements.opponentThinking.style.display = 'block';
-            elements.opponentThinking.textContent = 'Waiting for next turn...';
-        } else {
-            elements.opponentThinking.style.display = 'none';
-        }
+        elements.opponentThinking.style.display = 'none';
 
         if (data.combatants) {
             const me = document.getElementById('player-id').value;
@@ -259,13 +250,7 @@ const Combat = (function () {
             stopCountdown();
             elements.combatMessage.innerHTML = data.message;
             appendCombatLog(data.message);
-            elements.opponentThinking.style.display = data.your_turn ? 'none' : 'block';
-            if (!data.your_turn) elements.opponentThinking.textContent = data.message;
-        }
-
-        if (data.your_turn) {
-            elements.combatMessage.style.color = '#ffff00';
-            setTimeout(() => { elements.combatMessage.style.color = '#00ff00'; }, 500);
+            elements.opponentThinking.style.display = 'none';
         }
 
         if (data.active_player && currentBattle.opponents) {
