@@ -5,14 +5,14 @@ from monster import Monster
 
 # Constants
 MAP_SIZE = 20  # Top-level / viewport footprint
-MONSTER_PROBABILITY = 0.01
+MONSTER_PROBABILITY = 0.03
 MIN_FLOOR_AREA = 300
 MAX_FLOOR_AREA = 500
 MAX_GEN_ATTEMPTS = 50
 
 # Temporary testing toggle: True = classic 20x20 rectangle with random boulders.
 # False = procedural rooms/tunnels (1k–5k tiles) + scrolling camera on large maps.
-USE_SIMPLE_LOWER_LEVELS = True
+USE_SIMPLE_LOWER_LEVELS = False
 BOULDER_PROBABILITY = 0.03  # simple-mode only
 
 MONSTER_TYPES = [

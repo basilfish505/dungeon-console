@@ -1,17 +1,18 @@
-"""Server-side viewport camera with dead-zone scrolling."""
+"""Server-side viewport camera with edge-margin scrolling."""
 
 VIEWPORT_H = 20
 VIEWPORT_W = 20
-DEADZONE = 8
+EDGE_MARGIN = 4  # scroll when player is within this many tiles of the viewport edge
 
 
 def update_camera(prev_cam, player_pos, map_h, map_w,
-                  vh=VIEWPORT_H, vw=VIEWPORT_W, deadzone=DEADZONE):
+                  vh=VIEWPORT_H, vw=VIEWPORT_W, edge_margin=EDGE_MARGIN):
     """
     Return (cam_y, cam_x) top-left of the viewport.
 
-    Player may sit within ±deadzone of viewport center before the camera scrolls.
-    Camera is clamped so the viewport never shows tiles outside the map.
+    Camera scrolls when the player comes within edge_margin tiles of the
+    viewport edge, keeping them in the central band. Camera is clamped so
+    the viewport never shows tiles outside the map.
     """
     py, px = player_pos
 
@@ -22,18 +23,16 @@ def update_camera(prev_cam, player_pos, map_h, map_w,
         cam_y, cam_x = prev_cam
         sy = py - cam_y
         sx = px - cam_x
-        cy = vh // 2
-        cx = vw // 2
 
-        if sy < cy - deadzone:
-            cam_y = py - (cy - deadzone)
-        elif sy > cy + deadzone:
-            cam_y = py - (cy + deadzone)
+        if sy < edge_margin:
+            cam_y = py - edge_margin
+        elif sy > vh - 1 - edge_margin:
+            cam_y = py - (vh - 1 - edge_margin)
 
-        if sx < cx - deadzone:
-            cam_x = px - (cx - deadzone)
-        elif sx > cx + deadzone:
-            cam_x = px - (cx + deadzone)
+        if sx < edge_margin:
+            cam_x = px - edge_margin
+        elif sx > vw - 1 - edge_margin:
+            cam_x = px - (vw - 1 - edge_margin)
 
     max_y = max(0, map_h - vh)
     max_x = max(0, map_w - vw)
