@@ -4,7 +4,7 @@ from player import Player
 from monster import Monster
 import uuid
 
-TURN_TIMEOUT_SECONDS = 6
+TURN_TIMEOUT_SECONDS = 20
 MONSTER_TURN_DELAY_SECONDS = 1  # pause before monster acts after another turn
 KILLING_BLOW_PAUSE_SECONDS = 1  # pause so killer can read damage before combat closes
 
