@@ -17,9 +17,16 @@ from visibility import (
     remembered_terrain,
 )
 from monster_ai import monster_ai_loop
+from collections import deque
 
 # Constants (map spawn rates live in map_generator.py)
 SECRET_KEY = 'your-secret-key-here'
+
+# Eight adjacent directions (N, NE, E, SE, S, SW, W, NW)
+_STAIR_ADJACENT_DIRS = (
+    (-1, 0), (-1, 1), (0, 1), (1, 1),
+    (1, 0), (1, -1), (0, -1), (-1, -1),
+)
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = SECRET_KEY
@@ -62,32 +69,92 @@ class GameState:
             if player.dungeon_level == level_number
         }
 
+    def _is_arrival_tile_free(self, y, x, game_map, monsters, players, exclude_player_id=None):
+        """True if a player may safely arrive on (y, x): in-bounds, walkable, unoccupied."""
+        h = len(game_map)
+        w = len(game_map[0]) if h else 0
+        if not (0 <= y < h and 0 <= x < w):
+            return False
+        if game_map[y][x] == '#':
+            return False
+        if (y, x) in monsters:
+            return False
+        for pid, other in players.items():
+            if exclude_player_id is not None and pid == exclude_player_id:
+                continue
+            if other.pos[0] == y and other.pos[1] == x:
+                return False
+        return True
+
+    def find_stair_arrival_position(self, level_number, stair_pos, exclude_player_id=None):
+        """
+        Find a safe arrival tile for a player using stairs.
+
+        Prefer the stair tile itself. If occupied, try a random shuffle of the
+        eight adjacent tiles. If those fail, BFS outward through walkable tiles
+        for the nearest free cell connected to the stair area.
+        Returns [y, x] or None if no valid tile exists.
+        """
+        game_map, monsters = self.ensure_level(level_number)
+        players = self.players_on_level(level_number)
+        sy, sx = int(stair_pos[0]), int(stair_pos[1])
+
+        if self._is_arrival_tile_free(sy, sx, game_map, monsters, players, exclude_player_id):
+            return [sy, sx]
+
+        neighbors = list(_STAIR_ADJACENT_DIRS)
+        random.shuffle(neighbors)
+        for dy, dx in neighbors:
+            ny, nx = sy + dy, sx + dx
+            if self._is_arrival_tile_free(ny, nx, game_map, monsters, players, exclude_player_id):
+                return [ny, nx]
+
+        # Outward search: only expand through non-wall tiles so arrival stays
+        # reachable from the stair area.
+        h = len(game_map)
+        w = len(game_map[0]) if h else 0
+        queue = deque([(sy, sx)])
+        seen = {(sy, sx)}
+        while queue:
+            y, x = queue.popleft()
+            for dy, dx in _STAIR_ADJACENT_DIRS:
+                ny, nx = y + dy, x + dx
+                if not (0 <= ny < h and 0 <= nx < w):
+                    continue
+                if (ny, nx) in seen:
+                    continue
+                if game_map[ny][nx] == '#':
+                    continue
+                seen.add((ny, nx))
+                if self._is_arrival_tile_free(ny, nx, game_map, monsters, players, exclude_player_id):
+                    return [ny, nx]
+                queue.append((ny, nx))
+        return None
+
     def place_player_on_stair(self, player, level_number, stair_symbol):
-        """Move player to a level next to (or on) the matching staircase"""
+        """
+        Move player onto the destination stair tile (or a safe nearby tile).
+
+        Returns True on success. On failure, leaves the player unchanged on
+        their current level.
+        """
         game_map, monsters = self.ensure_level(level_number)
         stair_pos = self.map_generator.find_tile(game_map, stair_symbol)
+        if stair_pos is None:
+            return False
+
+        arrival = self.find_stair_arrival_position(
+            level_number, stair_pos, exclude_player_id=player.id
+        )
+        if arrival is None:
+            return False
+
         player.dungeon_level = level_number
-        # Fresh camera when entering a level so viewport recenters
+        player.pos = arrival
         if player.id in self.cameras:
             del self.cameras[player.id]
-
-        if stair_pos is None:
-            player.pos = self.find_random_start(level_number)
-            self.recompute_visibility(player)
-            return
-
-        # Prefer an adjacent open tile so the stair stays visible and usable
-        y, x = stair_pos
-        players_here = self.players_on_level(level_number)
-        for dy, dx in ((0, 1), (0, -1), (1, 0), (-1, 0)):
-            ny, nx = y + dy, x + dx
-            if self.map_generator.is_position_free(nx, ny, players_here, monsters, game_map):
-                player.pos = [ny, nx]
-                self.recompute_visibility(player)
-                return
-
-        player.pos = stair_pos
         self.recompute_visibility(player)
+        return True
 
     def recompute_visibility(self, player):
         """Recalculate LOS and mark newly seen tiles explored for this level."""
@@ -202,27 +269,38 @@ class GameState:
         new_pos = player.move(direction)
 
         if self.is_valid_move(new_pos, game_map):
+            # Occupied tiles (players/monsters) take priority over stairs —
+            # you must defeat whoever is on the stair before using it.
+            if self.is_combat_scenario(player_id, new_pos, monsters):
+                return True
+
             tile = game_map[new_pos[0]][new_pos[1]]
 
-            # Stairs down → deeper level, land on ↑
+            # Stairs: transition only when deliberately stepping onto a stair tile.
+            # Standing on stairs after arrival does not auto-retrigger.
             if tile == '↓':
                 dest_level = player.dungeon_level + 1
                 self.ensure_level(dest_level, stairs_up_pos=new_pos)
-                self.place_player_on_stair(player, dest_level, '↑')
+                if not self.place_player_on_stair(player, dest_level, '↑'):
+                    self.add_player_message(
+                        player_id, "The way down is blocked; you stay put."
+                    )
+                    return False
                 self.add_player_message(player_id, "You descend deeper into the dungeon...")
                 return True
 
-            # Stairs up → previous level, land on ↓
             if tile == '↑':
                 if player.dungeon_level <= 0:
                     return False
                 dest_level = player.dungeon_level - 1
-                self.place_player_on_stair(player, dest_level, '↓')
+                if not self.place_player_on_stair(player, dest_level, '↓'):
+                    self.add_player_message(
+                        player_id, "The way up is blocked; you stay put."
+                    )
+                    return False
                 self.add_player_message(player_id, "You climb back toward the surface...")
                 return True
-            
-            if self.is_combat_scenario(player_id, new_pos, monsters):
-                return True
+
             player.pos = new_pos
             self.recompute_visibility(player)
             return True
