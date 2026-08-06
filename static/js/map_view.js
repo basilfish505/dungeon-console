@@ -66,14 +66,35 @@ const MapView = (function () {
 
     function applyExactColumnFit(cols, opts) {
         opts = opts || {};
-        const aspect = probeMonoAspect();
-        const fontSize = state.paneW / (cols * aspect);
+        let fontSize = state.paneW / (cols * probeMonoAspect());
         if (displayEl) {
             displayEl.style.fontSize = fontSize + 'px';
             displayEl.style.lineHeight = '1';
+            // Verify N glyphs actually fit; shrink if the aspect probe was optimistic
+            const probe = document.createElement('span');
+            probe.style.cssText =
+                'position:absolute;left:-9999px;top:0;visibility:hidden;white-space:pre;' +
+                'font-family:\'Courier New\',Courier,monospace;font-size:' + fontSize +
+                'px;line-height:1;';
+            probe.textContent = 'M'.repeat(cols);
+            document.body.appendChild(probe);
+            let measured = probe.getBoundingClientRect().width;
+            if (measured > state.paneW && measured > 0) {
+                fontSize = fontSize * (state.paneW / measured) * 0.995;
+                displayEl.style.fontSize = fontSize + 'px';
+                probe.style.fontSize = fontSize + 'px';
+                measured = probe.getBoundingClientRect().width;
+            }
+            // Measure real line box height (important when pane is wider than tall)
+            probe.textContent = 'M\nM';
+            const twoLine = probe.getBoundingClientRect().height;
+            document.body.removeChild(probe);
+            state.tileW = measured > 0 ? measured / cols : state.paneW / cols;
+            state.tileH = twoLine > 0 ? twoLine / 2 : fontSize;
+        } else {
+            state.tileW = state.paneW / cols;
+            state.tileH = fontSize;
         }
-        state.tileW = state.paneW / cols;
-        state.tileH = fontSize;
         // Never snap the index while at max zoom — that drops off the max step
         // and causes an immediate zoom-out when the pinch ends / RAF remasures.
         if (opts.snapIndex !== false) {
@@ -138,32 +159,43 @@ const MapView = (function () {
         }
     }
 
+    function rowsThatFit() {
+        const th = Math.max(1, state.tileH);
+        return Math.max(1, Math.min(80, Math.floor(state.paneH / th)));
+    }
+
     function computeVisibleCounts() {
         const tw = Math.max(1, state.tileW);
         const th = Math.max(1, state.tileH);
 
         if (isMaxZoom()) {
+            // Width is exact MIN_VISIBLE; rows must not exceed what fits (no inflation)
             state.visibleCols = MIN_VISIBLE;
-            state.visibleRows = Math.max(
-                MIN_VISIBLE,
-                Math.min(80, Math.floor(state.paneH / th))
-            );
+            state.visibleRows = rowsThatFit();
             return;
         }
 
         if (state.fitCols) {
             state.visibleCols = state.fitCols;
-            state.visibleRows = Math.max(
-                MIN_VISIBLE,
-                Math.min(80, Math.floor(state.paneH / th))
-            );
+            state.visibleRows = rowsThatFit();
             return;
         }
 
-        state.visibleCols = Math.max(MIN_VISIBLE, Math.floor(state.paneW / tw));
-        state.visibleRows = Math.max(MIN_VISIBLE, Math.floor(state.paneH / th));
-        state.visibleCols = Math.min(80, state.visibleCols);
-        state.visibleRows = Math.min(80, state.visibleRows);
+        let cols = Math.max(1, Math.floor(state.paneW / tw));
+        let rows = Math.max(1, Math.floor(state.paneH / th));
+
+        // Discrete zoom grew tiles past what fits MIN_VISIBLE cols → promote to max fit
+        // so we never request more tiles than the pane can show (avoids off-screen player).
+        if (cols < MIN_VISIBLE) {
+            state.zoomIndex = ZOOM_LEVELS.length - 1;
+            applyExactColumnFit(MIN_VISIBLE, { snapIndex: false });
+            state.visibleCols = MIN_VISIBLE;
+            state.visibleRows = rowsThatFit();
+            return;
+        }
+
+        state.visibleCols = Math.min(80, cols);
+        state.visibleRows = Math.min(80, rows);
     }
 
     function updateCameraForPlayer() {
@@ -173,8 +205,13 @@ const MapView = (function () {
         const vw = state.visibleCols;
         const py = state.playerY;
         const px = state.playerX;
-        const my = Math.min(4, Math.max(0, Math.floor((vh - 1) / 2)));
-        const mx = Math.min(4, Math.max(0, Math.floor((vw - 1) / 2)));
+        // Scale margin with zoom: 4 tiles at 20-across (matches server margin_for_span)
+        const refMargin = 4;
+        const refSpan = DEFAULT_VISIBLE_COLS;
+        const rawMy = Math.max(1, Math.round(refMargin * vh / refSpan));
+        const rawMx = Math.max(1, Math.round(refMargin * vw / refSpan));
+        const my = Math.min(rawMy, Math.max(0, Math.floor((vh - 1) / 2)));
+        const mx = Math.min(rawMx, Math.max(0, Math.floor((vw - 1) / 2)));
 
         if (state.mapH > 0 && vh >= state.mapH) {
             state.cameraY = Math.floor((state.mapH - vh) / 2);

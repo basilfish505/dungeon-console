@@ -3,8 +3,10 @@ import unittest
 
 from camera import (
     EDGE_MARGIN,
+    DEFAULT_VIEW_SPAN,
     clamp_viewport_size,
     effective_margin,
+    margin_for_span,
     pan_camera,
     slice_map,
     update_camera,
@@ -19,14 +21,32 @@ class ClampViewportTests(unittest.TestCase):
     def test_clamp_within_bounds(self):
         self.assertEqual(clamp_viewport_size(20, 30), (20, 30))
 
+    def test_clamp_allows_short_landscape(self):
+        # Wide-short map pane: fewer rows than the 10-col max-zoom floor
+        self.assertEqual(clamp_viewport_size(6, 10), (6, 10))
+
     def test_clamp_raises_floor(self):
-        self.assertEqual(clamp_viewport_size(2, 3), (10, 10))
+        self.assertEqual(clamp_viewport_size(2, 3), (4, 4))
 
     def test_clamp_caps_ceiling(self):
         self.assertEqual(clamp_viewport_size(200, 99), (80, 80))
 
     def test_clamp_invalid_falls_back(self):
         self.assertEqual(clamp_viewport_size('x', None), (20, 20))
+
+
+class MarginForSpanTests(unittest.TestCase):
+    def test_default_zoom(self):
+        self.assertEqual(margin_for_span(DEFAULT_VIEW_SPAN), EDGE_MARGIN)
+
+    def test_zoomed_in(self):
+        self.assertEqual(margin_for_span(10), 2)
+
+    def test_zoomed_out(self):
+        self.assertEqual(margin_for_span(40), 8)
+
+    def test_minimum_one(self):
+        self.assertEqual(margin_for_span(1), 1)
 
 
 class EffectiveMarginTests(unittest.TestCase):
@@ -61,11 +81,19 @@ class CameraMarginTests(unittest.TestCase):
         self.assertEqual(cam, (0, 0))  # 10 - 10 = 0
 
     def test_margin_scrolls_before_edge(self):
-        # Player near top of viewport with margin 4 → camera moves up (may go OOB)
+        # Player near top of viewport with margin 4 at 20×20 → camera moves up
         cam = update_camera((5, 5), (6, 10), 40, 40, vh=20, vw=20)
         # sy = 6-5 = 1 < 4 → cam_y = 6-4 = 2
         self.assertEqual(cam[0], 2)
         self.assertEqual(cam[1], 5)
+
+    def test_smaller_margin_when_zoomed_in(self):
+        # At 10×10, margin is 2; sy=1 < 2 → scroll
+        cam = update_camera((5, 5), (6, 10), 40, 40, vh=10, vw=10)
+        self.assertEqual(cam[0], 6 - 2)
+        # At 10×10, sy=2 is exactly at margin → no scroll
+        cam2 = update_camera((4, 5), (6, 10), 40, 40, vh=10, vw=10)
+        self.assertEqual(cam2[0], 4)
 
     def test_edge_allows_negative_camera_for_margin(self):
         # Player at map origin; initial camera centers then keeps player in view (OOB #).

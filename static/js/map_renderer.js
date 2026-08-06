@@ -49,8 +49,10 @@ const MapRenderer = (function () {
 
         el.style.fontSize = size + 'px';
         el.style.lineHeight = '1';
+        el.style.letterSpacing = '0';
         el.style.width = '100%';
         el.style.height = '100%';
+        el.style.overflow = 'hidden';
 
         const mapData = state.lastMap;
         if (!mapData || !mapData.length) {

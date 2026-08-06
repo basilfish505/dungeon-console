@@ -2,10 +2,15 @@
 
 VIEWPORT_H = 20
 VIEWPORT_W = 20
-EDGE_MARGIN = 4  # scroll when player is within this many tiles of the viewport edge
+# Tile margin at default zoom (DEFAULT_VIEW_SPAN tiles across). Scales with viewport
+# so on-screen lead-in distance stays roughly constant when zooming.
+EDGE_MARGIN = 4
+DEFAULT_VIEW_SPAN = 20
 
-# Adaptive viewport bounds (client may request sizes within this range)
-MIN_VIEWPORT = 10
+# Adaptive viewport bounds (client may request sizes within this range).
+# Floor is low so a wide-short map pane can request fewer rows than columns
+# (e.g. 6×10 at max zoom) without the server inflating height and clipping.
+MIN_VIEWPORT = 4
 MAX_VIEWPORT = 80
 
 
@@ -21,6 +26,22 @@ def clamp_viewport_size(vh, vw, min_size=MIN_VIEWPORT, max_size=MAX_VIEWPORT):
     return vh, vw
 
 
+def margin_for_span(span, ref_margin=EDGE_MARGIN, ref_span=DEFAULT_VIEW_SPAN):
+    """
+    Scale edge margin with visible tile count so screen distance stays similar.
+
+    At DEFAULT_VIEW_SPAN (20) → EDGE_MARGIN (4). Zoomed in to 10 → 2; out to 40 → 8.
+    """
+    try:
+        span = int(span)
+    except (TypeError, ValueError):
+        return ref_margin
+    if span <= 0:
+        return 0
+    # Round half up so highly zoomed views keep a full lead-in tile
+    return max(1, int((ref_margin * span + ref_span // 2) // ref_span))
+
+
 def effective_margin(size, edge_margin=EDGE_MARGIN):
     """Margin that fits inside a one-dimensional viewport span."""
     if size <= 1:
@@ -29,18 +50,25 @@ def effective_margin(size, edge_margin=EDGE_MARGIN):
 
 
 def update_camera(prev_cam, player_pos, map_h, map_w,
-                  vh=VIEWPORT_H, vw=VIEWPORT_W, edge_margin=EDGE_MARGIN):
+                  vh=VIEWPORT_H, vw=VIEWPORT_W, edge_margin=None):
     """
     Return integer (cam_y, cam_x) top-left of the viewport.
 
-    Camera scrolls when the player comes within edge_margin tiles of the
-    viewport edge. When the viewport is at least as large as the map on an
-    axis, that axis is centered (camera may be negative so OOB pads with #).
+    Camera scrolls when the player comes within the edge margin of the
+    viewport edge. When edge_margin is None (default), margin scales with
+    vh/vw so on-screen lead-in matches EDGE_MARGIN at DEFAULT_VIEW_SPAN.
+
+    When the viewport is at least as large as the map on an axis, that axis
+    is centered (camera may be negative so OOB pads with #).
     Near map edges the camera may leave the map so the margin is preserved.
     """
     py, px = player_pos
-    my = effective_margin(vh, edge_margin)
-    mx = effective_margin(vw, edge_margin)
+    if edge_margin is None:
+        my = effective_margin(vh, margin_for_span(vh))
+        mx = effective_margin(vw, margin_for_span(vw))
+    else:
+        my = effective_margin(vh, edge_margin)
+        mx = effective_margin(vw, edge_margin)
 
     if vh >= map_h:
         cam_y = (map_h - vh) // 2
