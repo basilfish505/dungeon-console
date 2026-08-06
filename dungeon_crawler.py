@@ -9,7 +9,13 @@ from player import Player
 from combat import CombatSystem
 import ssl
 from map_generator import MapGenerator
-from camera import update_camera, slice_map, VIEWPORT_H, VIEWPORT_W
+from camera import (
+    update_camera,
+    slice_map,
+    clamp_viewport_size,
+    VIEWPORT_H,
+    VIEWPORT_W,
+)
 from visibility import (
     VISIBILITY_SYSTEM_ENABLED,
     compute_fov,
@@ -43,6 +49,7 @@ class GameState:
         self.game_map = None
         self.levels = {}  # Dictionary to store generated levels
         self.cameras = {}  # player_id -> (cam_y, cam_x) viewport origin
+        self.viewports = {}  # player_id -> (vh, vw) adaptive viewport size
         self.generate_top_level()
 
     def generate_top_level(self):
@@ -154,6 +161,7 @@ class GameState:
         if player.id in self.cameras:
             del self.cameras[player.id]
         self.recompute_visibility(player)
+        # Viewport size is client-owned; keep it across level changes.
         return True
 
     def recompute_visibility(self, player):
@@ -347,15 +355,17 @@ class GameState:
         map_h = len(game_map)
         map_w = len(game_map[0]) if map_h else 0
 
+        vh, vw = self.viewports.get(current_player_id, (VIEWPORT_H, VIEWPORT_W))
+        vh, vw = clamp_viewport_size(vh, vw)
+
         if focus_pos is not None:
             prev = self.cameras.get(current_player_id)
-            cam_y, cam_x = update_camera(prev, focus_pos, map_h, map_w)
+            cam_y, cam_x = update_camera(
+                prev, focus_pos, map_h, map_w, vh=vh, vw=vw
+            )
             self.cameras[current_player_id] = (cam_y, cam_x)
         else:
             cam_y, cam_x = 0, 0
-
-        vh = min(VIEWPORT_H, map_h)
-        vw = min(VIEWPORT_W, map_w)
 
         # Single gate: disabled toggle or no viewer → today's full-map behavior
         use_fog = VISIBILITY_SYSTEM_ENABLED and viewer is not None
@@ -368,7 +378,7 @@ class GameState:
                     visible_map[pos[0]][pos[1]] = '@'
             for pos, monster in monsters.items():
                 visible_map[pos[0]][pos[1]] = '&'
-            visible_map = slice_map(visible_map, cam_y, cam_x)
+            visible_map = slice_map(visible_map, cam_y, cam_x, vh=vh, vw=vw)
             fog = [['visible' for _ in row] for row in visible_map]
         else:
             explored = viewer.explored.get(level, set())
@@ -392,7 +402,11 @@ class GameState:
                 for vx in range(vw):
                     wx = cam_x + vx
                     key = (wy, wx)
-                    if key in los:
+                    in_bounds = 0 <= wy < map_h and 0 <= wx < map_w
+                    if not in_bounds:
+                        char = '#'
+                        state = 'visible'
+                    elif key in los:
                         char = remembered_terrain(game_map, wy, wx)
                         if key in entity_at:
                             char = entity_at[key]
@@ -420,7 +434,10 @@ class GameState:
             'messages': player_messages,
             'players': len(self.active_players),
             'player': player_data,
-            'game_info': GameStateDisplay(self).get_display()
+            'game_info': GameStateDisplay(self).get_display(),
+            'camera': {'y': cam_y, 'x': cam_x},
+            'viewport': {'h': vh, 'w': vw},
+            'map_size': {'h': map_h, 'w': map_w},
         }
 
 # Create game state and combat system
@@ -500,6 +517,22 @@ def handle_move(direction):
             for pid in game_state.players:
                 if pid in game_state.active_players:
                     emit('game_state', game_state.get_game_state(pid), room=pid)
+
+@socketio.on('set_viewport')
+def handle_set_viewport(data):
+    """Client reports how many tiles fit the map pane at the current zoom."""
+    player_id = session.get('player_id')
+    if not player_id or player_id not in game_state.players:
+        return
+    if not isinstance(data, dict):
+        return
+    vh, vw = clamp_viewport_size(data.get('h'), data.get('w'))
+    prev = game_state.viewports.get(player_id)
+    game_state.viewports[player_id] = (vh, vw)
+    if prev != (vh, vw):
+        # Reset camera follow so a large zoom-out recenters reasonably
+        game_state.cameras.pop(player_id, None)
+    emit('game_state', game_state.get_game_state(player_id), room=player_id)
 
 @socketio.on('combat_action')
 def handle_combat_action(data):

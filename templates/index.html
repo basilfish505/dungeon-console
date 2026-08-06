@@ -10,75 +10,81 @@
     <div id="player-login">
         What be thy name? <input type="text" id="player-name" />
         <button id="join-btn">Join</button>
-                </div>
+    </div>
 
-    <div id="header">PERMAQUEST</div>
-    
-            <div id="map-display"></div>
-    
-            <div class="mobile-controls">
-                <div></div>
+    <div id="game-shell" class="game-screen" hidden>
+        <header id="header" class="game-header">PERMAQUEST</header>
+
+        <section class="message-pane">
+            <div id="message-log"></div>
+        </section>
+
+        <section id="map-pane" class="map-pane">
+            <div class="map-render-surface">
+                <pre id="map-display" class="map-display" aria-label="Dungeon map"></pre>
+            </div>
+        </section>
+
+        <section class="player-info-pane">
+            <div id="player-properties">
+                <div class="properties-grid">
+                    <span class="property-value" id="player-name-display">-</span>
+                    <span class="property-value" id="player-hp">-</span>
+                    <span class="property-label">MP:</span>
+                    <span class="property-value" id="player-mp">-</span>
+
+                    <span class="property-label">LVL:</span>
+                    <span class="property-value" id="player-level">1</span>
+                    <span class="property-label">XP:</span>
+                    <span class="property-value" id="player-xp">0</span>
+
+                    <span class="blank-row"></span>
+                    <span class="blank-row"></span>
+                    <span class="blank-row"></span>
+                    <span class="blank-row"></span>
+
+                    <span class="blank-row"></span>
+                    <span class="blank-row"></span>
+                    <span class="blank-row"></span>
+                    <span class="blank-row"></span>
+
+                    <span class="property-label">STR:</span>
+                    <span class="property-value" id="player-str">-</span>
+                    <span class="property-label">INT:</span>
+                    <span class="property-value" id="player-int">-</span>
+
+                    <span class="property-label">WIS:</span>
+                    <span class="property-value" id="player-wis">-</span>
+                    <span class="property-label">CHR:</span>
+                    <span class="property-value" id="player-chr">-</span>
+
+                    <span class="property-label">DEX:</span>
+                    <span class="property-value" id="player-dex">-</span>
+                    <span class="property-label">AGI:</span>
+                    <span class="property-value" id="player-agi">-</span>
+                </div>
+            </div>
+
+            <div id="game-info">
+                <div class="properties-grid"></div>
+            </div>
+        </section>
+    </div>
+
+    <div id="mobile-controls" class="mobile-controls" style="display: none;" aria-label="Movement">
+        <div></div>
         <div class="mobile-btn" data-direction="w">W</div>
-                <div></div>
+        <div></div>
         <div class="mobile-btn" data-direction="a">A</div>
         <div class="mobile-btn" data-direction="s">S</div>
         <div class="mobile-btn" data-direction="d">D</div>
-            </div>
-    
-    <div id="message-log"></div>
-
-    <div id="player-properties">
-        <div class="properties-grid">
-            <span class="property-value" id="player-name-display">-</span>
-            <span class="property-value" id="player-hp">-</span>
-            <span class="property-label">MP:</span>
-            <span class="property-value" id="player-mp">-</span>
-
-            <span class="property-label">LVL:</span>
-            <span class="property-value" id="player-level">1</span>
-            <span class="property-label">XP:</span>
-            <span class="property-value" id="player-xp">0</span>
-
-            <span class="blank-row"></span>
-            <span class="blank-row"></span>
-            <span class="blank-row"></span>
-            <span class="blank-row"></span>
-
-            <span class="blank-row"></span>
-            <span class="blank-row"></span>
-            <span class="blank-row"></span>
-            <span class="blank-row"></span>
-
-            <span class="property-label">STR:</span>
-            <span class="property-value" id="player-str">-</span>
-            <span class="property-label">INT:</span>
-            <span class="property-value" id="player-int">-</span>
-
-            <span class="property-label">WIS:</span>
-            <span class="property-value" id="player-wis">-</span>
-            <span class="property-label">CHR:</span>
-            <span class="property-value" id="player-chr">-</span>
-
-            <span class="property-label">DEX:</span>
-            <span class="property-value" id="player-dex">-</span>
-            <span class="property-label">AGI:</span>
-            <span class="property-value" id="player-agi">-</span>
-        </div>
     </div>
-
-    <div id="game-info">
-        <div class="properties-grid">
-            <!-- Game state information will be displayed here -->
-                </div>
-            </div>
 
     <div id="combat-box" style="display: none;">
         <h3>Combat</h3>
         <div id="target-selection">
             <p>Current Target: <span id="opponent-name"></span> (HP: <span id="opponent-hp"></span>)</p>
-            <div id="opponents-list" class="opponents-list">
-                <!-- Opponents will be listed here -->
-            </div>
+            <div id="opponents-list" class="opponents-list"></div>
         </div>
         <div id="combat-controls">
             <button id="attack-btn">Attack</button>
@@ -95,12 +101,14 @@
         <input type="hidden" id="player-id" value="">
     </div>
 
-    <!-- Load scripts in the correct order -->
     <script src="{{ url_for('static', filename='js/utils.js') }}"></script>
     <script src="{{ url_for('static', filename='js/sound.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/map_view.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/map_renderer.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/map_gestures.js') }}"></script>
     <script src="{{ url_for('static', filename='js/ui.js') }}"></script>
     <script src="{{ url_for('static', filename='js/combat.js') }}"></script>
     <script src="{{ url_for('static', filename='js/socket.js') }}"></script>
     <script src="{{ url_for('static', filename='js/main.js') }}"></script>
 </body>
-</html> 
+</html>

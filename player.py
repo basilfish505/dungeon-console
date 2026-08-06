@@ -39,6 +39,7 @@ class Player:
             'dex': self.dex,
             'agi': self.agi,
             'sight_range': self.sight_range,
+            'pos': list(self.pos),
         }
 
     def move(self, direction):

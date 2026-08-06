@@ -32,13 +32,15 @@ const Game = (function () {
         });
 
         window.addEventListener('resize', function () {
-            UI.fitMapToScreen();
+            UI.requestMapUpdate('window-resize');
         });
         window.addEventListener('orientationchange', function () {
             setTimeout(UI.layoutForMobile, 100);
         });
         if (window.visualViewport) {
-            window.visualViewport.addEventListener('resize', UI.fitMapToScreen);
+            window.visualViewport.addEventListener('resize', function () {
+                UI.requestMapUpdate('visual-viewport');
+            });
         }
     }
 

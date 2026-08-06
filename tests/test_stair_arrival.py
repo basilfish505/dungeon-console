@@ -28,6 +28,7 @@ class StairArrivalTests(unittest.TestCase):
             self.gs.game_map = None
             self.gs.levels = {}
             self.gs.cameras = {}
+            self.gs.viewports = {}
 
     def _set_level(self, level, game_map, monsters=None):
         self.gs.levels[level] = (game_map, monsters if monsters is not None else {})
