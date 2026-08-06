@@ -64,7 +64,8 @@ const MapView = (function () {
         state.zoomIndex = best;
     }
 
-    function applyExactColumnFit(cols) {
+    function applyExactColumnFit(cols, opts) {
+        opts = opts || {};
         const aspect = probeMonoAspect();
         const fontSize = state.paneW / (cols * aspect);
         if (displayEl) {
@@ -73,7 +74,11 @@ const MapView = (function () {
         }
         state.tileW = state.paneW / cols;
         state.tileH = fontSize;
-        snapZoomIndexToFontSize(fontSize);
+        // Never snap the index while at max zoom — that drops off the max step
+        // and causes an immediate zoom-out when the pinch ends / RAF remasures.
+        if (opts.snapIndex !== false) {
+            snapZoomIndexToFontSize(fontSize);
+        }
     }
 
     function tileSize() {
@@ -105,7 +110,7 @@ const MapView = (function () {
         }
 
         if (isMaxZoom() && state.paneW > 0) {
-            applyExactColumnFit(MIN_VISIBLE);
+            applyExactColumnFit(MIN_VISIBLE, { snapIndex: false });
             return;
         }
 

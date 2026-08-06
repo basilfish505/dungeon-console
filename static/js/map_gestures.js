@@ -56,7 +56,15 @@ const MapGestures = (function () {
             steps = -Math.floor(Math.log(1 / ratio) / Math.log(PINCH_THRESHOLD));
         }
         if (steps !== 0) {
+            const before = MapView.getState().zoomIndex;
             MapView.setZoomIndex(pinchBaseIndex + steps);
+            const after = MapView.getState().zoomIndex;
+            // Ratchet baseline after each committed step so finger-lift jitter
+            // (distance shrinks as digits leave the screen) cannot rewind zoom.
+            if (after !== before || after !== pinchBaseIndex) {
+                pinchBaseIndex = after;
+                pinchStartDist = dist;
+            }
         }
     }
 
