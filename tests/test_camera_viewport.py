@@ -5,6 +5,7 @@ from camera import (
     EDGE_MARGIN,
     clamp_viewport_size,
     effective_margin,
+    pan_camera,
     slice_map,
     update_camera,
 )
@@ -19,7 +20,7 @@ class ClampViewportTests(unittest.TestCase):
         self.assertEqual(clamp_viewport_size(20, 30), (20, 30))
 
     def test_clamp_raises_floor(self):
-        self.assertEqual(clamp_viewport_size(2, 3), (8, 8))
+        self.assertEqual(clamp_viewport_size(2, 3), (10, 10))
 
     def test_clamp_caps_ceiling(self):
         self.assertEqual(clamp_viewport_size(200, 99), (80, 80))
@@ -86,6 +87,28 @@ class CameraMarginTests(unittest.TestCase):
         cam = update_camera((0, 0), (1, 5), 30, 30, vh=20, vw=20)
         sy = 1 - cam[0]
         self.assertGreaterEqual(sy, EDGE_MARGIN)
+
+
+class PanCameraTests(unittest.TestCase):
+    def test_pan_shifts_freely(self):
+        cam = pan_camera((5, 5), 0, -3, (10, 10), 40, 40, vh=20, vw=20)
+        self.assertEqual(cam, (5, 2))
+
+    def test_pan_allows_player_offscreen(self):
+        # Pan far right; player at (10,10) leaves the left side of the view
+        cam = pan_camera((0, 0), 0, 50, (10, 10), 40, 40, vh=20, vw=20)
+        self.assertEqual(cam[1], 40 - 20 + EDGE_MARGIN)  # 24
+        self.assertFalse(0 <= 10 - cam[1] < 20)
+
+    def test_pan_clamps_to_map_far_edge(self):
+        cam = pan_camera((0, 0), 0, 100, (10, 10), 40, 40, vh=20, vw=20)
+        # max = map_w - vw + pad = 40 - 20 + 4 = 24
+        self.assertEqual(cam[1], 24)
+
+    def test_pan_when_viewport_larger_than_map(self):
+        # Center is -5; pad allows ±4 around center
+        cam = pan_camera((-5, -5), 0, 3, (2, 2), 10, 10, vh=20, vw=20)
+        self.assertEqual(cam[1], -2)
 
 
 if __name__ == '__main__':

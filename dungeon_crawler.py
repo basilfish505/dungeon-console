@@ -11,6 +11,7 @@ import ssl
 from map_generator import MapGenerator
 from camera import (
     update_camera,
+    pan_camera,
     slice_map,
     clamp_viewport_size,
     VIEWPORT_H,
@@ -50,6 +51,7 @@ class GameState:
         self.levels = {}  # Dictionary to store generated levels
         self.cameras = {}  # player_id -> (cam_y, cam_x) viewport origin
         self.viewports = {}  # player_id -> (vh, vw) adaptive viewport size
+        self.manual_pan = {}  # player_id -> True while user is freely panning
         self.generate_top_level()
 
     def generate_top_level(self):
@@ -160,6 +162,7 @@ class GameState:
         player.pos = arrival
         if player.id in self.cameras:
             del self.cameras[player.id]
+        self.manual_pan.pop(player.id, None)
         self.recompute_visibility(player)
         # Viewport size is client-owned; keep it across level changes.
         return True
@@ -272,6 +275,9 @@ class GameState:
         if player_id not in self.players:
             return False
 
+        # Player movement resumes edge-margin camera follow
+        self.manual_pan.pop(player_id, None)
+
         player = self.players[player_id]
         game_map, monsters = self.ensure_level(player.dungeon_level)
         new_pos = player.move(direction)
@@ -341,7 +347,7 @@ class GameState:
         
         return False
 
-    def get_game_state(self, current_player_id):
+    def get_game_state(self, current_player_id, follow_player=None):
         if current_player_id and current_player_id in self.players:
             viewer = self.players[current_player_id]
             level = viewer.dungeon_level
@@ -358,11 +364,24 @@ class GameState:
         vh, vw = self.viewports.get(current_player_id, (VIEWPORT_H, VIEWPORT_W))
         vh, vw = clamp_viewport_size(vh, vw)
 
+        if follow_player is None:
+            follow_player = not self.manual_pan.get(current_player_id, False)
+
         if focus_pos is not None:
             prev = self.cameras.get(current_player_id)
-            cam_y, cam_x = update_camera(
-                prev, focus_pos, map_h, map_w, vh=vh, vw=vw
-            )
+            if follow_player:
+                cam_y, cam_x = update_camera(
+                    prev, focus_pos, map_h, map_w, vh=vh, vw=vw
+                )
+            elif prev is not None:
+                # Manual pan: keep camera, only ensure player stays on-screen
+                cam_y, cam_x = pan_camera(
+                    prev, 0, 0, focus_pos, map_h, map_w, vh=vh, vw=vw
+                )
+            else:
+                cam_y, cam_x = update_camera(
+                    None, focus_pos, map_h, map_w, vh=vh, vw=vw
+                )
             self.cameras[current_player_id] = (cam_y, cam_x)
         else:
             cam_y, cam_x = 0, 0
@@ -532,6 +551,36 @@ def handle_set_viewport(data):
     if prev != (vh, vw):
         # Reset camera follow so a large zoom-out recenters reasonably
         game_state.cameras.pop(player_id, None)
+        game_state.manual_pan.pop(player_id, None)
+    emit('game_state', game_state.get_game_state(player_id), room=player_id)
+
+@socketio.on('pan_camera')
+def handle_pan_camera(data):
+    """Client drag-pan: shift viewport by tile deltas (player stays on-screen)."""
+    player_id = session.get('player_id')
+    if not player_id or player_id not in game_state.players:
+        return
+    if not isinstance(data, dict):
+        return
+    player = game_state.players[player_id]
+    game_map, _monsters = game_state.ensure_level(player.dungeon_level)
+    map_h = len(game_map)
+    map_w = len(game_map[0]) if map_h else 0
+    vh, vw = game_state.viewports.get(player_id, (VIEWPORT_H, VIEWPORT_W))
+    vh, vw = clamp_viewport_size(vh, vw)
+    prev = game_state.cameras.get(player_id)
+    cam_y, cam_x = pan_camera(
+        prev,
+        data.get('dy', 0),
+        data.get('dx', 0),
+        player.pos,
+        map_h,
+        map_w,
+        vh=vh,
+        vw=vw,
+    )
+    game_state.cameras[player_id] = (cam_y, cam_x)
+    game_state.manual_pan[player_id] = True
     emit('game_state', game_state.get_game_state(player_id), room=player_id)
 
 @socketio.on('combat_action')

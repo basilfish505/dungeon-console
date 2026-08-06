@@ -44,9 +44,8 @@ const MapRenderer = (function () {
             return;
         }
 
-        const size = (MapView && MapView.ZOOM_LEVELS)
-            ? MapView.ZOOM_LEVELS[state.zoomIndex]
-            : state.tileH || 12;
+        // Use measured tile size so max zoom (10-across) fills the pane
+        const size = state.tileH || state.tileW || 12;
 
         el.style.fontSize = size + 'px';
         el.style.lineHeight = '1';

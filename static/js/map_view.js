@@ -1,13 +1,16 @@
 // map_view.js — authoritative client map viewport state + RAF update pipeline
 const MapView = (function () {
-    const ZOOM_LEVELS = [8, 9, 10, 11, 12, 14, 16, 18, 20, 22, 24];
-    const DEFAULT_ZOOM_INDEX = 4; // 12px
+    const ZOOM_LEVELS = [8, 9, 10, 11, 12, 14, 16, 18, 20, 22, 24, 28, 32, 36, 40, 48];
+    const DEFAULT_VISIBLE_COLS = 20; // default zoom: 20 tiles across
+    const MIN_VISIBLE = 10; // furthest zoom-in: 10 tiles across
+    const DEFAULT_ZOOM_INDEX = 4; // fallback before pane is measured
 
     const state = {
         zoomIndex: DEFAULT_ZOOM_INDEX,
+        fitCols: DEFAULT_VISIBLE_COLS, // exact column fit until user changes zoom
         tileW: 12,
         tileH: 12,
-        visibleCols: 20,
+        visibleCols: DEFAULT_VISIBLE_COLS,
         visibleRows: 20,
         cameraY: 0,
         cameraX: 0,
@@ -27,9 +30,59 @@ const MapView = (function () {
     let rafId = null;
     let pendingReasons = [];
     let emitViewport = null;
+    let emitPan = null;
     let lastEmitted = { h: 0, w: 0 };
 
+    function isMaxZoom() {
+        return state.zoomIndex >= ZOOM_LEVELS.length - 1;
+    }
+
+    function probeMonoAspect() {
+        const probe = document.createElement('span');
+        probe.style.cssText =
+            'position:absolute;left:-9999px;top:0;visibility:hidden;white-space:pre;' +
+            'font-family:\'Courier New\',Courier,monospace;font-size:100px;line-height:1;';
+        probe.textContent = 'M'.repeat(20);
+        document.body.appendChild(probe);
+        const probeW = probe.getBoundingClientRect().width;
+        document.body.removeChild(probe);
+        return probeW > 0 ? (probeW / 20) / 100 : 0.6;
+    }
+
+    function snapZoomIndexToFontSize(fontSize) {
+        // Keep off the max index (that forces 10-col fit)
+        const lastDiscrete = ZOOM_LEVELS.length - 2;
+        let best = 0;
+        let bestDiff = Infinity;
+        for (let i = 0; i <= lastDiscrete; i++) {
+            const d = Math.abs(ZOOM_LEVELS[i] - fontSize);
+            if (d < bestDiff) {
+                bestDiff = d;
+                best = i;
+            }
+        }
+        state.zoomIndex = best;
+    }
+
+    function applyExactColumnFit(cols) {
+        const aspect = probeMonoAspect();
+        const fontSize = state.paneW / (cols * aspect);
+        if (displayEl) {
+            displayEl.style.fontSize = fontSize + 'px';
+            displayEl.style.lineHeight = '1';
+        }
+        state.tileW = state.paneW / cols;
+        state.tileH = fontSize;
+        snapZoomIndexToFontSize(fontSize);
+    }
+
     function tileSize() {
+        if (isMaxZoom() && state.paneW > 0) {
+            return state.paneW / MIN_VISIBLE;
+        }
+        if (state.fitCols && state.paneW > 0) {
+            return state.paneW / state.fitCols;
+        }
         return ZOOM_LEVELS[state.zoomIndex] || ZOOM_LEVELS[DEFAULT_ZOOM_INDEX];
     }
 
@@ -44,12 +97,26 @@ const MapView = (function () {
     }
 
     function measureTileMetrics() {
+        if (!displayEl) {
+            const size = tileSize();
+            state.tileW = size;
+            state.tileH = size;
+            return;
+        }
+
+        if (isMaxZoom() && state.paneW > 0) {
+            applyExactColumnFit(MIN_VISIBLE);
+            return;
+        }
+
+        if (state.fitCols && state.paneW > 0) {
+            applyExactColumnFit(state.fitCols);
+            return;
+        }
+
         const size = tileSize();
         state.tileW = size;
         state.tileH = size;
-        if (!displayEl) {
-            return;
-        }
         displayEl.style.fontSize = size + 'px';
         displayEl.style.lineHeight = '1';
         const probe = document.createElement('span');
@@ -69,9 +136,27 @@ const MapView = (function () {
     function computeVisibleCounts() {
         const tw = Math.max(1, state.tileW);
         const th = Math.max(1, state.tileH);
-        state.visibleCols = Math.max(8, Math.floor(state.paneW / tw));
-        state.visibleRows = Math.max(8, Math.floor(state.paneH / th));
-        // Soft headroom matching server MAX_VIEWPORT
+
+        if (isMaxZoom()) {
+            state.visibleCols = MIN_VISIBLE;
+            state.visibleRows = Math.max(
+                MIN_VISIBLE,
+                Math.min(80, Math.floor(state.paneH / th))
+            );
+            return;
+        }
+
+        if (state.fitCols) {
+            state.visibleCols = state.fitCols;
+            state.visibleRows = Math.max(
+                MIN_VISIBLE,
+                Math.min(80, Math.floor(state.paneH / th))
+            );
+            return;
+        }
+
+        state.visibleCols = Math.max(MIN_VISIBLE, Math.floor(state.paneW / tw));
+        state.visibleRows = Math.max(MIN_VISIBLE, Math.floor(state.paneH / th));
         state.visibleCols = Math.min(80, state.visibleCols);
         state.visibleRows = Math.min(80, state.visibleRows);
     }
@@ -154,7 +239,10 @@ const MapView = (function () {
     function setZoomIndex(index) {
         const max = ZOOM_LEVELS.length - 1;
         const next = Math.max(0, Math.min(max, index | 0));
-        if (next === state.zoomIndex) {
+        const sameIndex = next === state.zoomIndex;
+        const wasFitting = state.fitCols != null;
+        state.fitCols = null;
+        if (sameIndex && !wasFitting) {
             return false;
         }
         state.zoomIndex = next;
@@ -164,6 +252,16 @@ const MapView = (function () {
 
     function zoomBy(delta) {
         return setZoomIndex(state.zoomIndex + delta);
+    }
+
+    function panBy(dTilesY, dTilesX) {
+        dTilesY = dTilesY | 0;
+        dTilesX = dTilesX | 0;
+        if ((!dTilesY && !dTilesX) || !emitPan) {
+            return false;
+        }
+        emitPan({ dy: dTilesY, dx: dTilesX });
+        return true;
     }
 
     function ingestGameState(data) {
@@ -205,6 +303,7 @@ const MapView = (function () {
         paneEl = options.paneEl || document.getElementById('map-pane');
         displayEl = options.displayEl || document.getElementById('map-display');
         emitViewport = options.emitViewport || null;
+        emitPan = options.emitPan || null;
         state.ready = true;
         requestMapUpdate('init');
     }
@@ -215,12 +314,14 @@ const MapView = (function () {
 
     return {
         ZOOM_LEVELS,
+        DEFAULT_VISIBLE_COLS,
         state,
         getState,
         init,
         measurePane,
         setZoomIndex,
         zoomBy,
+        panBy,
         updateCameraForPlayer,
         requestMapUpdate,
         ingestGameState,

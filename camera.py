@@ -5,7 +5,7 @@ VIEWPORT_W = 20
 EDGE_MARGIN = 4  # scroll when player is within this many tiles of the viewport edge
 
 # Adaptive viewport bounds (client may request sizes within this range)
-MIN_VIEWPORT = 8
+MIN_VIEWPORT = 10
 MAX_VIEWPORT = 80
 
 
@@ -73,6 +73,49 @@ def update_camera(prev_cam, player_pos, map_h, map_w,
         cam_x = max(px - (vw - 1), min(int(cam_x), px))
 
     return int(cam_y), int(cam_x)
+
+
+def clamp_pan_extents(cam_y, cam_x, map_h, map_w, vh, vw, pad=EDGE_MARGIN):
+    """
+    Clamp a free-look camera. The player may leave the viewport.
+
+    Extents allow EDGE_MARGIN tiles of # beyond the map; when the viewport is
+    larger than the map, the camera may shift around the centered position.
+    """
+    def _axis(cam, map_span, view_span):
+        min_c = -pad
+        max_c = map_span - view_span + pad
+        if max_c < min_c:
+            center = (map_span - view_span) // 2
+            min_c = center - pad
+            max_c = center + pad
+        return max(min_c, min(int(cam), max_c))
+
+    return _axis(cam_y, map_h, vh), _axis(cam_x, map_w, vw)
+
+
+def pan_camera(prev_cam, dcam_y, dcam_x, player_pos, map_h, map_w,
+               vh=VIEWPORT_H, vw=VIEWPORT_W):
+    """
+    Offset the camera by integer tile deltas for free look.
+
+    Does not keep the player on-screen. Camera is clamped to map extents with
+    a small # padding so you can inspect any part of the dungeon.
+    """
+    if prev_cam is None:
+        cam_y, cam_x = update_camera(None, player_pos, map_h, map_w, vh=vh, vw=vw)
+    else:
+        cam_y, cam_x = int(prev_cam[0]), int(prev_cam[1])
+
+    try:
+        dcam_y = int(dcam_y)
+        dcam_x = int(dcam_x)
+    except (TypeError, ValueError):
+        dcam_y, dcam_x = 0, 0
+
+    cam_y = cam_y + dcam_y
+    cam_x = cam_x + dcam_x
+    return clamp_pan_extents(cam_y, cam_x, map_h, map_w, vh, vw)
 
 
 def slice_map(game_map, cam_y, cam_x, vh=VIEWPORT_H, vw=VIEWPORT_W, oob='#'):

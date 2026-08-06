@@ -53,12 +53,20 @@ const SocketHandler = (function() {
         socket.emit('set_viewport', { h: h, w: w });
     }
 
+    function panCamera(dy, dx) {
+        if (!dy && !dx) {
+            return;
+        }
+        socket.emit('pan_camera', { dy: dy | 0, dx: dx | 0 });
+    }
+
     // Return public API
     return {
         socket,
         setupSocketEvents,
         selectPlayerId,
         sendMove,
-        setViewport
+        setViewport,
+        panCamera
     };
 })();

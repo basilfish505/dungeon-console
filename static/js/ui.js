@@ -55,6 +55,9 @@ const UI = (function() {
             emitViewport: function (size) {
                 SocketHandler.setViewport(size.h, size.w);
             },
+            emitPan: function (delta) {
+                SocketHandler.panCamera(delta.dy, delta.dx);
+            },
         });
         MapGestures.init({ paneEl: elements.mapPane });
 
