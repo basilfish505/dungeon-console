@@ -22,15 +22,65 @@ const UI = (function() {
         elements.playerProperties.style.display = 'none';
         elements.combatBox.style.display = 'none';
     }
-    
+
+    // Undo mobile browser zoom left over from focusing the name field
+    function resetMobileViewport() {
+        const meta = document.querySelector('meta[name="viewport"]');
+        if (!meta) {
+            return;
+        }
+        const locked = 'width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover';
+        meta.setAttribute('content', locked);
+        // Bounce content so WebKit reapplies scale after the keyboard/input zoom
+        meta.setAttribute('content', 'width=device-width, initial-scale=0.99, maximum-scale=1, viewport-fit=cover');
+        setTimeout(function () {
+            meta.setAttribute('content', locked);
+        }, 50);
+    }
+
+    // Scale the 20x20 ASCII map so it fits the phone width
+    function fitMapToScreen() {
+        const el = elements.mapDisplay;
+        if (!el || el.style.display === 'none') {
+            return;
+        }
+        const available = Math.max(0, window.innerWidth - 24);
+        if (available <= 0) {
+            return;
+        }
+        el.style.fontSize = '100px';
+        const widthAt100 = el.offsetWidth;
+        if (widthAt100 <= 0) {
+            el.style.fontSize = '';
+            return;
+        }
+        const size = Math.max(7, Math.min(16, 100 * (available / widthAt100)));
+        el.style.fontSize = size + 'px';
+    }
+
+    function layoutForMobile() {
+        resetMobileViewport();
+        fitMapToScreen();
+        // Refit after keyboard dismissal / visual viewport settle
+        setTimeout(fitMapToScreen, 100);
+        setTimeout(fitMapToScreen, 300);
+    }
+
     // Show game elements after login
     function showGameElements() {
+        if (elements.playerName) {
+            elements.playerName.blur();
+        }
+        if (document.activeElement && document.activeElement.blur) {
+            document.activeElement.blur();
+        }
         elements.loginForm.style.display = 'none';
         elements.header.style.display = 'block';
         elements.mapDisplay.style.display = 'block';
         elements.mobileControls.style.display = 'grid';
         elements.messageLog.style.display = 'block';
         elements.playerProperties.style.display = 'block';
+        layoutForMobile();
     }
     
     // Update map display (optional fog grid for LOS coloring)
@@ -127,6 +177,8 @@ const UI = (function() {
         updateMessages,
         updatePlayerProperties,
         updateGameInfo,
-        handlePlayerDeath
+        handlePlayerDeath,
+        fitMapToScreen,
+        layoutForMobile
     };
 })();

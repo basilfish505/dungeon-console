@@ -30,6 +30,16 @@ const Game = (function () {
                 Combat.sendAction(this.id.replace('-btn', ''));
             });
         });
+
+        window.addEventListener('resize', function () {
+            UI.fitMapToScreen();
+        });
+        window.addEventListener('orientationchange', function () {
+            setTimeout(UI.layoutForMobile, 100);
+        });
+        if (window.visualViewport) {
+            window.visualViewport.addEventListener('resize', UI.fitMapToScreen);
+        }
     }
 
     function submitName() {
