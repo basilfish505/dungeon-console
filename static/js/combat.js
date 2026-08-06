@@ -152,6 +152,14 @@ const Combat = (function () {
             elements.opponentsList.appendChild(el);
         });
 
+        // Drop selection if that combatant left (e.g. eliminated); default to whoever remains
+        const selectionValid = currentBattle.opponents.some(
+            o => o.id === currentBattle.selectedTarget
+        );
+        if (!selectionValid) {
+            currentBattle.selectedTarget = null;
+        }
+
         if (!currentBattle.selectedTarget && currentBattle.opponents.length > 0) {
             currentBattle.selectedTarget = currentBattle.opponents[0].id;
             const first = elements.opponentsList.querySelector('.opponent-entry');

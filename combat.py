@@ -91,12 +91,16 @@ class CombatSystem:
         attacker = self.game_state.players[attacker_id]
         attacker.in_combat = True
         
-        # Main dialogue: encounter line for monster fights only
+        # Main dialogue: encounter line
         if is_monster_combat:
             self.game_state.add_player_message(
                 attacker_id,
                 f"{attacker.id} Encountered a {defender.type}"
             )
+        else:
+            encounter = f"{attacker.id} Encountered {defender.id}"
+            self.game_state.add_player_message(attacker_id, encounter)
+            self.game_state.add_player_message(defender_id, encounter)
         
         # Create the battle structure
         battle = {
@@ -305,9 +309,22 @@ class CombatSystem:
                     break
         
         if not target:
-            # Target not found, ask for a valid target
-            self._send_target_request(attacker_id, battle)
-            return
+            # Stale client selection (e.g. eliminated foe) — use sole remaining opponent
+            inferred = self._infer_target(attacker_id, battle)
+            if inferred:
+                target_id = inferred
+                if target_id in self.game_state.players:
+                    target = self.game_state.players[target_id]
+                    target_is_monster = False
+                else:
+                    for monster in battle['monsters']:
+                        if monster.id == target_id or monster.type == target_id:
+                            target = monster
+                            target_is_monster = True
+                            break
+            if not target:
+                self._send_target_request(attacker_id, battle)
+                return
         
         # Get display name for the target
         target_display = target.type if target_is_monster else target.id
@@ -330,7 +347,7 @@ class CombatSystem:
                     self._handle_monster_death(attacker_id, target, battle)
                     return
                 else:
-                    self._handle_player_death(target_id, battle)
+                    self._handle_player_death(target_id, battle, killer_id=attacker_id)
                     return
         else:
             # Blocked — still notify participants
@@ -837,18 +854,28 @@ class CombatSystem:
                     'message': f".... The {monster_type} has been defeated by {killer_name}!"
                 }, room=p_id)
 
-            self._check_battle_end(current, victory=True)
+            if current:
+                self._check_battle_end(current, victory=True)
+                # Still fighting (e.g. PvP continues after monster) — resume turns
+                if current.get('status') == 'ending':
+                    current['status'] = 'active'
+                    self._advance_turn(current)
             self._update_all_players()
 
         self.socketio.start_background_task(finish_after_pause)
     
-    def _handle_player_death(self, player_id, battle):
-        """Handle a player's death in combat"""
+    def _handle_player_death(self, player_id, battle, killer_id=None):
+        """Handle a player's death in combat. killer_id set for PvP kills."""
         player = self.game_state.players[player_id]
         
         # Store player position before removal
         player_position = tuple(player.pos)
         dead_name = player.id
+
+        # PvP kill — announce globally (same style as monster slay lines)
+        if killer_id and killer_id in self.game_state.players:
+            killer_name = self.game_state.players[killer_id].id
+            self.game_state.add_global_message(f"{killer_name} slayed {dead_name}")
         
         # Zero out HP and mark player as dead
         player.hp = 0
@@ -919,12 +946,16 @@ class CombatSystem:
 
             if current:
                 self._check_battle_end(current, victory=is_victory)
+                # Multi-combatant fight continues — unfreeze and give next actor a turn
+                if current.get('status') == 'ending':
+                    current['status'] = 'active'
+                    self._advance_turn(current)
             self._update_all_players()
 
         self.socketio.start_background_task(finish_after_pause)
     
     def _check_battle_end(self, battle, victory=False):
-        """Check if a battle should end"""
+        """End battle if only one (or zero) combatants remain. Returns True if ended."""
         # End if no monsters and only one or zero players
         if len(battle['monsters']) == 0 and len(battle['participants']) <= 1:
             # End the battle
@@ -953,7 +984,8 @@ class CombatSystem:
             
             # Remove battle
             del self.battles[battle['battle_id']]
-    
+            return True
+        return False    
     def _update_all_players(self):
         """Update game state for all active players"""
         for pid in self.game_state.active_players:
