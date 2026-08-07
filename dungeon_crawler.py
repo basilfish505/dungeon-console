@@ -14,6 +14,7 @@ from camera import (
     pan_camera,
     slice_map,
     clamp_viewport_size,
+    clamp_pan_extents,
     VIEWPORT_H,
     VIEWPORT_W,
 )
@@ -595,7 +596,10 @@ def handle_move(direction):
 
 @socketio.on('set_viewport')
 def handle_set_viewport(data):
-    """Client reports how many tiles fit the map pane at the current zoom."""
+    """Client reports how many tiles fit the map pane at the current zoom.
+
+    Optional cam_y/cam_x keep a pinch/wheel zoom focus point stable.
+    """
     player_id = session.get('player_id')
     if not player_id or player_id not in game_state.players:
         return
@@ -607,6 +611,24 @@ def handle_set_viewport(data):
     # First client pane sync: drop the temporary default-20 camera so framing matches the real size
     if prev is None:
         game_state.cameras.pop(player_id, None)
+
+    # Pinch/wheel zoom focus: apply absolute camera (clamped) and free-look so
+    # follow-camera does not immediately undo the zoom anchor.
+    if 'cam_y' in data and 'cam_x' in data:
+        try:
+            cam_y = int(data.get('cam_y'))
+            cam_x = int(data.get('cam_x'))
+        except (TypeError, ValueError):
+            cam_y = cam_x = None
+        if cam_y is not None:
+            player = game_state.players[player_id]
+            game_map, _monsters = game_state.ensure_level(player.dungeon_level)
+            map_h = len(game_map)
+            map_w = len(game_map[0]) if map_h else 0
+            cam_y, cam_x = clamp_pan_extents(cam_y, cam_x, map_h, map_w, vh, vw)
+            game_state.cameras[player_id] = (cam_y, cam_x)
+            game_state.manual_pan[player_id] = True
+
     emit('game_state', game_state.get_game_state(player_id), room=player_id)
 
 @socketio.on('pan_camera')
