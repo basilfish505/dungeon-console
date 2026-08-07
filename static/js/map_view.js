@@ -34,6 +34,8 @@ const MapView = (function () {
     let lastEmitted = { h: 0, w: 0 };
     // Hold first paint until server uses our measured pane size (avoids 20×20 → real jump)
     let initialViewportSynced = false;
+    // Pinch/wheel zoom: keep this world point under the same pane pixel after zoom
+    let pendingZoomAnchor = null;
 
     function isMaxZoom() {
         return state.zoomIndex >= ZOOM_LEVELS.length - 1;
@@ -198,17 +200,51 @@ const MapView = (function () {
         }
     }
 
-    function emitIfNeeded() {
+    function captureZoomAnchor(clientX, clientY) {
+        if (!paneEl || !Number.isFinite(clientX) || !Number.isFinite(clientY)) {
+            return null;
+        }
+        const rect = paneEl.getBoundingClientRect();
+        if (rect.width <= 0 || rect.height <= 0) {
+            return null;
+        }
+        const tw = Math.max(1e-6, state.tileW);
+        const th = Math.max(1e-6, state.tileH);
+        const localX = clientX - rect.left;
+        const localY = clientY - rect.top;
+        return {
+            localX: localX,
+            localY: localY,
+            worldY: state.cameraY + localY / th,
+            worldX: state.cameraX + localX / tw,
+        };
+    }
+
+    function applyZoomAnchor(anchor) {
+        if (!anchor) {
+            return;
+        }
+        const tw = Math.max(1e-6, state.tileW);
+        const th = Math.max(1e-6, state.tileH);
+        state.cameraY = Math.round(anchor.worldY - anchor.localY / th);
+        state.cameraX = Math.round(anchor.worldX - anchor.localX / tw);
+    }
+
+    function emitIfNeeded(zoomFocused) {
         if (!emitViewport || !state.ready) {
             return;
         }
         const h = state.visibleRows;
         const w = state.visibleCols;
-        if (h === lastEmitted.h && w === lastEmitted.w) {
+        if (!zoomFocused && h === lastEmitted.h && w === lastEmitted.w) {
             return;
         }
-        lastEmitted = { h, w };
-        emitViewport({ h, w });
+        lastEmitted = { h: h, w: w };
+        const payload = { h: h, w: w };
+        if (zoomFocused) {
+            payload.camera = { y: state.cameraY | 0, x: state.cameraX | 0 };
+        }
+        emitViewport(payload);
     }
 
     /** Synchronously measure the pane and return {h,w} for join (no paint). */
@@ -224,12 +260,21 @@ const MapView = (function () {
 
     function runUpdate(reasons) {
         if (!measurePane()) {
+            pendingZoomAnchor = null;
             return;
         }
         measureTileMetrics();
         computeVisibleCounts();
-        updateCameraForPlayer();
-        emitIfNeeded();
+
+        const zoomFocused = !!pendingZoomAnchor;
+        if (pendingZoomAnchor) {
+            applyZoomAnchor(pendingZoomAnchor);
+            pendingZoomAnchor = null;
+        } else {
+            updateCameraForPlayer();
+        }
+
+        emitIfNeeded(zoomFocused);
         if (initialViewportSynced || !state.lastMap) {
             applyRender();
         }
@@ -247,19 +292,35 @@ const MapView = (function () {
         });
     }
 
-    function setZoomIndex(index) {
+    /**
+     * @param {number} index
+     * @param {{ clientX: number, clientY: number } | null} focusClient
+     *        Screen point that should stay fixed (pinch midpoint or pane centre).
+     */
+    function setZoomIndex(index, focusClient) {
         const max = ZOOM_LEVELS.length - 1;
         const next = Math.max(0, Math.min(max, index | 0));
         if (next === state.zoomIndex) {
             return false;
+        }
+        if (focusClient) {
+            pendingZoomAnchor = captureZoomAnchor(focusClient.clientX, focusClient.clientY);
+        } else if (paneEl) {
+            const rect = paneEl.getBoundingClientRect();
+            pendingZoomAnchor = captureZoomAnchor(
+                rect.left + rect.width / 2,
+                rect.top + rect.height / 2
+            );
+        } else {
+            pendingZoomAnchor = null;
         }
         state.zoomIndex = next;
         requestMapUpdate('zoom');
         return true;
     }
 
-    function zoomBy(delta) {
-        return setZoomIndex(state.zoomIndex + delta);
+    function zoomBy(delta, focusClient) {
+        return setZoomIndex(state.zoomIndex + delta, focusClient || null);
     }
 
     function panBy(dTilesY, dTilesX) {

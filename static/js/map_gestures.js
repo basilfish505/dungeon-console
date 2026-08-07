@@ -30,6 +30,13 @@ const MapGestures = (function () {
         panAccY = 0;
     }
 
+    function midpoint(t0, t1) {
+        return {
+            clientX: (t0.clientX + t1.clientX) / 2,
+            clientY: (t0.clientY + t1.clientY) / 2,
+        };
+    }
+
     function onTouchStart(e) {
         if (!active) {
             return;
@@ -57,7 +64,8 @@ const MapGestures = (function () {
         }
         if (steps !== 0) {
             const before = MapView.getState().zoomIndex;
-            MapView.setZoomIndex(pinchBaseIndex + steps);
+            const focus = midpoint(e.touches[0], e.touches[1]);
+            MapView.setZoomIndex(pinchBaseIndex + steps, focus);
             const after = MapView.getState().zoomIndex;
             // Ratchet baseline after each committed step so finger-lift jitter
             // (distance shrinks as digits leave the screen) cannot rewind zoom.
@@ -84,10 +92,12 @@ const MapGestures = (function () {
             return;
         }
         lastWheelAt = now;
+        // Zoom toward cursor (falls back to pane centre inside MapView if needed)
+        const focus = { clientX: e.clientX, clientY: e.clientY };
         if (e.deltaY < 0) {
-            MapView.zoomBy(1);
+            MapView.zoomBy(1, focus);
         } else if (e.deltaY > 0) {
-            MapView.zoomBy(-1);
+            MapView.zoomBy(-1, focus);
         }
     }
 

@@ -134,8 +134,13 @@ const SocketHandler = (function () {
         socket.emit('move', direction);
     }
 
-    function setViewport(h, w) {
-        socket.emit('set_viewport', { h: h, w: w });
+    function setViewport(h, w, camera) {
+        const payload = { h: h, w: w };
+        if (camera && Number.isFinite(camera.y) && Number.isFinite(camera.x)) {
+            payload.cam_y = camera.y | 0;
+            payload.cam_x = camera.x | 0;
+        }
+        socket.emit('set_viewport', payload);
     }
 
     function panCamera(dy, dx) {

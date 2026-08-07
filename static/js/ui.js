@@ -49,7 +49,7 @@ const UI = (function() {
             paneEl: elements.mapPane,
             displayEl: elements.mapDisplay,
             emitViewport: function (size) {
-                SocketHandler.setViewport(size.h, size.w);
+                SocketHandler.setViewport(size.h, size.w, size.camera);
             },
             emitPan: function (delta) {
                 SocketHandler.panCamera(delta.dy, delta.dx);
