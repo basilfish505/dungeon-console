@@ -48,8 +48,9 @@ const Game = (function () {
         const name = document.getElementById('player-name').value.trim();
         if (!name) return;
         Sound.warm(); // silent unlock + preload — no audible blip
-        SocketHandler.selectPlayerId(name);
-        UI.showGameElements();
+        // Measure pane first, then join with that viewport so the first map is final size
+        const viewport = UI.prepareJoinViewport();
+        SocketHandler.selectPlayerId(name, viewport);
     }
 
     const move = Utils.throttle(function (direction) {

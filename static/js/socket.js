@@ -35,11 +35,19 @@ const SocketHandler = (function() {
         });
     }
 
-    // Send player ID to server
-    function selectPlayerId(playerId) {
-        if (playerId) {
-            // Store player ID in hidden input for combat targeting
-            document.getElementById('player-id').value = playerId;
+    // Send player ID (and optional measured viewport) to server
+    function selectPlayerId(playerId, viewport) {
+        if (!playerId) {
+            return;
+        }
+        document.getElementById('player-id').value = playerId;
+        if (viewport && viewport.h && viewport.w) {
+            socket.emit('select_id', {
+                id: playerId,
+                h: viewport.h | 0,
+                w: viewport.w | 0,
+            });
+        } else {
             socket.emit('select_id', playerId);
         }
     }

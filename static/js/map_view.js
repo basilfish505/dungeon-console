@@ -1,16 +1,16 @@
 // map_view.js — authoritative client map viewport state + RAF update pipeline
 const MapView = (function () {
+    // Discrete font-size steps (px). Last entry is max zoom → exact 10 tiles across.
     const ZOOM_LEVELS = [8, 9, 10, 11, 12, 14, 16, 18, 20, 22, 24, 28, 32, 36, 40, 48];
-    const DEFAULT_VISIBLE_COLS = 20; // default zoom: 20 tiles across
+    const DEFAULT_ZOOM_INDEX = 7; // 18px — one step in from 16px
     const MIN_VISIBLE = 10; // furthest zoom-in: 10 tiles across
-    const DEFAULT_ZOOM_INDEX = 4; // fallback before pane is measured
+    const MARGIN_REF_SPAN = 20; // matches camera.DEFAULT_VIEW_SPAN for edge-margin scaling
 
     const state = {
         zoomIndex: DEFAULT_ZOOM_INDEX,
-        fitCols: DEFAULT_VISIBLE_COLS, // exact column fit until user changes zoom
-        tileW: 12,
-        tileH: 12,
-        visibleCols: DEFAULT_VISIBLE_COLS,
+        tileW: ZOOM_LEVELS[DEFAULT_ZOOM_INDEX],
+        tileH: ZOOM_LEVELS[DEFAULT_ZOOM_INDEX],
+        visibleCols: 20,
         visibleRows: 20,
         cameraY: 0,
         cameraX: 0,
@@ -32,6 +32,8 @@ const MapView = (function () {
     let emitViewport = null;
     let emitPan = null;
     let lastEmitted = { h: 0, w: 0 };
+    // Hold first paint until server uses our measured pane size (avoids 20×20 → real jump)
+    let initialViewportSynced = false;
 
     function isMaxZoom() {
         return state.zoomIndex >= ZOOM_LEVELS.length - 1;
@@ -49,65 +51,40 @@ const MapView = (function () {
         return probeW > 0 ? (probeW / 20) / 100 : 0.6;
     }
 
-    function snapZoomIndexToFontSize(fontSize) {
-        // Keep off the max index (that forces 10-col fit)
-        const lastDiscrete = ZOOM_LEVELS.length - 2;
-        let best = 0;
-        let bestDiff = Infinity;
-        for (let i = 0; i <= lastDiscrete; i++) {
-            const d = Math.abs(ZOOM_LEVELS[i] - fontSize);
-            if (d < bestDiff) {
-                bestDiff = d;
-                best = i;
-            }
-        }
-        state.zoomIndex = best;
-    }
-
-    function applyExactColumnFit(cols, opts) {
-        opts = opts || {};
+    function applyExactColumnFit(cols) {
+        // Used only for max zoom: size font so exactly `cols` glyphs span the pane
         let fontSize = state.paneW / (cols * probeMonoAspect());
-        if (displayEl) {
-            displayEl.style.fontSize = fontSize + 'px';
-            displayEl.style.lineHeight = '1';
-            // Verify N glyphs actually fit; shrink if the aspect probe was optimistic
-            const probe = document.createElement('span');
-            probe.style.cssText =
-                'position:absolute;left:-9999px;top:0;visibility:hidden;white-space:pre;' +
-                'font-family:\'Courier New\',Courier,monospace;font-size:' + fontSize +
-                'px;line-height:1;';
-            probe.textContent = 'M'.repeat(cols);
-            document.body.appendChild(probe);
-            let measured = probe.getBoundingClientRect().width;
-            if (measured > state.paneW && measured > 0) {
-                fontSize = fontSize * (state.paneW / measured) * 0.995;
-                displayEl.style.fontSize = fontSize + 'px';
-                probe.style.fontSize = fontSize + 'px';
-                measured = probe.getBoundingClientRect().width;
-            }
-            // Measure real line box height (important when pane is wider than tall)
-            probe.textContent = 'M\nM';
-            const twoLine = probe.getBoundingClientRect().height;
-            document.body.removeChild(probe);
-            state.tileW = measured > 0 ? measured / cols : state.paneW / cols;
-            state.tileH = twoLine > 0 ? twoLine / 2 : fontSize;
-        } else {
+        if (!displayEl) {
             state.tileW = state.paneW / cols;
             state.tileH = fontSize;
+            return;
         }
-        // Never snap the index while at max zoom — that drops off the max step
-        // and causes an immediate zoom-out when the pinch ends / RAF remasures.
-        if (opts.snapIndex !== false) {
-            snapZoomIndexToFontSize(fontSize);
+        displayEl.style.fontSize = fontSize + 'px';
+        displayEl.style.lineHeight = '1';
+        const probe = document.createElement('span');
+        probe.style.cssText =
+            'position:absolute;left:-9999px;top:0;visibility:hidden;white-space:pre;' +
+            'font-family:\'Courier New\',Courier,monospace;font-size:' + fontSize +
+            'px;line-height:1;';
+        probe.textContent = 'M'.repeat(cols);
+        document.body.appendChild(probe);
+        let measured = probe.getBoundingClientRect().width;
+        if (measured > state.paneW && measured > 0) {
+            fontSize = fontSize * (state.paneW / measured) * 0.995;
+            displayEl.style.fontSize = fontSize + 'px';
+            probe.style.fontSize = fontSize + 'px';
+            measured = probe.getBoundingClientRect().width;
         }
+        probe.textContent = 'M\nM';
+        const twoLine = probe.getBoundingClientRect().height;
+        document.body.removeChild(probe);
+        state.tileW = measured > 0 ? measured / cols : state.paneW / cols;
+        state.tileH = twoLine > 0 ? twoLine / 2 : fontSize;
     }
 
     function tileSize() {
         if (isMaxZoom() && state.paneW > 0) {
             return state.paneW / MIN_VISIBLE;
-        }
-        if (state.fitCols && state.paneW > 0) {
-            return state.paneW / state.fitCols;
         }
         return ZOOM_LEVELS[state.zoomIndex] || ZOOM_LEVELS[DEFAULT_ZOOM_INDEX];
     }
@@ -131,12 +108,7 @@ const MapView = (function () {
         }
 
         if (isMaxZoom() && state.paneW > 0) {
-            applyExactColumnFit(MIN_VISIBLE, { snapIndex: false });
-            return;
-        }
-
-        if (state.fitCols && state.paneW > 0) {
-            applyExactColumnFit(state.fitCols);
+            applyExactColumnFit(MIN_VISIBLE);
             return;
         }
 
@@ -166,29 +138,20 @@ const MapView = (function () {
 
     function computeVisibleCounts() {
         const tw = Math.max(1, state.tileW);
-        const th = Math.max(1, state.tileH);
 
         if (isMaxZoom()) {
-            // Width is exact MIN_VISIBLE; rows must not exceed what fits (no inflation)
             state.visibleCols = MIN_VISIBLE;
             state.visibleRows = rowsThatFit();
             return;
         }
 
-        if (state.fitCols) {
-            state.visibleCols = state.fitCols;
-            state.visibleRows = rowsThatFit();
-            return;
-        }
-
         let cols = Math.max(1, Math.floor(state.paneW / tw));
-        let rows = Math.max(1, Math.floor(state.paneH / th));
+        let rows = rowsThatFit();
 
         // Discrete zoom grew tiles past what fits MIN_VISIBLE cols → promote to max fit
-        // so we never request more tiles than the pane can show (avoids off-screen player).
         if (cols < MIN_VISIBLE) {
             state.zoomIndex = ZOOM_LEVELS.length - 1;
-            applyExactColumnFit(MIN_VISIBLE, { snapIndex: false });
+            applyExactColumnFit(MIN_VISIBLE);
             state.visibleCols = MIN_VISIBLE;
             state.visibleRows = rowsThatFit();
             return;
@@ -199,17 +162,14 @@ const MapView = (function () {
     }
 
     function updateCameraForPlayer() {
-        // Client camera is advisory until server ack; keep player centered band locally
-        // for immediate re-render of last map when only zoom/resize changed before ack.
+        // Client camera is advisory until server ack
         const vh = state.visibleRows;
         const vw = state.visibleCols;
         const py = state.playerY;
         const px = state.playerX;
-        // Scale margin with zoom: 4 tiles at 20-across (matches server margin_for_span)
         const refMargin = 4;
-        const refSpan = DEFAULT_VISIBLE_COLS;
-        const rawMy = Math.max(1, Math.round(refMargin * vh / refSpan));
-        const rawMx = Math.max(1, Math.round(refMargin * vw / refSpan));
+        const rawMy = Math.max(1, Math.round(refMargin * vh / MARGIN_REF_SPAN));
+        const rawMx = Math.max(1, Math.round(refMargin * vw / MARGIN_REF_SPAN));
         const my = Math.min(rawMy, Math.max(0, Math.floor((vh - 1) / 2)));
         const mx = Math.min(rawMx, Math.max(0, Math.floor((vw - 1) / 2)));
 
@@ -255,6 +215,17 @@ const MapView = (function () {
         emitViewport({ h, w });
     }
 
+    /** Synchronously measure the pane and return {h,w} for join (no paint). */
+    function measureViewportNow() {
+        if (!measurePane()) {
+            return null;
+        }
+        measureTileMetrics();
+        computeVisibleCounts();
+        lastEmitted = { h: state.visibleRows, w: state.visibleCols };
+        return { h: state.visibleRows, w: state.visibleCols };
+    }
+
     function runUpdate(reasons) {
         if (!measurePane()) {
             return;
@@ -263,7 +234,9 @@ const MapView = (function () {
         computeVisibleCounts();
         updateCameraForPlayer();
         emitIfNeeded();
-        applyRender();
+        if (initialViewportSynced || !state.lastMap) {
+            applyRender();
+        }
         pendingReasons = [];
     }
 
@@ -281,10 +254,7 @@ const MapView = (function () {
     function setZoomIndex(index) {
         const max = ZOOM_LEVELS.length - 1;
         const next = Math.max(0, Math.min(max, index | 0));
-        const sameIndex = next === state.zoomIndex;
-        const wasFitting = state.fitCols != null;
-        state.fitCols = null;
-        if (sameIndex && !wasFitting) {
+        if (next === state.zoomIndex) {
             return false;
         }
         state.zoomIndex = next;
@@ -310,6 +280,11 @@ const MapView = (function () {
         if (!data) {
             return;
         }
+        // Pre-join spectator updates (no player) — ignore for map paint during login
+        if (!data.player && !initialViewportSynced) {
+            return;
+        }
+
         if (data.map) {
             state.lastMap = data.map;
         }
@@ -321,7 +296,6 @@ const MapView = (function () {
             state.cameraX = data.camera.x | 0;
         }
         if (data.viewport) {
-            // Server tile counts are authoritative for the received map buffer
             if (data.viewport.h) state.visibleRows = data.viewport.h | 0;
             if (data.viewport.w) state.visibleCols = data.viewport.w | 0;
         }
@@ -333,11 +307,33 @@ const MapView = (function () {
             state.playerY = data.player.pos[0] | 0;
             state.playerX = data.player.pos[1] | 0;
         }
-        applyRender();
-        // Re-measure after layout settles; emit if pane wants a different tile count
-        if (state.ready) {
-            requestMapUpdate('game_state');
+
+        if (!initialViewportSynced) {
+            const matched = data.viewport &&
+                lastEmitted.w > 0 &&
+                (data.viewport.h | 0) === lastEmitted.h &&
+                (data.viewport.w | 0) === lastEmitted.w;
+            if (matched) {
+                initialViewportSynced = true;
+                applyRender();
+            } else {
+                if (displayEl) {
+                    displayEl.textContent = '';
+                }
+                // Ensure we have a measured size and push it to the server
+                if (lastEmitted.w <= 0) {
+                    measureViewportNow();
+                }
+                if (lastEmitted.w > 0 && emitViewport) {
+                    emitViewport({ h: lastEmitted.h, w: lastEmitted.w });
+                }
+            }
+            return;
         }
+
+        // Already synced: paint only. Do not remasure here — that caused a post-join shift
+        // when pane height settled by one row. ResizeObserver handles real resizes.
+        applyRender();
     }
 
     function init(options) {
@@ -347,7 +343,8 @@ const MapView = (function () {
         emitViewport = options.emitViewport || null;
         emitPan = options.emitPan || null;
         state.ready = true;
-        requestMapUpdate('init');
+        initialViewportSynced = false;
+        lastEmitted = { h: 0, w: 0 };
     }
 
     function getState() {
@@ -356,11 +353,13 @@ const MapView = (function () {
 
     return {
         ZOOM_LEVELS,
-        DEFAULT_VISIBLE_COLS,
+        DEFAULT_ZOOM_INDEX,
+        MIN_VISIBLE,
         state,
         getState,
         init,
         measurePane,
+        measureViewportNow,
         setZoomIndex,
         zoomBy,
         panBy,

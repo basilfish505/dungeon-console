@@ -16,6 +16,7 @@ const UI = (function() {
     };
 
     let mapSystemReady = false;
+    let ignoreResizeUntil = 0;
 
     // Hide all game elements initially
     function hideGameElements() {
@@ -38,15 +39,10 @@ const UI = (function() {
         }
         const locked = 'width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover';
         meta.setAttribute('content', locked);
-        meta.setAttribute('content', 'width=device-width, initial-scale=0.99, maximum-scale=1, viewport-fit=cover');
-        setTimeout(function () {
-            meta.setAttribute('content', locked);
-        }, 50);
     }
 
     function initMapSystem() {
         if (mapSystemReady) {
-            MapView.requestMapUpdate('show');
             return;
         }
         MapView.init({
@@ -63,6 +59,9 @@ const UI = (function() {
 
         if (typeof ResizeObserver !== 'undefined' && elements.mapPane) {
             const ro = new ResizeObserver(function () {
+                if (Date.now() < ignoreResizeUntil) {
+                    return;
+                }
                 MapView.requestMapUpdate('resize');
             });
             ro.observe(elements.mapPane);
@@ -73,21 +72,23 @@ const UI = (function() {
 
     function layoutForMobile() {
         resetMobileViewport();
-        if (mapSystemReady) {
+        if (mapSystemReady && Date.now() >= ignoreResizeUntil) {
             MapView.requestMapUpdate('layout');
-            setTimeout(function () { MapView.requestMapUpdate('layout-delay'); }, 100);
-            setTimeout(function () { MapView.requestMapUpdate('layout-delay2'); }, 300);
         }
     }
 
-    // Show game elements after login
-    function showGameElements() {
+    /**
+     * Reveal the game UI, measure the map pane, and return {h,w} for select_id.
+     * Call this before joining so the first game_state already has the real size.
+     */
+    function prepareJoinViewport() {
         if (elements.playerName) {
             elements.playerName.blur();
         }
         if (document.activeElement && document.activeElement.blur) {
             document.activeElement.blur();
         }
+        resetMobileViewport();
         elements.loginForm.style.display = 'none';
         if (elements.gameShell) {
             elements.gameShell.hidden = false;
@@ -96,7 +97,26 @@ const UI = (function() {
             elements.mobileControls.style.display = 'grid';
         }
         initMapSystem();
-        layoutForMobile();
+        // Ignore keyboard/layout resize noise right after join
+        ignoreResizeUntil = Date.now() + 500;
+        // Force layout, then measure once
+        if (elements.gameShell) {
+            void elements.gameShell.offsetHeight;
+        }
+        if (elements.mapPane) {
+            void elements.mapPane.offsetHeight;
+        }
+        let viewport = MapView.measureViewportNow();
+        if (!viewport && elements.mapPane) {
+            void elements.mapPane.offsetWidth;
+            viewport = MapView.measureViewportNow();
+        }
+        return viewport;
+    }
+
+    // Show game elements after login (legacy path without pre-measure)
+    function showGameElements() {
+        prepareJoinViewport();
     }
 
     // Update map display via MapView + MapRenderer
@@ -173,6 +193,7 @@ const UI = (function() {
         elements,
         hideGameElements,
         showGameElements,
+        prepareJoinViewport,
         updateMap,
         applyGameState,
         updateMessages,
@@ -181,7 +202,7 @@ const UI = (function() {
         handlePlayerDeath,
         layoutForMobile,
         requestMapUpdate: function (reason) {
-            if (mapSystemReady) {
+            if (mapSystemReady && Date.now() >= ignoreResizeUntil) {
                 MapView.requestMapUpdate(reason);
             }
         }
