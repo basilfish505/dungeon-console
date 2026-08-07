@@ -487,15 +487,30 @@ def handle_connect():
     emit('game_state', game_state.get_game_state(None))
 
 @socketio.on('select_id')
-def handle_select_id(player_id):
+def handle_select_id(data):
+    # Accept legacy string id or {id, h, w} with measured viewport (avoids 20×20 flash)
+    if isinstance(data, dict):
+        player_id = data.get('id')
+        vh, vw = clamp_viewport_size(data.get('h'), data.get('w'))
+        has_viewport = True
+    else:
+        player_id = data
+        vh, vw = VIEWPORT_H, VIEWPORT_W
+        has_viewport = False
+
+    if not player_id:
+        return
+
     if player_id in game_state.active_players:
         emit('id_taken', {'message': 'That name is currently in use!'})
     else:
         session['player_id'] = player_id
         game_state.add_player(player_id)
-        # Join the player's room
         join_room(player_id)
-        # Update all players
+        if has_viewport:
+            game_state.viewports[player_id] = (vh, vw)
+            game_state.cameras.pop(player_id, None)
+        # Update all players (joiner already has the real pane size when provided)
         for pid in game_state.players:
             if pid in game_state.active_players:
                 emit('game_state', game_state.get_game_state(pid), room=pid)
@@ -548,10 +563,9 @@ def handle_set_viewport(data):
     vh, vw = clamp_viewport_size(data.get('h'), data.get('w'))
     prev = game_state.viewports.get(player_id)
     game_state.viewports[player_id] = (vh, vw)
-    if prev != (vh, vw):
-        # Reset camera follow so a large zoom-out recenters reasonably
+    # First client pane sync: drop the temporary default-20 camera so framing matches the real size
+    if prev is None:
         game_state.cameras.pop(player_id, None)
-        game_state.manual_pan.pop(player_id, None)
     emit('game_state', game_state.get_game_state(player_id), room=player_id)
 
 @socketio.on('pan_camera')
