@@ -1,7 +1,7 @@
 import eventlet
 eventlet.monkey_patch()
 
-from flask import Flask, render_template, session
+from flask import Flask, render_template, session, request
 from flask_socketio import SocketIO, emit, join_room
 import random
 import os
@@ -44,6 +44,7 @@ class GameState:
         self.map_generator = MapGenerator()
         self.players = {}
         self.active_players = {}
+        self.player_sids = {}  # player_id -> current socket sid (for reconnect races)
         self.player_messages = {}
         self.active_combats = {}
         self.monsters = {}
@@ -256,10 +257,26 @@ class GameState:
         self.active_players[player_id] = self.players[player_id]
         return self.players[player_id]
 
-    def remove_player(self, player_id):
+    def bind_socket(self, player_id, sid):
+        """Record which socket currently owns this player (reconnect-safe)."""
+        if sid:
+            self.player_sids[player_id] = sid
+
+    def remove_player(self, player_id, sid=None):
+        """
+        Mark offline. If sid is provided, only remove when it matches the
+        bound socket — so a stale disconnect cannot drop a newer reconnect.
+        """
+        if sid is not None and self.player_sids.get(player_id) not in (None, sid):
+            return False
         if player_id in self.active_players:
             del self.active_players[player_id]
             # Don't delete messages in case they reconnect
+        if sid is not None and self.player_sids.get(player_id) == sid:
+            del self.player_sids[player_id]
+        elif sid is None:
+            self.player_sids.pop(player_id, None)
+        return True
 
     def add_player_message(self, player_id, message):
         """Add a message to a specific player's message list"""
@@ -484,8 +501,17 @@ def home():
 
 @socketio.on('connect')
 def handle_connect():
-    # Just send the initial map without adding a player
+    """Resume an existing session if possible; otherwise send spectator map."""
+    player_id = session.get('player_id')
+    if player_id and player_id in game_state.players:
+        game_state.add_player(player_id)
+        game_state.bind_socket(player_id, request.sid)
+        join_room(player_id)
+        emit('game_state', game_state.get_game_state(player_id))
+        print(f"Player {player_id} resumed on connect (sid={request.sid}).")
+        return
     emit('game_state', game_state.get_game_state(None))
+
 
 @socketio.on('select_id')
 def handle_select_id(data):
@@ -502,19 +528,31 @@ def handle_select_id(data):
     if not player_id:
         return
 
-    if player_id in game_state.active_players:
+    already_active = player_id in game_state.active_players
+    session_owns = session.get('player_id') == player_id
+    existing_body = player_id in game_state.players
+
+    # Name in use by someone else (not this session reclaiming / resuming)
+    if already_active and not session_owns:
         emit('id_taken', {'message': 'That name is currently in use!'})
-    else:
-        session['player_id'] = player_id
-        game_state.add_player(player_id)
-        join_room(player_id)
-        if has_viewport:
-            game_state.viewports[player_id] = (vh, vw)
+        return
+
+    session['player_id'] = player_id
+    game_state.add_player(player_id)
+    game_state.bind_socket(player_id, request.sid)
+    join_room(player_id)
+
+    if has_viewport:
+        game_state.viewports[player_id] = (vh, vw)
+        # Only reset camera for brand-new characters, not reconnect/resume
+        if not existing_body:
             game_state.cameras.pop(player_id, None)
-        # Update all players (joiner already has the real pane size when provided)
-        for pid in game_state.players:
-            if pid in game_state.active_players:
-                emit('game_state', game_state.get_game_state(pid), room=pid)
+
+    # Update all active players (includes rejoiner)
+    for pid in game_state.players:
+        if pid in game_state.active_players:
+            emit('game_state', game_state.get_game_state(pid), room=pid)
+
 
 @socketio.on('disconnect')
 def handle_disconnect():
@@ -530,13 +568,15 @@ def handle_disconnect():
                     and battle['turn_order'][battle['current_turn_index']] == player_id):
                 was_their_turn = True
 
-        game_state.remove_player(player_id)
-        print(f"Player {player_id} disconnected.")
-
-        # If they disconnected on their turn, forfeit immediately (stay in battle offline)
-        if was_their_turn:
-            print(f"Player {player_id} disconnected during their turn. Forfeiting turn.")
-            combat_system.forfeit_current_turn_if_player(player_id)
+        removed = game_state.remove_player(player_id, sid=request.sid)
+        if removed:
+            print(f"Player {player_id} disconnected.")
+            # If they disconnected on their turn, forfeit immediately (stay in battle offline)
+            if was_their_turn:
+                print(f"Player {player_id} disconnected during their turn. Forfeiting turn.")
+                combat_system.forfeit_current_turn_if_player(player_id)
+        else:
+            print(f"Ignored stale disconnect for {player_id} (newer socket active).")
 
 @socketio.on('move')
 def handle_move(direction):

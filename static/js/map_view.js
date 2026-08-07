@@ -280,6 +280,10 @@ const MapView = (function () {
         if (!data.player && !initialViewportSynced) {
             return;
         }
+        // After join: never paint spectator payloads (mobile reconnect flash)
+        if (!data.player && initialViewportSynced) {
+            return;
+        }
 
         if (data.map) {
             state.lastMap = data.map;
