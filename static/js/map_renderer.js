@@ -1,91 +1,107 @@
-// map_renderer.js — single <pre> renderer filling the map pane
+// map_renderer.js — canvas map paint (no per-tile DOM; FOW-friendly)
 const MapRenderer = (function () {
     const FOG_COLORS = {
         visible: '#00ff00',
         explored: '#006600',
         unexplored: '#001100',
     };
+    const BG = '#000000';
+    const FONT_STACK = "'Courier New', Courier, monospace";
 
-    let displayEl = null;
+    let canvasEl = null;
+    let ctx = null;
 
-    function ensureEl() {
-        if (!displayEl) {
-            displayEl = document.getElementById('map-display');
+    function ensureCanvas() {
+        if (canvasEl && ctx) {
+            return canvasEl;
         }
-        return displayEl;
+        canvasEl = document.getElementById('map-display');
+        if (!canvasEl) {
+            return null;
+        }
+        if (canvasEl.tagName !== 'CANVAS') {
+            console.warn('MapRenderer expects #map-display to be a <canvas>');
+            return null;
+        }
+        ctx = canvasEl.getContext('2d');
+        return canvasEl;
     }
 
-    function escapeHtml(ch) {
-        if (ch === '&') return '&amp;';
-        if (ch === '<') return '&lt;';
-        if (ch === '>') return '&gt;';
-        if (ch === ' ') return '\u00a0';
-        return ch;
-    }
-
-    function hasNonVisibleFog(fog) {
-        if (!fog || !fog.length) {
-            return false;
+    function clearCanvas() {
+        const el = ensureCanvas();
+        if (!el || !ctx) {
+            return;
         }
-        for (let y = 0; y < fog.length; y++) {
-            const row = fog[y];
-            for (let x = 0; x < row.length; x++) {
-                if (row[x] && row[x] !== 'visible') {
-                    return true;
-                }
-            }
-        }
-        return false;
+        const w = el.width;
+        const h = el.height;
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.fillStyle = BG;
+        ctx.fillRect(0, 0, w, h);
     }
 
     function render(state) {
-        const el = ensureEl();
-        if (!el || !state) {
+        const el = ensureCanvas();
+        if (!el || !ctx || !state) {
             return;
         }
 
-        // Use measured tile size so max zoom (10-across) fills the pane
-        const size = state.tileH || state.tileW || 12;
+        const paneW = Math.max(1, state.paneW | 0);
+        const paneH = Math.max(1, state.paneH | 0);
+        const dpr = Math.max(1, window.devicePixelRatio || 1);
 
-        el.style.fontSize = size + 'px';
-        el.style.lineHeight = '1';
-        el.style.letterSpacing = '0';
-        el.style.width = '100%';
-        el.style.height = '100%';
-        el.style.overflow = 'hidden';
+        // CSS size = pane; backing store scaled for sharpness
+        el.style.width = paneW + 'px';
+        el.style.height = paneH + 'px';
+        const bw = Math.max(1, Math.floor(paneW * dpr));
+        const bh = Math.max(1, Math.floor(paneH * dpr));
+        if (el.width !== bw || el.height !== bh) {
+            el.width = bw;
+            el.height = bh;
+        }
+
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.fillStyle = BG;
+        ctx.fillRect(0, 0, paneW, paneH);
 
         const mapData = state.lastMap;
         if (!mapData || !mapData.length) {
-            el.textContent = '';
             return;
         }
 
+        const tw = Math.max(1, state.tileW);
+        const th = Math.max(1, state.tileH);
         const fog = state.lastFog;
-        if (hasNonVisibleFog(fog)) {
-            const parts = [];
-            for (let y = 0; y < mapData.length; y++) {
-                if (y > 0) {
-                    parts.push('\n');
-                }
-                const row = mapData[y];
-                const fogRow = fog[y] || [];
-                for (let x = 0; x < row.length; x++) {
-                    const stateName = fogRow[x] || 'visible';
-                    const color = FOG_COLORS[stateName] || FOG_COLORS.visible;
-                    parts.push(
-                        '<span style="color:' + color + '">' +
-                        escapeHtml(row[x]) +
-                        '</span>'
-                    );
-                }
+        const fontPx = Math.max(1, Math.floor(th));
+
+        ctx.font = fontPx + 'px ' + FONT_STACK;
+        ctx.textBaseline = 'top';
+        ctx.textAlign = 'left';
+
+        for (let y = 0; y < mapData.length; y++) {
+            const row = mapData[y];
+            const fogRow = fog && fog[y] ? fog[y] : null;
+            const py = y * th;
+            if (py >= paneH) {
+                break;
             }
-            el.innerHTML = parts.join('');
-        } else {
-            el.textContent = mapData.map(function (row) {
-                return row.join('');
-            }).join('\n');
+            for (let x = 0; x < row.length; x++) {
+                const ch = row[x];
+                if (ch === ' ' || ch === '\u00a0') {
+                    continue;
+                }
+                const px = x * tw;
+                if (px >= paneW) {
+                    break;
+                }
+                const fogState = fogRow ? (fogRow[x] || 'visible') : 'visible';
+                if (fogState === 'unexplored') {
+                    continue;
+                }
+                ctx.fillStyle = FOG_COLORS[fogState] || FOG_COLORS.visible;
+                ctx.fillText(ch, px, py);
+            }
         }
     }
 
-    return { render };
+    return { render, clearCanvas };
 })();

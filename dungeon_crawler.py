@@ -423,8 +423,9 @@ class GameState:
                     key = (wy, wx)
                     in_bounds = 0 <= wy < map_h and 0 <= wx < map_w
                     if not in_bounds:
-                        char = '#'
-                        state = 'visible'
+                        # OOB padding matches unseen void (do not force visible #)
+                        char = ' '
+                        state = 'unexplored'
                     elif key in los:
                         char = remembered_terrain(game_map, wy, wx)
                         if key in entity_at:

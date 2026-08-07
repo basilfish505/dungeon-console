@@ -175,7 +175,9 @@ const UI = (function() {
     // Handle player death
     function handlePlayerDeath() {
         elements.combatBox.style.display = 'none';
-        if (elements.mapDisplay) {
+        if (typeof MapRenderer !== 'undefined' && MapRenderer.clearCanvas) {
+            MapRenderer.clearCanvas();
+        } else if (elements.mapDisplay) {
             elements.mapDisplay.textContent = '';
         }
         if (elements.mobileControls) {

@@ -59,8 +59,7 @@ const MapView = (function () {
             state.tileH = fontSize;
             return;
         }
-        displayEl.style.fontSize = fontSize + 'px';
-        displayEl.style.lineHeight = '1';
+        // Measure with an off-DOM probe only (canvas has no CSS fontSize)
         const probe = document.createElement('span');
         probe.style.cssText =
             'position:absolute;left:-9999px;top:0;visibility:hidden;white-space:pre;' +
@@ -71,7 +70,6 @@ const MapView = (function () {
         let measured = probe.getBoundingClientRect().width;
         if (measured > state.paneW && measured > 0) {
             fontSize = fontSize * (state.paneW / measured) * 0.995;
-            displayEl.style.fontSize = fontSize + 'px';
             probe.style.fontSize = fontSize + 'px';
             measured = probe.getBoundingClientRect().width;
         }
@@ -115,8 +113,6 @@ const MapView = (function () {
         const size = tileSize();
         state.tileW = size;
         state.tileH = size;
-        displayEl.style.fontSize = size + 'px';
-        displayEl.style.lineHeight = '1';
         const probe = document.createElement('span');
         probe.style.cssText =
             'position:absolute;left:-9999px;top:0;visibility:hidden;white-space:pre;' +
@@ -317,8 +313,8 @@ const MapView = (function () {
                 initialViewportSynced = true;
                 applyRender();
             } else {
-                if (displayEl) {
-                    displayEl.textContent = '';
+                if (typeof MapRenderer !== 'undefined' && MapRenderer.clearCanvas) {
+                    MapRenderer.clearCanvas();
                 }
                 // Ensure we have a measured size and push it to the server
                 if (lastEmitted.w <= 0) {
