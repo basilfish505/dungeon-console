@@ -3,7 +3,10 @@ services:
     name: permaquest
     env: python
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn --worker-class eventlet -w 1 dungeon_crawler:app
+    # Use socketio.run (same path as local) so the monster AI background loop
+    # stays on the eventlet hub. gunicorn + import-time tasks often leave
+    # monsters frozen on Render even though player moves still work.
+    startCommand: python dungeon_crawler.py
     envVars:
       - key: PYTHON_VERSION
         value: 3.11
