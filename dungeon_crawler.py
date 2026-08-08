@@ -482,8 +482,20 @@ class GameState:
 game_state = GameState()
 combat_system = CombatSystem(game_state, socketio)
 
-# Background monster AI (independent per-monster timers)
-socketio.start_background_task(monster_ai_loop, socketio, game_state, combat_system)
+# Monster AI must start after the Socket.IO server is up. Spawning at import
+# works with socketio.run() locally but often never schedules under gunicorn
+# (Render). Start once on the first connect instead.
+_monster_ai_started = False
+
+
+def ensure_monster_ai_started():
+    """Idempotent: launch monster_ai_loop as a Socket.IO background task."""
+    global _monster_ai_started
+    if _monster_ai_started:
+        return
+    _monster_ai_started = True
+    socketio.start_background_task(monster_ai_loop, socketio, game_state, combat_system)
+    print("[monster_ai] background loop started")
 
 class GameStateDisplay:
     def __init__(self, game_state):
@@ -503,6 +515,7 @@ def home():
 @socketio.on('connect')
 def handle_connect():
     """Resume an existing session if possible; otherwise send spectator map."""
+    ensure_monster_ai_started()
     player_id = session.get('player_id')
     if player_id and player_id in game_state.players:
         game_state.add_player(player_id)
