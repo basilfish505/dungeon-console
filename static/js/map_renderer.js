@@ -1,4 +1,4 @@
-// map_renderer.js — canvas map paint (no per-tile DOM; FOW-friendly)
+// map_renderer.js — canvas map paint (terrain graphics under ASCII entities)
 const MapRenderer = (function () {
     const FOG_COLORS = {
         visible: '#00ff00',
@@ -7,9 +7,12 @@ const MapRenderer = (function () {
     };
     const BG = '#000000';
     const FONT_STACK = "'Courier New', Courier, monospace";
+    /** Explored tiles: dim to approximate explored green vs bright visible. */
+    const EXPLORED_TERRAIN_ALPHA = 0.4;
 
     let canvasEl = null;
     let ctx = null;
+    let assetsHooked = false;
 
     function ensureCanvas() {
         if (canvasEl && ctx) {
@@ -27,6 +30,23 @@ const MapRenderer = (function () {
         return canvasEl;
     }
 
+    function graphicsEnabled() {
+        return typeof TileAssets !== 'undefined' && TileAssets.GRAPHICS_TERRAIN_ENABLED;
+    }
+
+    function hookTileAssets() {
+        if (assetsHooked || typeof TileAssets === 'undefined') {
+            return;
+        }
+        assetsHooked = true;
+        TileAssets.preload();
+        TileAssets.setOnReady(function () {
+            if (typeof MapView !== 'undefined' && MapView.getState) {
+                render(MapView.getState());
+            }
+        });
+    }
+
     function clearCanvas() {
         const el = ensureCanvas();
         if (!el || !ctx) {
@@ -39,11 +59,30 @@ const MapRenderer = (function () {
         ctx.fillRect(0, 0, w, h);
     }
 
+    function drawTerrain(key, dx, dy, dw, dh, fogState) {
+        const img = TileAssets.getImage(key);
+        if (!img) {
+            return false;
+        }
+        const explored = fogState === 'explored';
+        if (explored) {
+            ctx.save();
+            ctx.globalAlpha = EXPLORED_TERRAIN_ALPHA;
+        }
+        ctx.drawImage(img, dx, dy, dw, dh);
+        if (explored) {
+            ctx.restore();
+        }
+        return true;
+    }
+
     function render(state) {
         const el = ensureCanvas();
         if (!el || !ctx || !state) {
             return;
         }
+
+        hookTileAssets();
 
         const paneW = Math.max(1, state.paneW | 0);
         const paneH = Math.max(1, state.paneH | 0);
@@ -68,6 +107,12 @@ const MapRenderer = (function () {
             return;
         }
 
+        const useGraphics = graphicsEnabled();
+        // Hold first paint until PNGs are ready so terrain never flashes as ASCII
+        if (useGraphics && !TileAssets.isReady()) {
+            return;
+        }
+
         const tw = Math.max(1, state.tileW);
         const th = Math.max(1, state.tileH);
         const fog = state.lastFog;
@@ -80,22 +125,35 @@ const MapRenderer = (function () {
         for (let y = 0; y < mapData.length; y++) {
             const row = mapData[y];
             const fogRow = fog && fog[y] ? fog[y] : null;
-            const py = y * th;
+            const py = Math.floor(y * th);
             if (py >= paneH) {
                 break;
             }
+            const dh = Math.max(1, Math.floor((y + 1) * th) - py);
             for (let x = 0; x < row.length; x++) {
                 const ch = row[x];
                 if (ch === ' ' || ch === '\u00a0') {
                     continue;
                 }
-                const px = x * tw;
+                const px = Math.floor(x * tw);
                 if (px >= paneW) {
                     break;
                 }
                 const fogState = fogRow ? (fogRow[x] || 'visible') : 'visible';
                 if (fogState === 'unexplored') {
                     continue;
+                }
+                const dw = Math.max(1, Math.floor((x + 1) * tw) - px);
+
+                if (useGraphics) {
+                    const terrainKey = TileAssets.terrainKeyForCell(ch);
+                    const drewTerrain = terrainKey
+                        ? drawTerrain(terrainKey, px, py, dw, dh, fogState)
+                        : false;
+                    if (TileAssets.isTerrainOnly(ch) && drewTerrain) {
+                        continue;
+                    }
+                    // entities always ASCII on top; terrain/stairs ASCII only if PNG missing
                 }
                 ctx.fillStyle = FOG_COLORS[fogState] || FOG_COLORS.visible;
                 ctx.fillText(ch, px, py);

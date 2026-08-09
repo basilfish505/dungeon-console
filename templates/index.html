@@ -101,9 +101,14 @@
         <input type="hidden" id="player-id" value="">
     </div>
 
+    <link rel="preload" as="image" href="{{ url_for('static', filename='tiles/floor.png') }}">
+    <link rel="preload" as="image" href="{{ url_for('static', filename='tiles/boulder.png') }}">
+    <link rel="preload" as="image" href="{{ url_for('static', filename='tiles/stairsup.png') }}">
+    <link rel="preload" as="image" href="{{ url_for('static', filename='tiles/stairsdown.png') }}">
     <script src="{{ url_for('static', filename='js/utils.js') }}"></script>
     <script src="{{ url_for('static', filename='js/sound.js') }}"></script>
     <script src="{{ url_for('static', filename='js/map_view.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/tile_assets.js') }}"></script>
     <script src="{{ url_for('static', filename='js/map_renderer.js') }}"></script>
     <script src="{{ url_for('static', filename='js/map_gestures.js') }}"></script>
     <script src="{{ url_for('static', filename='js/ui.js') }}"></script>
