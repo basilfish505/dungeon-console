@@ -42,45 +42,11 @@ const MapView = (function () {
         return state.zoomIndex >= ZOOM_LEVELS.length - 1;
     }
 
-    function probeMonoAspect() {
-        const probe = document.createElement('span');
-        probe.style.cssText =
-            'position:absolute;left:-9999px;top:0;visibility:hidden;white-space:pre;' +
-            'font-family:\'Courier New\',Courier,monospace;font-size:100px;line-height:1;';
-        probe.textContent = 'M'.repeat(20);
-        document.body.appendChild(probe);
-        const probeW = probe.getBoundingClientRect().width;
-        document.body.removeChild(probe);
-        return probeW > 0 ? (probeW / 20) / 100 : 0.6;
-    }
-
-    function applyExactColumnFit(cols) {
-        // Used only for max zoom: size font so exactly `cols` glyphs span the pane
-        let fontSize = state.paneW / (cols * probeMonoAspect());
-        if (!displayEl) {
-            state.tileW = state.paneW / cols;
-            state.tileH = fontSize;
-            return;
-        }
-        // Measure with an off-DOM probe only (canvas has no CSS fontSize)
-        const probe = document.createElement('span');
-        probe.style.cssText =
-            'position:absolute;left:-9999px;top:0;visibility:hidden;white-space:pre;' +
-            'font-family:\'Courier New\',Courier,monospace;font-size:' + fontSize +
-            'px;line-height:1;';
-        probe.textContent = 'M'.repeat(cols);
-        document.body.appendChild(probe);
-        let measured = probe.getBoundingClientRect().width;
-        if (measured > state.paneW && measured > 0) {
-            fontSize = fontSize * (state.paneW / measured) * 0.995;
-            probe.style.fontSize = fontSize + 'px';
-            measured = probe.getBoundingClientRect().width;
-        }
-        probe.textContent = 'M\nM';
-        const twoLine = probe.getBoundingClientRect().height;
-        document.body.removeChild(probe);
-        state.tileW = measured > 0 ? measured / cols : state.paneW / cols;
-        state.tileH = twoLine > 0 ? twoLine / 2 : fontSize;
+    /** Square cells: exactly `cols` tiles across the pane (used at max zoom). */
+    function applySquareColumnFit(cols) {
+        const size = state.paneW > 0 ? state.paneW / cols : tileSize();
+        state.tileW = size;
+        state.tileH = size;
     }
 
     function tileSize() {
@@ -101,33 +67,14 @@ const MapView = (function () {
     }
 
     function measureTileMetrics() {
-        if (!displayEl) {
-            const size = tileSize();
-            state.tileW = size;
-            state.tileH = size;
-            return;
-        }
-
+        // Always square so terrain/monster PNGs are not stretched
         if (isMaxZoom() && state.paneW > 0) {
-            applyExactColumnFit(MIN_VISIBLE);
+            applySquareColumnFit(MIN_VISIBLE);
             return;
         }
-
         const size = tileSize();
         state.tileW = size;
         state.tileH = size;
-        const probe = document.createElement('span');
-        probe.style.cssText =
-            'position:absolute;left:-9999px;top:0;visibility:hidden;white-space:pre;' +
-            'font-family:\'Courier New\',Courier,monospace;font-size:' + size + 'px;line-height:1;';
-        probe.textContent = 'M'.repeat(20);
-        document.body.appendChild(probe);
-        const w = probe.getBoundingClientRect().width;
-        document.body.removeChild(probe);
-        if (w > 0) {
-            state.tileW = w / 20;
-            state.tileH = size;
-        }
     }
 
     function rowsThatFit() {
@@ -150,7 +97,7 @@ const MapView = (function () {
         // Discrete zoom grew tiles past what fits MIN_VISIBLE cols → promote to max fit
         if (cols < MIN_VISIBLE) {
             state.zoomIndex = ZOOM_LEVELS.length - 1;
-            applyExactColumnFit(MIN_VISIBLE);
+            applySquareColumnFit(MIN_VISIBLE);
             state.visibleCols = MIN_VISIBLE;
             state.visibleRows = rowsThatFit();
             return;
