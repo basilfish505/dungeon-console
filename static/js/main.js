@@ -15,13 +15,24 @@ const Game = (function () {
         });
 
         document.addEventListener('keydown', function (e) {
+            if (typeof InspectUI !== 'undefined' && InspectUI.isOpen()) {
+                if (e.key === 'Escape') {
+                    InspectUI.hide();
+                }
+                return;
+            }
             if (['w', 'a', 's', 'd'].includes(e.key)) move(e.key);
         });
 
         document.querySelectorAll('.mobile-btn').forEach(btn => {
             const direction = btn.getAttribute('data-direction');
             if (direction) {
-                btn.addEventListener('click', function () { move(direction); });
+                btn.addEventListener('click', function () {
+                    if (typeof InspectUI !== 'undefined' && InspectUI.isOpen()) {
+                        return;
+                    }
+                    move(direction);
+                });
             }
         });
 

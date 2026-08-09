@@ -1,4 +1,4 @@
-// map_gestures.js — map-pane pinch/wheel zoom + one-finger/mouse drag pan
+// map_gestures.js — map-pane pinch/wheel zoom + one-finger/mouse drag pan + tap inspect
 const MapGestures = (function () {
     const PINCH_THRESHOLD = 1.12;
     const WHEEL_COOLDOWN_MS = 80;
@@ -37,8 +37,12 @@ const MapGestures = (function () {
         };
     }
 
+    function inspectUiOpen() {
+        return typeof InspectUI !== 'undefined' && InspectUI.isOpen();
+    }
+
     function onTouchStart(e) {
-        if (!active) {
+        if (!active || inspectUiOpen()) {
             return;
         }
         if (e.touches.length === 2) {
@@ -50,7 +54,7 @@ const MapGestures = (function () {
     }
 
     function onTouchMove(e) {
-        if (!active || e.touches.length !== 2 || pinchStartDist <= 0) {
+        if (!active || inspectUiOpen() || e.touches.length !== 2 || pinchStartDist <= 0) {
             return;
         }
         e.preventDefault();
@@ -67,8 +71,6 @@ const MapGestures = (function () {
             const focus = midpoint(e.touches[0], e.touches[1]);
             MapView.setZoomIndex(pinchBaseIndex + steps, focus);
             const after = MapView.getState().zoomIndex;
-            // Ratchet baseline after each committed step so finger-lift jitter
-            // (distance shrinks as digits leave the screen) cannot rewind zoom.
             if (after !== before || after !== pinchBaseIndex) {
                 pinchBaseIndex = after;
                 pinchStartDist = dist;
@@ -83,7 +85,7 @@ const MapGestures = (function () {
     }
 
     function onWheel(e) {
-        if (!active) {
+        if (!active || inspectUiOpen()) {
             return;
         }
         e.preventDefault();
@@ -92,7 +94,6 @@ const MapGestures = (function () {
             return;
         }
         lastWheelAt = now;
-        // Zoom toward cursor (falls back to pane centre inside MapView if needed)
         const focus = { clientX: e.clientX, clientY: e.clientY };
         if (e.deltaY < 0) {
             MapView.zoomBy(1, focus);
@@ -102,10 +103,9 @@ const MapGestures = (function () {
     }
 
     function onPointerDown(e) {
-        if (!active || !paneEl) {
+        if (!active || !paneEl || inspectUiOpen()) {
             return;
         }
-        // One pointer only; ignore while pinching
         if (pinchStartDist > 0 || (e.pointerType === 'touch' && e.isPrimary === false)) {
             return;
         }
@@ -126,7 +126,7 @@ const MapGestures = (function () {
     }
 
     function onPointerMove(e) {
-        if (!active || e.pointerId !== pointerId) {
+        if (!active || e.pointerId !== pointerId || inspectUiOpen()) {
             return;
         }
         if (pinchStartDist > 0) {
@@ -151,7 +151,6 @@ const MapGestures = (function () {
         const tw = Math.max(1, st.tileW);
         const th = Math.max(1, st.tileH);
 
-        // Drag map with finger: content follows pointer → camera opposite
         let tileDx = 0;
         let tileDy = 0;
         while (panAccX >= tw) {
@@ -176,8 +175,21 @@ const MapGestures = (function () {
     }
 
     function onPointerUp(e) {
-        if (e.pointerId === pointerId) {
-            endPan();
+        if (e.pointerId !== pointerId) {
+            return;
+        }
+        const wasPanning = panning;
+        const upX = e.clientX;
+        const upY = e.clientY;
+        const allowInspect = e.type !== 'lostpointercapture' && e.type !== 'pointercancel';
+        endPan();
+
+        if (inspectUiOpen()) {
+            return;
+        }
+        // Short tap (not a drag): try inspect before any future map tap-to-move
+        if (!wasPanning && allowInspect && typeof MapInspect !== 'undefined' && MapInspect.tryInspectAt) {
+            MapInspect.tryInspectAt(upX, upY);
         }
     }
 

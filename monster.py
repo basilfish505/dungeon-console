@@ -3,8 +3,9 @@
 import time
 import uuid
 
-from character_stats import ATTRIBUTE_KEYS
+from character_stats import ATTRIBUTE_KEYS, attributes_for_inspect
 from monster_types import get_monster_type
+from abilities.registry import get_ability
 
 # Module-level AI defaults (used when a type omits a value)
 DEFAULT_AGGRESSION = 0
@@ -133,6 +134,39 @@ class Monster:
         elif direction == 'd':
             new_pos[1] += 1
         return new_pos
+
+    def sprite_url(self):
+        type_def = get_monster_type(self.type_id)
+        return type_def.sprite if type_def else None
+
+    def portrait_url(self):
+        type_def = get_monster_type(self.type_id)
+        return type_def.portrait if type_def else None
+
+    def to_inspect_dict(self):
+        """Player-facing inspect payload (no internal/AI fields)."""
+        type_def = get_monster_type(self.type_id)
+        description = type_def.description if type_def else None
+        abilities = []
+        for aid in self.ability_ids:
+            ability = get_ability(aid)
+            if ability is not None:
+                abilities.append({'id': ability.id, 'name': ability.name})
+            else:
+                abilities.append({'id': str(aid), 'name': str(aid)})
+        return {
+            'kind': 'monster',
+            'name': self.name,
+            'type_id': self.type_id,
+            'description': description,
+            'level': self.level,
+            'hp': self.hp,
+            'mhp': self.mhp,
+            'attributes': attributes_for_inspect(self),
+            'abilities': abilities,
+            'sprite': self.sprite_url(),
+            'portrait': self.portrait_url(),
+        }
 
     def to_dict(self):
         return {

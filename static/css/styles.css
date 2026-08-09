@@ -320,6 +320,141 @@ body {
     color: #00ff00;
 }
 
+/* Map inspect popup */
+.inspect-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 1500;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    background: rgba(0, 0, 0, 0.72);
+    touch-action: none;
+}
+
+.inspect-overlay[hidden] {
+    display: none !important;
+}
+
+.inspect-panel {
+    width: min(100%, 420px);
+    max-height: min(85dvh, 640px);
+    display: flex;
+    flex-direction: column;
+    background: #000;
+    color: #0f0;
+    border: 2px solid #0f0;
+    font-family: inherit;
+    box-shadow: 0 0 0 1px #003300;
+}
+
+.inspect-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 14px;
+    border-bottom: 1px solid #004400;
+    flex-shrink: 0;
+}
+
+.inspect-title {
+    margin: 0;
+    font-size: 1.6rem;
+    font-weight: normal;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.inspect-close {
+    font-family: inherit;
+    font-size: 1.15rem;
+    background: #000;
+    color: #0f0;
+    border: 1px solid #0f0;
+    padding: 8px 14px;
+    cursor: pointer;
+    min-height: 44px;
+}
+
+.inspect-close:hover,
+.inspect-close:focus {
+    background: #001100;
+}
+
+.inspect-body {
+    padding: 12px 14px 16px;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    flex: 1 1 auto;
+    min-height: 0;
+}
+
+.inspect-desc {
+    margin: 0 0 12px 0;
+    color: #00cc00;
+    line-height: 1.35;
+    font-size: 1.1rem;
+}
+
+.inspect-section {
+    margin: 14px 0 8px 0;
+    font-size: 1.15rem;
+    font-weight: normal;
+    color: #00ff00;
+    border-bottom: 1px solid #003300;
+    padding-bottom: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+}
+
+.inspect-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 4px 0;
+    font-size: 1.15rem;
+}
+
+.inspect-label {
+    color: #00aa00;
+}
+
+.inspect-value {
+    color: #00ff00;
+    text-align: right;
+}
+
+.inspect-portrait-wrap {
+    text-align: center;
+    margin: 0 0 12px 0;
+}
+
+.inspect-portrait {
+    width: min(140px, 40vw);
+    height: auto;
+    image-rendering: pixelated;
+    border: 1px solid #004400;
+}
+
+.combat-target-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 8px;
+}
+
+.opponent-portrait {
+    width: 72px;
+    height: 72px;
+    object-fit: contain;
+    image-rendering: pixelated;
+    border: 1px solid #0f0;
+    flex-shrink: 0;
+    background: #001100;
+}
+
 @media (min-width: 900px) {
     .game-screen {
         max-width: 720px;

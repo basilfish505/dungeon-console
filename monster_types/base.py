@@ -30,6 +30,9 @@ class MonsterTypeDef:
         base_attributes=None,
         base_mhp=10,
         ability_ids=None,
+        description=None,
+        sprite=None,
+        portrait=None,
         aggression=0,
         speed=10,
         activeness=5,
@@ -43,6 +46,11 @@ class MonsterTypeDef:
         self.base_attributes = attrs_from_mapping(base_attributes)
         self.base_mhp = max(1, int(base_mhp))
         self.ability_ids = list(ability_ids) if ability_ids else []
+        self.description = description if description else None
+        # Art paths under static/monsters/ (sprites = map, portraits = combat)
+        tid = self.id
+        self.sprite = sprite or f'/static/monsters/sprites/{tid}.png'
+        self.portrait = portrait or f'/static/monsters/portraits/{tid}.png'
         # Data-only defaults for existing AI/combat compatibility
         self.aggression = aggression
         self.speed = speed

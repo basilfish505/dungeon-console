@@ -94,6 +94,12 @@ const SocketHandler = (function () {
             Combat.processCombatUpdate(data);
         });
 
+        socket.on('inspect_result', function (data) {
+            if (typeof InspectUI !== 'undefined' && InspectUI.show) {
+                InspectUI.show(data);
+            }
+        });
+
         socket.on('player_died', function () {
             clearJoinedSession();
             UI.handlePlayerDeath();
@@ -150,6 +156,10 @@ const SocketHandler = (function () {
         socket.emit('pan_camera', { dy: dy | 0, dx: dx | 0 });
     }
 
+    function inspectMap(y, x) {
+        socket.emit('inspect_map', { y: y | 0, x: x | 0 });
+    }
+
     return {
         socket,
         setupSocketEvents,
@@ -157,6 +167,7 @@ const SocketHandler = (function () {
         sendMove,
         setViewport,
         panCamera,
+        inspectMap,
         tryResumeSession,
         getJoinedPlayerId,
         clearJoinedSession,

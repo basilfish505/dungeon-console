@@ -80,10 +80,23 @@
         <div class="mobile-btn" data-direction="d">D</div>
     </div>
 
+    <div id="inspect-overlay" class="inspect-overlay" hidden aria-hidden="true">
+        <div id="inspect-panel" class="inspect-panel" role="dialog" aria-modal="true" aria-labelledby="inspect-title">
+            <div class="inspect-header">
+                <h3 id="inspect-title" class="inspect-title"></h3>
+                <button type="button" id="inspect-close" class="inspect-close" aria-label="Close">Close</button>
+            </div>
+            <div id="inspect-body" class="inspect-body"></div>
+        </div>
+    </div>
+
     <div id="combat-box" style="display: none;">
         <h3>Combat</h3>
         <div id="target-selection">
-            <p>Current Target: <span id="opponent-name"></span> (HP: <span id="opponent-hp"></span>)</p>
+            <div class="combat-target-row">
+                <img id="opponent-portrait" class="opponent-portrait" alt="" hidden>
+                <p>Current Target: <span id="opponent-name"></span> (HP: <span id="opponent-hp"></span>)</p>
+            </div>
             <div id="opponents-list" class="opponents-list"></div>
         </div>
         <div id="combat-controls">
@@ -105,11 +118,16 @@
     <link rel="preload" as="image" href="{{ url_for('static', filename='tiles/boulder.png') }}">
     <link rel="preload" as="image" href="{{ url_for('static', filename='tiles/stairsup.png') }}">
     <link rel="preload" as="image" href="{{ url_for('static', filename='tiles/stairsdown.png') }}">
+    <link rel="preload" as="image" href="{{ url_for('static', filename='monsters/sprites/troll.png') }}">
+    <link rel="preload" as="image" href="{{ url_for('static', filename='monsters/portraits/troll.png') }}">
     <script src="{{ url_for('static', filename='js/utils.js') }}"></script>
     <script src="{{ url_for('static', filename='js/sound.js') }}"></script>
     <script src="{{ url_for('static', filename='js/map_view.js') }}"></script>
     <script src="{{ url_for('static', filename='js/tile_assets.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/monster_assets.js') }}"></script>
     <script src="{{ url_for('static', filename='js/map_renderer.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/inspect_ui.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/map_inspect.js') }}"></script>
     <script src="{{ url_for('static', filename='js/map_gestures.js') }}"></script>
     <script src="{{ url_for('static', filename='js/ui.js') }}"></script>
     <script src="{{ url_for('static', filename='js/combat.js') }}"></script>

@@ -22,6 +22,7 @@ const MapView = (function () {
         playerX: 0,
         lastMap: null,
         lastFog: null,
+        lastEntities: [],
         ready: false,
     };
 
@@ -352,6 +353,9 @@ const MapView = (function () {
         if (data.fog) {
             state.lastFog = data.fog;
         }
+        if (Object.prototype.hasOwnProperty.call(data, 'entities')) {
+            state.lastEntities = Array.isArray(data.entities) ? data.entities : [];
+        }
         if (data.camera) {
             state.cameraY = data.camera.y | 0;
             state.cameraX = data.camera.x | 0;
@@ -427,5 +431,6 @@ const MapView = (function () {
         updateCameraForPlayer,
         requestMapUpdate,
         ingestGameState,
+        captureZoomAnchor,
     };
 })();

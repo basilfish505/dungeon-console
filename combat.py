@@ -180,8 +180,11 @@ class CombatSystem:
         for monster in battle['monsters']:
             opponents.append({
                 'id': monster.type,
+                'monster_id': monster.id,
+                'type_id': monster.type_id,
                 'hp': monster.hp,
-                'is_monster': True
+                'is_monster': True,
+                'portrait': monster.portrait_url(),
             })
         
         # Create combat info
@@ -276,8 +279,10 @@ class CombatSystem:
             targets.append({
                 'id': monster.type,
                 'monster_id': monster.id,  # Include the full ID for targeting
+                'type_id': monster.type_id,
                 'hp': monster.hp,
-                'is_monster': True
+                'is_monster': True,
+                'portrait': monster.portrait_url(),
             })
         
         # Create and send the target request
@@ -778,9 +783,11 @@ class CombatSystem:
             combatants.append({
                 'id': monster.type,
                 'monster_id': monster.id,
+                'type_id': monster.type_id,
                 'hp': monster.hp,
                 'is_monster': True,
-                'is_current_turn': is_current
+                'is_current_turn': is_current,
+                'portrait': monster.portrait_url(),
             })
         
         # Sort combatants by turn order

@@ -6,6 +6,7 @@ const Combat = (function () {
         combatBox: document.getElementById('combat-box'),
         opponentName: document.getElementById('opponent-name'),
         opponentHP: document.getElementById('opponent-hp'),
+        opponentPortrait: document.getElementById('opponent-portrait'),
         combatLog: document.getElementById('combat-log'),
         combatMessage: document.getElementById('combat-message'),
         opponentThinking: document.getElementById('opponent-thinking'),
@@ -120,6 +121,32 @@ const Combat = (function () {
         }
     }
 
+    function setOpponentPortrait(opponent) {
+        const img = elements.opponentPortrait;
+        if (!img) {
+            return;
+        }
+        if (!opponent || !opponent.is_monster) {
+            img.hidden = true;
+            img.removeAttribute('src');
+            return;
+        }
+        const typeId = opponent.type_id;
+        const url = opponent.portrait || null;
+        if (typeof MonsterAssets !== 'undefined' && typeId) {
+            MonsterAssets.ensureType(typeId, null, url);
+        }
+        const resolved = url || (typeId ? '/static/monsters/portraits/' + typeId + '.png' : null);
+        if (!resolved) {
+            img.hidden = true;
+            img.removeAttribute('src');
+            return;
+        }
+        img.src = resolved;
+        img.alt = (opponent.id || 'Monster') + ' portrait';
+        img.hidden = false;
+    }
+
     function updateOpponentsList() {
         if (!elements.opponentsList) {
             elements.opponentsList = document.createElement('div');
@@ -148,6 +175,7 @@ const Combat = (function () {
                 this.classList.add('selected-target');
                 elements.opponentName.textContent = opponent.id;
                 elements.opponentHP.textContent = opponent.hp;
+                setOpponentPortrait(opponent);
             });
             elements.opponentsList.appendChild(el);
         });
@@ -166,6 +194,12 @@ const Combat = (function () {
             if (first) first.classList.add('selected-target');
             elements.opponentName.textContent = currentBattle.opponents[0].id;
             elements.opponentHP.textContent = currentBattle.opponents[0].hp;
+            setOpponentPortrait(currentBattle.opponents[0]);
+        } else if (currentBattle.selectedTarget) {
+            const selected = currentBattle.opponents.find(o => o.id === currentBattle.selectedTarget);
+            setOpponentPortrait(selected || null);
+        } else {
+            setOpponentPortrait(null);
         }
     }
 
@@ -243,6 +277,7 @@ const Combat = (function () {
         if (data.message) appendCombatLog(data.message);
         elements.combatBox.style.display = 'none';
         currentBattle = { battleId: null, opponents: [], selectedTarget: null };
+        setOpponentPortrait(null);
         clearCombatLog();
     }
 

@@ -2,6 +2,19 @@
 
 ATTRIBUTE_KEYS = ('str', 'int', 'wis', 'chr', 'dex', 'agi')
 
+ATTRIBUTE_LABELS = {
+    'str': 'Strength',
+    'int': 'Intelligence',
+    'wis': 'Wisdom',
+    'chr': 'Charisma',
+    'dex': 'Dexterity',
+    'agi': 'Agility',
+}
+
+
+def attribute_label(key):
+    return ATTRIBUTE_LABELS.get(key, str(key).upper())
+
 
 def attrs_from_mapping(data):
     """Build an attribute dict from a mapping; missing keys default to 1."""
@@ -28,3 +41,15 @@ def copy_attrs(src):
     for key in ATTRIBUTE_KEYS:
         data[key] = getattr(src, key, 1)
     return attrs_from_mapping(data)
+
+
+def attributes_for_inspect(entity):
+    """Player-facing attribute list for inspect UI (enumerated from ATTRIBUTE_KEYS)."""
+    rows = []
+    for key in ATTRIBUTE_KEYS:
+        rows.append({
+            'key': key,
+            'label': attribute_label(key),
+            'value': int(getattr(entity, key, 1)),
+        })
+    return rows

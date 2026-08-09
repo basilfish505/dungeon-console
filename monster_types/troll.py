@@ -7,6 +7,7 @@ TROLL = MonsterTypeDef(
     type_id='troll',
     name='Troll',
     base_level=1,
+    description='A large, brutish creature that relies on strength and durability.',
     base_attributes={
         'str': 8,
         'int': 3,

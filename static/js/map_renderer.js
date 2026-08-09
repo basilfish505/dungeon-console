@@ -1,4 +1,4 @@
-// map_renderer.js — canvas map paint (terrain graphics under ASCII entities)
+// map_renderer.js — canvas map paint (terrain + monster sprites under ASCII)
 const MapRenderer = (function () {
     const FOG_COLORS = {
         visible: '#00ff00',
@@ -35,16 +35,26 @@ const MapRenderer = (function () {
     }
 
     function hookTileAssets() {
-        if (assetsHooked || typeof TileAssets === 'undefined') {
+        if (assetsHooked) {
             return;
         }
         assetsHooked = true;
-        TileAssets.preload();
-        TileAssets.setOnReady(function () {
-            if (typeof MapView !== 'undefined' && MapView.getState) {
-                render(MapView.getState());
-            }
-        });
+        if (typeof TileAssets !== 'undefined') {
+            TileAssets.preload();
+            TileAssets.setOnReady(function () {
+                if (typeof MapView !== 'undefined' && MapView.getState) {
+                    render(MapView.getState());
+                }
+            });
+        }
+        if (typeof MonsterAssets !== 'undefined') {
+            MonsterAssets.preloadKnown();
+            MonsterAssets.setOnReady(function () {
+                if (typeof MapView !== 'undefined' && MapView.getState) {
+                    render(MapView.getState());
+                }
+            });
+        }
     }
 
     function clearCanvas() {
@@ -76,6 +86,40 @@ const MapRenderer = (function () {
         return true;
     }
 
+    function drawMonsterSprite(typeId, spriteUrl, dx, dy, dw, dh, fogState) {
+        if (typeof MonsterAssets === 'undefined') {
+            return false;
+        }
+        MonsterAssets.ensureType(typeId, spriteUrl, null);
+        const img = MonsterAssets.getSprite(typeId, spriteUrl);
+        if (!img) {
+            return false;
+        }
+        const explored = fogState === 'explored';
+        if (explored) {
+            ctx.save();
+            ctx.globalAlpha = EXPLORED_TERRAIN_ALPHA;
+        }
+        ctx.drawImage(img, dx, dy, dw, dh);
+        if (explored) {
+            ctx.restore();
+        }
+        return true;
+    }
+
+    function entityAt(entities, vy, vx) {
+        if (!entities || !entities.length) {
+            return null;
+        }
+        for (let i = 0; i < entities.length; i++) {
+            const e = entities[i];
+            if (e && (e.vy | 0) === vy && (e.vx | 0) === vx) {
+                return e;
+            }
+        }
+        return null;
+    }
+
     function render(state) {
         const el = ensureCanvas();
         if (!el || !ctx || !state) {
@@ -88,7 +132,6 @@ const MapRenderer = (function () {
         const paneH = Math.max(1, state.paneH | 0);
         const dpr = Math.max(1, window.devicePixelRatio || 1);
 
-        // CSS size = pane; backing store scaled for sharpness
         el.style.width = paneW + 'px';
         el.style.height = paneH + 'px';
         const bw = Math.max(1, Math.floor(paneW * dpr));
@@ -108,7 +151,6 @@ const MapRenderer = (function () {
         }
 
         const useGraphics = graphicsEnabled();
-        // Hold first paint until PNGs are ready so terrain never flashes as ASCII
         if (useGraphics && !TileAssets.isReady()) {
             return;
         }
@@ -116,6 +158,7 @@ const MapRenderer = (function () {
         const tw = Math.max(1, state.tileW);
         const th = Math.max(1, state.tileH);
         const fog = state.lastFog;
+        const entities = state.lastEntities || [];
         const fontPx = Math.max(1, Math.floor(th));
 
         ctx.font = fontPx + 'px ' + FONT_STACK;
@@ -145,6 +188,7 @@ const MapRenderer = (function () {
                 }
                 const dw = Math.max(1, Math.floor((x + 1) * tw) - px);
 
+                let drewMonsterSprite = false;
                 if (useGraphics) {
                     const terrainKey = TileAssets.terrainKeyForCell(ch);
                     const drewTerrain = terrainKey
@@ -153,7 +197,17 @@ const MapRenderer = (function () {
                     if (TileAssets.isTerrainOnly(ch) && drewTerrain) {
                         continue;
                     }
-                    // entities always ASCII on top; terrain/stairs ASCII only if PNG missing
+                    if (ch === '&') {
+                        const ent = entityAt(entities, y, x);
+                        if (ent && ent.kind === 'monster') {
+                            drewMonsterSprite = drawMonsterSprite(
+                                ent.type_id, ent.sprite, px, py, dw, dh, fogState
+                            );
+                        }
+                        if (drewMonsterSprite) {
+                            continue;
+                        }
+                    }
                 }
                 ctx.fillStyle = FOG_COLORS[fogState] || FOG_COLORS.visible;
                 ctx.fillText(ch, px, py);
