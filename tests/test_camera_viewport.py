@@ -18,12 +18,13 @@ def _grid(h, w, fill='.'):
 
 
 class ClampViewportTests(unittest.TestCase):
-    def test_clamp_within_bounds(self):
-        self.assertEqual(clamp_viewport_size(20, 30), (20, 30))
+    def test_clamp_within_bounds_square(self):
+        self.assertEqual(clamp_viewport_size(20, 20), (20, 20))
 
-    def test_clamp_allows_short_landscape(self):
-        # Wide-short map pane: fewer rows than the 10-col max-zoom floor
-        self.assertEqual(clamp_viewport_size(6, 10), (6, 10))
+    def test_clamp_normalizes_to_square(self):
+        # Non-square requests collapse to min(vh, vw)
+        self.assertEqual(clamp_viewport_size(20, 30), (20, 20))
+        self.assertEqual(clamp_viewport_size(6, 10), (6, 6))
 
     def test_clamp_raises_floor(self):
         self.assertEqual(clamp_viewport_size(2, 3), (4, 4))

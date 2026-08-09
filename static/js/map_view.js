@@ -1,17 +1,21 @@
 // map_view.js — authoritative client map viewport state + RAF update pipeline
 const MapView = (function () {
-    // Discrete font-size steps (px). Last entry is max zoom → exact 10 tiles across.
-    const ZOOM_LEVELS = [8, 9, 10, 11, 12, 14, 16, 18, 20, 22, 24, 28, 32, 36, 40, 48];
-    const DEFAULT_ZOOM_INDEX = 7; // 18px — one step in from 16px
-    const MIN_VISIBLE = 10; // furthest zoom-in: 10 tiles across
-    const MARGIN_REF_SPAN = 20; // matches camera.DEFAULT_VIEW_SPAN for edge-margin scaling
+    // Zoom = visible tile span (N×N). Last entry is max zoom → exactly 10×10.
+    const ZOOM_SPANS = [40, 36, 32, 28, 24, 20, 16, 14, 12, 10];
+    const DEFAULT_ZOOM_INDEX = 5; // 20×20 — matches camera.DEFAULT_VIEW_SPAN
+    const MIN_VISIBLE = 10; // furthest zoom-in
+    const MARGIN_REF_SPAN = 20; // matches camera.DEFAULT_VIEW_SPAN
+    const EDGE_MARGIN_REF = 4; // matches camera.EDGE_MARGIN at default span
+
+    // Back-compat alias for any callers still reading ZOOM_LEVELS
+    const ZOOM_LEVELS = ZOOM_SPANS;
 
     const state = {
         zoomIndex: DEFAULT_ZOOM_INDEX,
-        tileW: ZOOM_LEVELS[DEFAULT_ZOOM_INDEX],
-        tileH: ZOOM_LEVELS[DEFAULT_ZOOM_INDEX],
-        visibleCols: 20,
-        visibleRows: 20,
+        tileW: 1,
+        tileH: 1,
+        visibleCols: ZOOM_SPANS[DEFAULT_ZOOM_INDEX],
+        visibleRows: ZOOM_SPANS[DEFAULT_ZOOM_INDEX],
         cameraY: 0,
         cameraX: 0,
         paneW: 0,
@@ -38,22 +42,36 @@ const MapView = (function () {
     // Pinch/wheel zoom: keep this world point under the same pane pixel after zoom
     let pendingZoomAnchor = null;
 
+    function currentSpan() {
+        return ZOOM_SPANS[state.zoomIndex] || ZOOM_SPANS[DEFAULT_ZOOM_INDEX];
+    }
+
     function isMaxZoom() {
-        return state.zoomIndex >= ZOOM_LEVELS.length - 1;
+        return state.zoomIndex >= ZOOM_SPANS.length - 1;
     }
 
-    /** Square cells: exactly `cols` tiles across the pane (used at max zoom). */
-    function applySquareColumnFit(cols) {
-        const size = state.paneW > 0 ? state.paneW / cols : tileSize();
-        state.tileW = size;
-        state.tileH = size;
-    }
-
-    function tileSize() {
-        if (isMaxZoom() && state.paneW > 0) {
-            return state.paneW / MIN_VISIBLE;
+    function paneSide() {
+        // Prefer measured square; fall back to either axis if layout is mid-update
+        if (state.paneW > 0 && state.paneH > 0) {
+            return Math.min(state.paneW, state.paneH);
         }
-        return ZOOM_LEVELS[state.zoomIndex] || ZOOM_LEVELS[DEFAULT_ZOOM_INDEX];
+        return Math.max(state.paneW, state.paneH);
+    }
+
+    function marginForSpan(span) {
+        // Same formula as camera.margin_for_span
+        span = span | 0;
+        if (span <= 0) {
+            return 0;
+        }
+        return Math.max(1, Math.floor((EDGE_MARGIN_REF * span + Math.floor(MARGIN_REF_SPAN / 2)) / MARGIN_REF_SPAN));
+    }
+
+    function effectiveMargin(size, edgeMargin) {
+        if (size <= 1) {
+            return 0;
+        }
+        return Math.min(edgeMargin, Math.floor((size - 1) / 2));
     }
 
     function measurePane() {
@@ -61,83 +79,59 @@ const MapView = (function () {
             return false;
         }
         const rect = paneEl.getBoundingClientRect();
-        state.paneW = Math.max(0, Math.floor(rect.width));
-        state.paneH = Math.max(0, Math.floor(rect.height));
+        let w = Math.max(0, Math.floor(rect.width));
+        let h = Math.max(0, Math.floor(rect.height));
+        // Enforce square metrics even if CSS is slightly off
+        if (w > 0 && h > 0 && w !== h) {
+            const side = Math.min(w, h);
+            w = side;
+            h = side;
+        }
+        state.paneW = w;
+        state.paneH = h;
         return state.paneW > 0 && state.paneH > 0;
     }
 
     function measureTileMetrics() {
-        // Always square so terrain/monster PNGs are not stretched
-        if (isMaxZoom() && state.paneW > 0) {
-            applySquareColumnFit(MIN_VISIBLE);
-            return;
-        }
-        const size = tileSize();
+        const n = currentSpan();
+        const side = paneSide();
+        const size = side > 0 ? side / n : 1;
         state.tileW = size;
         state.tileH = size;
     }
 
-    function rowsThatFit() {
-        const th = Math.max(1, state.tileH);
-        return Math.max(1, Math.min(80, Math.floor(state.paneH / th)));
-    }
-
     function computeVisibleCounts() {
-        const tw = Math.max(1, state.tileW);
-
-        if (isMaxZoom()) {
-            state.visibleCols = MIN_VISIBLE;
-            state.visibleRows = rowsThatFit();
-            return;
-        }
-
-        let cols = Math.max(1, Math.floor(state.paneW / tw));
-        let rows = rowsThatFit();
-
-        // Discrete zoom grew tiles past what fits MIN_VISIBLE cols → promote to max fit
-        if (cols < MIN_VISIBLE) {
-            state.zoomIndex = ZOOM_LEVELS.length - 1;
-            applySquareColumnFit(MIN_VISIBLE);
-            state.visibleCols = MIN_VISIBLE;
-            state.visibleRows = rowsThatFit();
-            return;
-        }
-
-        state.visibleCols = Math.min(80, cols);
-        state.visibleRows = Math.min(80, rows);
+        const n = currentSpan();
+        state.visibleCols = n;
+        state.visibleRows = n;
     }
 
     function updateCameraForPlayer() {
-        // Client camera is advisory until server ack
-        const vh = state.visibleRows;
-        const vw = state.visibleCols;
+        // Client camera is advisory until server ack. Square viewport → one margin.
+        const n = state.visibleRows;
         const py = state.playerY;
         const px = state.playerX;
-        const refMargin = 4;
-        const rawMy = Math.max(1, Math.round(refMargin * vh / MARGIN_REF_SPAN));
-        const rawMx = Math.max(1, Math.round(refMargin * vw / MARGIN_REF_SPAN));
-        const my = Math.min(rawMy, Math.max(0, Math.floor((vh - 1) / 2)));
-        const mx = Math.min(rawMx, Math.max(0, Math.floor((vw - 1) / 2)));
+        const m = effectiveMargin(n, marginForSpan(n));
 
-        if (state.mapH > 0 && vh >= state.mapH) {
-            state.cameraY = Math.floor((state.mapH - vh) / 2);
+        if (state.mapH > 0 && n >= state.mapH) {
+            state.cameraY = Math.floor((state.mapH - n) / 2);
         } else {
             let cy = state.cameraY;
             const sy = py - cy;
-            if (sy < my) cy = py - my;
-            else if (sy > vh - 1 - my) cy = py - (vh - 1 - my);
-            cy = Math.max(py - (vh - 1), Math.min(cy, py));
+            if (sy < m) cy = py - m;
+            else if (sy > n - 1 - m) cy = py - (n - 1 - m);
+            cy = Math.max(py - (n - 1), Math.min(cy, py));
             state.cameraY = cy | 0;
         }
 
-        if (state.mapW > 0 && vw >= state.mapW) {
-            state.cameraX = Math.floor((state.mapW - vw) / 2);
+        if (state.mapW > 0 && n >= state.mapW) {
+            state.cameraX = Math.floor((state.mapW - n) / 2);
         } else {
             let cx = state.cameraX;
             const sx = px - cx;
-            if (sx < mx) cx = px - mx;
-            else if (sx > vw - 1 - mx) cx = px - (vw - 1 - mx);
-            cx = Math.max(px - (vw - 1), Math.min(cx, px));
+            if (sx < m) cx = px - m;
+            else if (sx > n - 1 - m) cx = px - (n - 1 - m);
+            cx = Math.max(px - (n - 1), Math.min(cx, px));
             state.cameraX = cx | 0;
         }
     }
@@ -246,7 +240,7 @@ const MapView = (function () {
      *        Screen point that should stay fixed (pinch midpoint or pane centre).
      */
     function setZoomIndex(index, focusClient) {
-        const max = ZOOM_LEVELS.length - 1;
+        const max = ZOOM_SPANS.length - 1;
         const next = Math.max(0, Math.min(max, index | 0));
         if (next === state.zoomIndex) {
             return false;
@@ -310,6 +304,12 @@ const MapView = (function () {
         if (data.viewport) {
             if (data.viewport.h) state.visibleRows = data.viewport.h | 0;
             if (data.viewport.w) state.visibleCols = data.viewport.w | 0;
+            // Keep square if server ever differs
+            if (state.visibleRows !== state.visibleCols) {
+                const n = Math.min(state.visibleRows, state.visibleCols);
+                state.visibleRows = n;
+                state.visibleCols = n;
+            }
         }
         if (data.map_size) {
             state.mapH = data.map_size.h | 0;
@@ -364,6 +364,7 @@ const MapView = (function () {
     }
 
     return {
+        ZOOM_SPANS,
         ZOOM_LEVELS,
         DEFAULT_ZOOM_INDEX,
         MIN_VISIBLE,

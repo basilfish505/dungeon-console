@@ -8,14 +8,14 @@ EDGE_MARGIN = 4
 DEFAULT_VIEW_SPAN = 20
 
 # Adaptive viewport bounds (client may request sizes within this range).
-# Floor is low so a wide-short map pane can request fewer rows than columns
-# (e.g. 6×10 at max zoom) without the server inflating height and clipping.
+# Clients send square viewports (vh === vw = N for N×N zoom). Non-square
+# requests are collapsed to min(vh, vw) so follow margin stays uniform.
 MIN_VIEWPORT = 4
 MAX_VIEWPORT = 80
 
 
 def clamp_viewport_size(vh, vw, min_size=MIN_VIEWPORT, max_size=MAX_VIEWPORT):
-    """Clamp requested viewport dimensions to allowed bounds."""
+    """Clamp requested viewport dimensions and normalize to a square N×N."""
     try:
         vh = int(vh)
         vw = int(vw)
@@ -23,7 +23,8 @@ def clamp_viewport_size(vh, vw, min_size=MIN_VIEWPORT, max_size=MAX_VIEWPORT):
         return VIEWPORT_H, VIEWPORT_W
     vh = max(min_size, min(max_size, vh))
     vw = max(min_size, min(max_size, vw))
-    return vh, vw
+    n = min(vh, vw)
+    return n, n
 
 
 def margin_for_span(span, ref_margin=EDGE_MARGIN, ref_span=DEFAULT_VIEW_SPAN):
