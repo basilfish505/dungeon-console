@@ -15,12 +15,6 @@ MAX_GEN_ATTEMPTS = 50
 USE_SIMPLE_LOWER_LEVELS = False
 BOULDER_PROBABILITY = 0.03  # simple-mode only
 
-MONSTER_TYPES = [
-    "Skeleton", "Ghoul", "Zombie", "Goblin", "Orc",
-    "Troll", "Wraith", "Lich", "Giant Spider", "Slime",
-]
-
-
 class MapGenerator:
     def __init__(self, map_size=MAP_SIZE):
         self.map_size = map_size
@@ -462,9 +456,8 @@ class MapGenerator:
         for i in range(h):
             for j in range(w):
                 if self.game_map[i][j] == '.' and random.random() < MONSTER_PROBABILITY:
-                    monster_type = random.choice(MONSTER_TYPES)
-                    monster_id = f"{monster_type}-{i},{j}"
-                    monster = Monster(monster_id, monster_type, [i, j])
+                    monster_id = f"troll-{i},{j}"
+                    monster = Monster.from_type('troll', [i, j], monster_id=monster_id)
                     self.monsters[(i, j)] = monster
                     self.game_map[i][j] = '&'
 

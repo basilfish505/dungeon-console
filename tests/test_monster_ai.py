@@ -117,14 +117,14 @@ class CollisionTests(unittest.TestCase):
         self.assertTrue(can_monster_step(self.m, [1, 1], [1, 2], {}))
 
     def test_monster_blocks_tile(self):
-        other = Monster('o', 'Orc', [1, 2])
+        other = Monster.from_type('troll', [1, 2], monster_id='o')
         monsters = {(1, 2): other}
         self.assertFalse(can_monster_step(self.m, [1, 1], [1, 2], monsters, 'me'))
 
     def test_surrounded_random_returns_none(self):
         # Tiny map: monster in 1x1 hole
         m = [list('###'), list('#.#'), list('###')]
-        mon = Monster('x', 'Slime', [1, 1])
+        mon = Monster.from_type('troll', [1, 1], monster_id='x')
         dest = select_random_direction_tile(m, mon.pos, {(1, 1): mon}, mon.id)
         self.assertIsNone(dest)
 
@@ -134,7 +134,7 @@ class SelectionTests(unittest.TestCase):
         m = [['.' for _ in range(7)] for _ in range(7)]
         for i in range(7):
             m[0][i] = m[6][i] = m[i][0] = m[i][6] = '#'
-        mon = Monster('g', 'Goblin', [3, 3])
+        mon = Monster.from_type('troll', [3, 3], monster_id='g')
         focus = (3, 5)
         dest = select_toward_tile(m, mon.pos, focus, {(3, 3): mon}, mon.id, random.Random(1))
         self.assertIsNotNone(dest)
@@ -144,7 +144,7 @@ class SelectionTests(unittest.TestCase):
         m = [['.' for _ in range(7)] for _ in range(7)]
         for i in range(7):
             m[0][i] = m[6][i] = m[i][0] = m[i][6] = '#'
-        mon = Monster('g', 'Goblin', [3, 3])
+        mon = Monster.from_type('troll', [3, 3], monster_id='g')
         focus = (3, 5)
         dest = select_away_tile(
             m, mon.pos, focus, {(3, 3): mon}, mon.id, {}, random.Random(1)
@@ -156,7 +156,7 @@ class SelectionTests(unittest.TestCase):
         m = [['.' for _ in range(9)] for _ in range(9)]
         for i in range(9):
             m[0][i] = m[8][i] = m[i][0] = m[i][8] = '#'
-        mon = Monster('g', 'Goblin', [4, 4])
+        mon = Monster.from_type('troll', [4, 4], monster_id='g')
         monsters = {(4, 4): mon}
         rng = random.Random(123)
         counts = Counter()
@@ -174,7 +174,7 @@ class SelectionTests(unittest.TestCase):
 
 class MemoryTests(unittest.TestCase):
     def test_memory_expires(self):
-        mon = Monster('g', 'Goblin', [1, 1], memory_duration=5.0)
+        mon = Monster.from_type('troll', [1, 1], monster_id='g', memory_duration=5.0)
         now = 100.0
         focus, vis = update_memory(mon, 'p1', type('P', (), {'pos': [2, 2]})(), now)
         self.assertTrue(vis)
@@ -190,7 +190,7 @@ class MemoryTests(unittest.TestCase):
         self.assertIsNone(mon.memory_pos)
 
     def test_memory_does_not_track_unseen_live_pos(self):
-        mon = Monster('g', 'Goblin', [1, 1], memory_duration=5.0)
+        mon = Monster.from_type('troll', [1, 1], monster_id='g', memory_duration=5.0)
         now = 50.0
         update_memory(mon, 'p1', type('P', (), {'pos': [5, 5]})(), now)
         # Player "moved" but not visible — memory stays at old tile
@@ -215,7 +215,7 @@ class SpeedZeroTests(unittest.TestCase):
             def move_monster(self, *a, **k):
                 raise AssertionError('should not move')
 
-        mon = Monster('s', 'Statue', [2, 2], speed=0.0, activeness=10.0)
+        mon = Monster.from_type('troll', [2, 2], monster_id='s', speed=0.0, activeness=10.0)
         self.assertIsNone(mon.next_move_at)
         gs = FakeGS()
         gs.monster = mon
@@ -243,7 +243,9 @@ class ActivenessGateTests(unittest.TestCase):
                 self.moved = True
                 return True
 
-        mon = Monster('s', 'Slime', [2, 2], speed=5.0, activeness=0.0, aggression=5.0)
+        mon = Monster.from_type(
+            'troll', [2, 2], monster_id='s', speed=5.0, activeness=0.0, aggression=5.0
+        )
         gs = FakeGS(mon)
         for _ in range(50):
             process_monster_opportunity(gs, 1, mon, None, now=time.monotonic())
@@ -273,8 +275,8 @@ class ActivenessDeliberateTests(unittest.TestCase):
                 mon.pos = list(dest)
                 return True
 
-        mon = Monster(
-            'g', 'Goblin', [3, 3],
+        mon = Monster.from_type(
+            'troll', [3, 3], monster_id='g',
             speed=5.0, activeness=0.0, aggression=10.0, sight_range=6,
         )
         gs = FakeGS(mon)
@@ -313,8 +315,8 @@ class CombatEnterTests(unittest.TestCase):
             def move_monster(self, *a, **k):
                 raise AssertionError('should not move onto player')
 
-        mon = Monster(
-            'g', 'Goblin', [2, 2],
+        mon = Monster.from_type(
+            'troll', [2, 2], monster_id='g',
             speed=5.0, activeness=10.0, aggression=10.0, sight_range=5,
         )
         gs = FakeGS(mon)
