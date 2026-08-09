@@ -180,6 +180,35 @@ class GameState:
             player.explored[level] = set()
         update_explored(player.explored[level], player.visible)
 
+    def inspect_map_tile(self, player_id, y, x):
+        """
+        Resolve an inspectable object at world (y, x) for this player.
+        Returns {ok, kind, data} or {ok: False}. Extensible kind dispatch.
+        """
+        player = self.players.get(player_id)
+        if not player:
+            return {'ok': False}
+        try:
+            y = int(y)
+            x = int(x)
+        except (TypeError, ValueError):
+            return {'ok': False}
+
+        # Visibility gate (full-map mode allows any tile)
+        if VISIBILITY_SYSTEM_ENABLED:
+            if (y, x) not in getattr(player, 'visible', set()):
+                return {'ok': False}
+
+        game_map, monsters = self.ensure_level(player.dungeon_level)
+
+        # --- kind dispatch (add player / stairs / chest later) ---
+        monster = monsters.get((y, x))
+        if monster is not None:
+            payload = monster.to_inspect_dict()
+            return {'ok': True, 'kind': payload.get('kind', 'monster'), 'data': payload}
+
+        return {'ok': False}
+
     def find_random_start(self, level_number=0):
         """Find a random starting position on the given dungeon level"""
         game_map, monsters = self.ensure_level(level_number)
@@ -406,6 +435,7 @@ class GameState:
 
         # Single gate: disabled toggle or no viewer → today's full-map behavior
         use_fog = VISIBILITY_SYSTEM_ENABLED and viewer is not None
+        entities = []
 
         if not use_fog:
             visible_map = [row[:] for row in game_map]
@@ -417,6 +447,17 @@ class GameState:
                 visible_map[pos[0]][pos[1]] = '&'
             visible_map = slice_map(visible_map, cam_y, cam_x, vh=vh, vw=vw)
             fog = [['visible' for _ in row] for row in visible_map]
+            for pos, monster in monsters.items():
+                vy = pos[0] - cam_y
+                vx = pos[1] - cam_x
+                if 0 <= vy < vh and 0 <= vx < vw:
+                    entities.append({
+                        'kind': 'monster',
+                        'type_id': monster.type_id,
+                        'vy': vy,
+                        'vx': vx,
+                        'sprite': monster.sprite_url(),
+                    })
         else:
             explored = viewer.explored.get(level, set())
             los = viewer.visible
@@ -424,6 +465,16 @@ class GameState:
             for pos, monster in monsters.items():
                 if pos in los:
                     entity_at[pos] = '&'
+                    vy = pos[0] - cam_y
+                    vx = pos[1] - cam_x
+                    if 0 <= vy < vh and 0 <= vx < vw:
+                        entities.append({
+                            'kind': 'monster',
+                            'type_id': monster.type_id,
+                            'vy': vy,
+                            'vx': vx,
+                            'sprite': monster.sprite_url(),
+                        })
             for player in self.players.values():
                 if player.dungeon_level == level:
                     py, px = player.pos[0], player.pos[1]
@@ -469,6 +520,7 @@ class GameState:
         return {
             'map': visible_map,
             'fog': fog,
+            'entities': entities,
             'messages': player_messages,
             'players': len(self.active_players),
             'player': player_data,
@@ -606,6 +658,21 @@ def handle_move(direction):
             for pid in game_state.players:
                 if pid in game_state.active_players:
                     emit('game_state', game_state.get_game_state(pid), room=pid)
+
+
+@socketio.on('inspect_map')
+def handle_inspect_map(data):
+    """Tap/click map tile: return player-facing info for inspectable objects."""
+    player_id = session.get('player_id')
+    if not player_id or player_id not in game_state.players:
+        emit('inspect_result', {'ok': False})
+        return
+    if not isinstance(data, dict):
+        emit('inspect_result', {'ok': False})
+        return
+    result = game_state.inspect_map_tile(player_id, data.get('y'), data.get('x'))
+    emit('inspect_result', result)
+
 
 @socketio.on('set_viewport')
 def handle_set_viewport(data):
