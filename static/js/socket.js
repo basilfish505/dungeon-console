@@ -10,6 +10,8 @@ const SocketHandler = (function () {
     let joinedPlayerId = null;
     let resumeInFlight = false;
     let idTakenRetries = 0;
+    /** World this tab joined. A new server process has a different id. */
+    let knownBootId = null;
 
     function currentViewport() {
         if (typeof MapView !== 'undefined' && MapView.measureViewportNow) {
@@ -31,12 +33,30 @@ const SocketHandler = (function () {
         joinedPlayerId = null;
         resumeInFlight = false;
         idTakenRetries = 0;
+        const el = document.getElementById('player-id');
+        if (el) {
+            el.value = '';
+        }
+    }
+
+    function handleWorldReset(newBootId) {
+        clearJoinedSession();
+        knownBootId = newBootId || null;
+        if (typeof UI !== 'undefined' && UI.showLoginScreen) {
+            UI.showLoginScreen();
+        } else {
+            document.getElementById('player-login').style.display = 'block';
+            const shell = document.getElementById('game-shell');
+            if (shell) {
+                shell.hidden = true;
+            }
+        }
     }
 
     /** Re-bind server session after mobile background / socket drop. */
     function tryResumeSession() {
         const playerId = getJoinedPlayerId();
-        if (!playerId || !socket.connected) {
+        if (!playerId || !socket.connected || !knownBootId) {
             return;
         }
         if (resumeInFlight) {
@@ -52,11 +72,27 @@ const SocketHandler = (function () {
     }
 
     function setupSocketEvents() {
-        socket.on('connect', function () {
-            // After a drop, Socket.IO reconnects — reclaim the character immediately
+        socket.on('server_hello', function (data) {
+            const boot = data && data.boot_id ? String(data.boot_id) : '';
+            if (!boot) {
+                return;
+            }
+            if (knownBootId && boot !== knownBootId) {
+                handleWorldReset(boot);
+                return;
+            }
+            if (!knownBootId) {
+                knownBootId = boot;
+            }
+            // Same world after a drop — reclaim the character
             if (getJoinedPlayerId()) {
                 tryResumeSession();
             }
+        });
+
+        socket.on('world_reset', function (data) {
+            const boot = data && data.boot_id ? String(data.boot_id) : '';
+            handleWorldReset(boot || knownBootId);
         });
 
         socket.on('id_taken', function (data) {
@@ -76,6 +112,14 @@ const SocketHandler = (function () {
         });
 
         socket.on('game_state', function (data) {
+            const boot = data && data.boot_id ? String(data.boot_id) : '';
+            if (boot && knownBootId && boot !== knownBootId) {
+                handleWorldReset(boot);
+                return;
+            }
+            if (boot && !knownBootId) {
+                knownBootId = boot;
+            }
             // Ignore spectator/level-0 payloads while logged in (reconnect flash)
             if (getJoinedPlayerId() && (!data || !data.player)) {
                 tryResumeSession();
@@ -83,6 +127,9 @@ const SocketHandler = (function () {
             }
             if (data && data.player && data.player.id) {
                 idTakenRetries = 0;
+                if (boot) {
+                    knownBootId = boot;
+                }
             }
             UI.applyGameState(data);
             UI.updateMessages(data.messages);
@@ -123,17 +170,20 @@ const SocketHandler = (function () {
         if (!playerId) {
             return;
         }
+        if (!knownBootId) {
+            return;
+        }
         joinedPlayerId = playerId;
         document.getElementById('player-id').value = playerId;
+        const payload = {
+            id: playerId,
+            boot_id: knownBootId,
+        };
         if (viewport && viewport.h && viewport.w) {
-            socket.emit('select_id', {
-                id: playerId,
-                h: viewport.h | 0,
-                w: viewport.w | 0,
-            });
-        } else {
-            socket.emit('select_id', playerId);
+            payload.h = viewport.h | 0;
+            payload.w = viewport.w | 0;
         }
+        socket.emit('select_id', payload);
     }
 
     function sendMove(direction) {

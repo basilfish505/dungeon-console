@@ -172,6 +172,25 @@ const UI = (function() {
         }
     }
 
+    function showLoginScreen() {
+        if (elements.combatBox) {
+            elements.combatBox.style.display = 'none';
+        }
+        if (typeof MapRenderer !== 'undefined' && MapRenderer.clearCanvas) {
+            MapRenderer.clearCanvas();
+        }
+        if (elements.mobileControls) {
+            elements.mobileControls.style.display = 'none';
+        }
+        if (elements.gameShell) {
+            elements.gameShell.hidden = true;
+        }
+        if (elements.messageLog) {
+            elements.messageLog.innerHTML = '';
+        }
+        elements.loginForm.style.display = 'flex';
+    }
+
     // Handle player death
     function handlePlayerDeath() {
         elements.combatBox.style.display = 'none';
@@ -202,6 +221,7 @@ const UI = (function() {
         updatePlayerProperties,
         updateGameInfo,
         handlePlayerDeath,
+        showLoginScreen,
         layoutForMobile,
         requestMapUpdate: function (reason) {
             if (mapSystemReady && Date.now() >= ignoreResizeUntil) {

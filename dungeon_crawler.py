@@ -5,6 +5,7 @@ from flask import Flask, render_template, session, request
 from flask_socketio import SocketIO, emit, join_room
 import random
 import os
+import uuid
 from player import Player
 from combat import CombatSystem
 import ssl
@@ -29,6 +30,8 @@ from collections import deque
 
 # Constants (map spawn rates live in map_generator.py)
 SECRET_KEY = 'your-secret-key-here'
+# New process ⇒ new id. Stale tabs must not silently recreate old characters.
+SERVER_BOOT_ID = uuid.uuid4().hex
 
 # Eight adjacent directions (N, NE, E, SE, S, SW, W, NW)
 _STAIR_ADJACENT_DIRS = (
@@ -574,6 +577,7 @@ class GameState:
             'camera': {'y': cam_y, 'x': cam_x},
             'viewport': {'h': vh, 'w': vw},
             'map_size': {'h': map_h, 'w': map_w},
+            'boot_id': SERVER_BOOT_ID,
         }
         step = self.stair_steps.get(current_player_id)
         if step:
@@ -618,6 +622,7 @@ def home():
 def handle_connect():
     """Resume an existing session if possible; otherwise send spectator map."""
     ensure_monster_ai_started()
+    emit('server_hello', {'boot_id': SERVER_BOOT_ID})
     player_id = session.get('player_id')
     if player_id and player_id in game_state.players:
         game_state.add_player(player_id)
@@ -631,17 +636,25 @@ def handle_connect():
 
 @socketio.on('select_id')
 def handle_select_id(data):
-    # Accept legacy string id or {id, h, w} with measured viewport (avoids 20×20 flash)
+    # Accept {id, boot_id, h, w}. Legacy string id has no boot_id → rejected.
     if isinstance(data, dict):
         player_id = data.get('id')
+        client_boot = data.get('boot_id')
         vh, vw = clamp_viewport_size(data.get('h'), data.get('w'))
-        has_viewport = True
+        has_viewport = 'h' in data or 'w' in data
     else:
         player_id = data
+        client_boot = None
         vh, vw = VIEWPORT_H, VIEWPORT_W
         has_viewport = False
 
     if not player_id:
+        return
+
+    # Stale tabs after a server restart must not recreate characters.
+    if not client_boot or str(client_boot) != SERVER_BOOT_ID:
+        emit('world_reset', {'boot_id': SERVER_BOOT_ID})
+        print(f"Rejected select_id for {player_id!r} (stale or missing boot_id).")
         return
 
     already_active = player_id in game_state.active_players
@@ -663,6 +676,9 @@ def handle_select_id(data):
         # Only reset camera for brand-new characters, not reconnect/resume
         if not existing_body:
             game_state.cameras.pop(player_id, None)
+
+    kind = 'resumed' if existing_body else 'created'
+    print(f"Player {player_id} joined ({kind}, sid={request.sid}).")
 
     # Update all active players (includes rejoiner)
     for pid in game_state.players:
@@ -807,10 +823,12 @@ if __name__ == '__main__':
                     debug=False,
                     use_reloader=False)
     else:
-        # Listen on all interfaces so phones on the same Wi-Fi can connect
-        socketio.run(app, 
+        # Listen on all interfaces so phones on the same Wi-Fi can connect.
+        # Reloader off: a file-save restart would empty the world under live sockets.
+        socketio.run(app,
                     host='0.0.0.0',
                     port=port,
-                    debug=True)
+                    debug=True,
+                    use_reloader=False)
 
 print(ssl.OPENSSL_VERSION) 
