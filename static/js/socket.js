@@ -100,6 +100,19 @@ const SocketHandler = (function () {
             }
         });
 
+        socket.on('move_result', function (data) {
+            if (typeof PlayerPresentation === 'undefined' || !PlayerPresentation.ackLocalStep) {
+                return;
+            }
+            const pid = getJoinedPlayerId();
+            if (!pid) {
+                return;
+            }
+            const moved = !!(data && data.moved);
+            const pos = data && data.pos ? data.pos : null;
+            PlayerPresentation.ackLocalStep(pid, moved, pos);
+        });
+
         socket.on('player_died', function () {
             clearJoinedSession();
             UI.handlePlayerDeath();

@@ -142,21 +142,24 @@ const MapRenderer = (function () {
         const samples = PlayerPresentation.sample();
         for (let i = 0; i < samples.length; i++) {
             const p = samples[i];
-            const frame = PlayerAssets.getFrame(p.appearanceId, p.clip, p.clipElapsedMs);
+            const frame = PlayerAssets.getFrame(
+                p.appearanceId, p.clip, p.clipElapsedMs, p.moveProgress
+            );
             if (!frame || !frame.img) {
                 continue;
             }
-            // Same dest box as a map tile (top-left of the visual tile, tile-sized)
+            // Sub-pixel dest box — avoids floor-snap jitter during tile tweens
             const tileX = p.visualX - camX;
             const tileY = p.visualY - camY;
-            const dx = Math.floor(tileX * tw);
-            const dy = Math.floor(tileY * th);
-            const dw = Math.max(1, Math.floor((tileX + 1) * tw) - dx);
-            const dh = Math.max(1, Math.floor((tileY + 1) * th) - dy);
+            const dx = tileX * tw;
+            const dy = tileY * th;
+            const dw = tw;
+            const dh = th;
             const artFacing = PlayerAssets.defaultFacing(p.appearanceId);
             const flip = p.facing && artFacing && p.facing !== artFacing;
 
             ctx.save();
+            ctx.imageSmoothingEnabled = true;
             if (flip) {
                 ctx.translate(dx + dw, dy);
                 ctx.scale(-1, 1);
@@ -277,9 +280,6 @@ const MapRenderer = (function () {
 
         if (overlayPlayers) {
             drawPlayerOverlays(state, tw, th, camY, camX);
-            if (PlayerPresentation.anyMoving()) {
-                PlayerPresentation.kick();
-            }
         }
     }
 

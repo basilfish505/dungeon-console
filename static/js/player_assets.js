@@ -10,7 +10,7 @@ const PlayerAssets = (function () {
                     frames: ['/static/player/sprites/player_walk1.png'],
                 },
                 walk: {
-                    fps: 12,
+                    fps: 18,
                     frames: [
                         '/static/player/sprites/player_walk1.png',
                         '/static/player/sprites/player_walk2.png',
@@ -76,7 +76,7 @@ const PlayerAssets = (function () {
         };
     }
 
-    function getFrame(appearanceId, clipName, elapsedMs) {
+    function getFrame(appearanceId, clipName, elapsedMs, moveProgress) {
         const app = getAppearance(appearanceId);
         const clips = (app && app.clips) || {};
         let clip = clips[clipName] || clips.idle;
@@ -90,9 +90,15 @@ const PlayerAssets = (function () {
         }
         const fps = clip.fps || 6;
         let idx = 0;
-        if (frames.length > 1 && fps > 0) {
-            const t = elapsedMs > 0 ? elapsedMs : 0;
-            idx = Math.floor((t / 1000) * fps) % frames.length;
+        if (frames.length > 1) {
+            // Prefer tying walk frames to tile-step progress (one cycle per tile)
+            if (clipName === 'walk' && moveProgress != null && moveProgress >= 0) {
+                const p = Math.max(0, Math.min(0.9999, moveProgress));
+                idx = Math.floor(p * frames.length) % frames.length;
+            } else if (fps > 0) {
+                const t = elapsedMs > 0 ? elapsedMs : 0;
+                idx = Math.floor((t / 1000) * fps) % frames.length;
+            }
         }
         const img = load(frames[idx]);
         const payload = framePayload(img);

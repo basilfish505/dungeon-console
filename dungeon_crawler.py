@@ -684,14 +684,33 @@ def handle_move(direction):
         player = game_state.players[moving_player_id]
         # Check if player is in combat
         if player.in_combat or moving_player_id in game_state.active_combats:
+            emit('move_result', {
+                'ok': False,
+                'moved': False,
+                'pos': list(player.pos),
+            })
             return  # Ignore movement commands during combat
-        
-        if game_state.move_player(moving_player_id, direction):
+
+        old_pos = list(player.pos)
+        ok = game_state.move_player(moving_player_id, direction)
+        new_pos = list(player.pos)
+        moved = bool(ok and new_pos != old_pos)
+
+        if ok:
             # Update everyone's view
             for pid in game_state.players:
                 if pid in game_state.active_players:
                     emit('game_state', game_state.get_game_state(pid), room=pid)
             game_state.stair_steps.pop(moving_player_id, None)
+        else:
+            # Echo state so the mover can reconcile client-side prediction
+            emit('game_state', game_state.get_game_state(moving_player_id))
+
+        emit('move_result', {
+            'ok': bool(ok),
+            'moved': moved,
+            'pos': new_pos,
+        })
 
 
 @socketio.on('inspect_map')

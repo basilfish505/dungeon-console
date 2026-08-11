@@ -152,7 +152,7 @@ const Game = (function () {
             return;
         }
         if (typeof PlayerPresentation !== 'undefined' && PlayerPresentation.beginLocalStep) {
-            if (!PlayerPresentation.beginLocalStep(localPlayerId())) {
+            if (!PlayerPresentation.beginLocalStep(localPlayerId(), direction)) {
                 return;
             }
         }
