@@ -1,16 +1,24 @@
 // player_presentation.js — visual waypoint tween + facing + clips (client-only)
 const PlayerPresentation = (function () {
     const MOVE_MS = 250;
+    const ACK_MS = 200;
+    const IDLE_GRACE_MS = 80;
+    const PIPELINE_T = 0.85;
 
     const actors = Object.create(null);
     /** id -> timestamp until which a sent move is awaiting game_state */
     const localAckUntil = Object.create(null);
-    const ACK_MS = 400;
     let rafId = null;
     let onFrame = null;
 
     function lerp(a, b, t) {
         return a + (b - a) * t;
+    }
+
+    function clamp01(t) {
+        if (t <= 0) return 0;
+        if (t >= 1) return 1;
+        return t;
     }
 
     function makeActor(id, appearanceId, sprite) {
@@ -30,6 +38,7 @@ const PlayerPresentation = (function () {
             facing: 'left',
             clip: 'idle',
             clipStartMs: 0,
+            idleAt: 0,
             onArrive: null,
             appearanceId: appearanceId || 'peasant',
             sprite: sprite || null,
@@ -45,7 +54,7 @@ const PlayerPresentation = (function () {
         }
     }
 
-    function setIdle(actor, y, x, now) {
+    function setIdle(actor, y, x, now, keepWalk) {
         actor.visualY = y;
         actor.visualX = x;
         actor.fromY = y;
@@ -53,8 +62,14 @@ const PlayerPresentation = (function () {
         actor.toY = y;
         actor.toX = x;
         actor.moving = false;
-        actor.clip = 'idle';
-        actor.clipStartMs = now;
+        if (keepWalk) {
+            actor.clip = 'walk';
+            actor.idleAt = now;
+        } else {
+            actor.clip = 'idle';
+            actor.clipStartMs = now;
+            actor.idleAt = 0;
+        }
     }
 
     function beginSegment(actor, toY, toX, now) {
@@ -64,13 +79,16 @@ const PlayerPresentation = (function () {
         actor.toX = toX;
         actor.startMs = now;
         actor.moving = true;
-        actor.clip = 'walk';
-        actor.clipStartMs = now;
+        actor.idleAt = 0;
+        if (actor.clip !== 'walk') {
+            actor.clip = 'walk';
+            actor.clipStartMs = now;
+        }
     }
 
     function advanceQueue(actor, now) {
         if (actor.queue.length === 0) {
-            setIdle(actor, actor.tileY, actor.tileX, now);
+            setIdle(actor, actor.tileY, actor.tileX, now, true);
             fireArrive(actor);
             return;
         }
@@ -78,11 +96,24 @@ const PlayerPresentation = (function () {
         beginSegment(actor, next.y, next.x, now);
     }
 
+    function segmentT(actor, now) {
+        if (!actor.moving) {
+            return actor.idleAt ? 1 : 0;
+        }
+        const dur = MOVE_MS > 0 ? MOVE_MS : 1;
+        return clamp01((now - actor.startMs) / dur);
+    }
+
     function sampleVisual(actor, now) {
         if (!actor.moving) {
+            if (actor.clip === 'walk' && actor.idleAt && (now - actor.idleAt) >= IDLE_GRACE_MS) {
+                actor.clip = 'idle';
+                actor.clipStartMs = now;
+                actor.idleAt = 0;
+            }
             return;
         }
-        const t = Math.min(1, (now - actor.startMs) / MOVE_MS);
+        const t = segmentT(actor, now);
         actor.visualY = lerp(actor.fromY, actor.toY, t);
         actor.visualX = lerp(actor.fromX, actor.toX, t);
         if (t >= 1) {
@@ -96,7 +127,7 @@ const PlayerPresentation = (function () {
         actor.tileY = tileY;
         actor.tileX = tileX;
         actor.queue = [];
-        setIdle(actor, tileY, tileX, now);
+        setIdle(actor, tileY, tileX, now, false);
         fireArrive(actor);
     }
 
@@ -110,10 +141,6 @@ const PlayerPresentation = (function () {
         snap(actor, tileY | 0, tileX | 0, now);
     }
 
-    /**
-     * Walk from current visual pos to a tile, then run onDone.
-     * Used for stair approach on the old map before swapping levels.
-     */
     function walkToThen(id, tileY, tileX, onDone) {
         id = String(id);
         const actor = actors[id];
@@ -138,6 +165,7 @@ const PlayerPresentation = (function () {
             return;
         }
         beginSegment(actor, tileY, tileX, now);
+        kick();
     }
 
     function updateFacing(actor, dy, dx) {
@@ -165,7 +193,6 @@ const PlayerPresentation = (function () {
             const id = String(e.id);
             let tileY = camY + (e.vy | 0);
             let tileX = camX + (e.vx | 0);
-            // Absolute pos is stable across zoom/pan; vy/vx are camera-relative
             if (localId && id === localId && localPos) {
                 tileY = localPos[0] | 0;
                 tileX = localPos[1] | 0;
@@ -188,7 +215,6 @@ const PlayerPresentation = (function () {
             const newLevel = localPlayer && localPlayer.dungeon_level;
             if (id === localId && actor.dungeonLevel != null && newLevel != null
                 && (newLevel | 0) !== actor.dungeonLevel) {
-                // Level already applied by MapView — never tween on the new floor
                 actor.dungeonLevel = newLevel | 0;
                 delete localAckUntil[id];
                 snap(actor, tileY, tileX, now);
@@ -227,20 +253,34 @@ const PlayerPresentation = (function () {
                 delete actors[id];
             }
         }
+
+        if (anyMoving() || anyWalkGrace()) {
+            kick();
+        }
     }
 
     function actorBusy(actor) {
         return !!(actor && (actor.moving || actor.queue.length));
     }
 
-    function anyMoving(now) {
-        now = now == null ? performance.now() : now;
+    function anyWalkGrace() {
+        const now = performance.now();
+        for (const id in actors) {
+            const actor = actors[id];
+            if (actor && actor.clip === 'walk' && actor.idleAt && (now - actor.idleAt) < IDLE_GRACE_MS) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    function anyMoving() {
         for (const id in actors) {
             if (actorBusy(actors[id])) {
                 return true;
             }
         }
-        return false;
+        return anyWalkGrace();
     }
 
     function isBusy(id) {
@@ -258,12 +298,69 @@ const PlayerPresentation = (function () {
         return actorBusy(actors[id]);
     }
 
-    /** Call before sending a local move. Returns false if still walking / awaiting ack. */
-    function beginLocalStep(id) {
-        if (id == null || id === '' || isBusy(id)) {
+    function isMoving(id) {
+        if (id == null || id === '') {
             return false;
         }
-        localAckUntil[String(id)] = performance.now() + ACK_MS;
+        return actorBusy(actors[String(id)]);
+    }
+
+    function progress(id) {
+        if (id == null || id === '') {
+            return 0;
+        }
+        const actor = actors[String(id)];
+        if (!actor) {
+            return 0;
+        }
+        return segmentT(actor, performance.now());
+    }
+
+    function visualPos(id) {
+        if (id == null || id === '') {
+            return null;
+        }
+        const actor = actors[String(id)];
+        if (!actor) {
+            return null;
+        }
+        if (!actor.moving) {
+            return { y: actor.visualY, x: actor.visualX };
+        }
+        const now = performance.now();
+        const t = segmentT(actor, now);
+        return {
+            y: lerp(actor.fromY, actor.toY, t),
+            x: lerp(actor.fromX, actor.toX, t),
+        };
+    }
+
+    /**
+     * @param {string} id
+     * @param {{ pipeline?: boolean }} [opts]
+     */
+    function beginLocalStep(id, opts) {
+        opts = opts || {};
+        if (id == null || id === '') {
+            return false;
+        }
+        id = String(id);
+        const now = performance.now();
+        const until = localAckUntil[id];
+        const ackPending = until && now < until;
+        if (ackPending) {
+            return false;
+        }
+        if (until) {
+            delete localAckUntil[id];
+        }
+        const actor = actors[id];
+        if (actorBusy(actor)) {
+            if (!opts.pipeline || actor.queue.length > 0 || segmentT(actor, now) < PIPELINE_T) {
+                return false;
+            }
+        }
+        localAckUntil[id] = now + ACK_MS;
         return true;
     }
 
@@ -304,20 +401,27 @@ const PlayerPresentation = (function () {
         if (rafId !== null) {
             return;
         }
-        rafId = requestAnimationFrame(function () {
+        rafId = requestAnimationFrame(function tick() {
             rafId = null;
             if (onFrame) {
                 onFrame();
+            }
+            if (anyMoving() || anyWalkGrace()) {
+                rafId = requestAnimationFrame(tick);
             }
         });
     }
 
     return {
         MOVE_MS,
+        PIPELINE_T,
         sync,
         sample,
         anyMoving,
         isBusy,
+        isMoving,
+        progress,
+        visualPos,
         beginLocalStep,
         walkToThen,
         snapTo,

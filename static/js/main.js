@@ -152,7 +152,11 @@ const Game = (function () {
             return;
         }
         if (typeof PlayerPresentation !== 'undefined' && PlayerPresentation.beginLocalStep) {
-            if (!PlayerPresentation.beginLocalStep(localPlayerId())) {
+            const id = localPlayerId();
+            const t = PlayerPresentation.progress ? PlayerPresentation.progress(id) : 0;
+            const pipelineAt = PlayerPresentation.PIPELINE_T || 0.85;
+            const opts = (t >= pipelineAt) ? { pipeline: true } : {};
+            if (!PlayerPresentation.beginLocalStep(id, opts)) {
                 return;
             }
         }

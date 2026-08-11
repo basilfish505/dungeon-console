@@ -39,36 +39,27 @@ const MapRenderer = (function () {
             return;
         }
         assetsHooked = true;
+        function paint() {
+            if (typeof MapView !== 'undefined' && MapView.paint) {
+                MapView.paint();
+            } else if (typeof MapView !== 'undefined' && MapView.getState) {
+                render(MapView.getState());
+            }
+        }
         if (typeof TileAssets !== 'undefined') {
             TileAssets.preload();
-            TileAssets.setOnReady(function () {
-                if (typeof MapView !== 'undefined' && MapView.getState) {
-                    render(MapView.getState());
-                }
-            });
+            TileAssets.setOnReady(paint);
         }
         if (typeof MonsterAssets !== 'undefined') {
             MonsterAssets.preloadKnown();
-            MonsterAssets.setOnReady(function () {
-                if (typeof MapView !== 'undefined' && MapView.getState) {
-                    render(MapView.getState());
-                }
-            });
+            MonsterAssets.setOnReady(paint);
         }
         if (typeof PlayerAssets !== 'undefined') {
             PlayerAssets.preload();
-            PlayerAssets.setOnReady(function () {
-                if (typeof MapView !== 'undefined' && MapView.getState) {
-                    render(MapView.getState());
-                }
-            });
+            PlayerAssets.setOnReady(paint);
         }
         if (typeof PlayerPresentation !== 'undefined') {
-            PlayerPresentation.setOnFrame(function () {
-                if (typeof MapView !== 'undefined' && MapView.getState) {
-                    render(MapView.getState());
-                }
-            });
+            PlayerPresentation.setOnFrame(paint);
         }
     }
 
@@ -135,34 +126,34 @@ const MapRenderer = (function () {
         return null;
     }
 
-    function drawPlayerOverlays(state, tw, th, camY, camX) {
+    function drawPlayerOverlays(state, tw, th, drawCamY, drawCamX) {
         if (typeof PlayerPresentation === 'undefined' || typeof PlayerAssets === 'undefined') {
             return;
         }
         const samples = PlayerPresentation.sample();
+        const dw = Math.max(1, Math.round(tw));
+        const dh = Math.max(1, Math.round(th));
         for (let i = 0; i < samples.length; i++) {
             const p = samples[i];
             const frame = PlayerAssets.getFrame(p.appearanceId, p.clip, p.clipElapsedMs);
             if (!frame || !frame.img) {
                 continue;
             }
-            // Same dest box as a map tile (top-left of the visual tile, tile-sized)
-            const tileX = p.visualX - camX;
-            const tileY = p.visualY - camY;
-            const dx = Math.floor(tileX * tw);
-            const dy = Math.floor(tileY * th);
-            const dw = Math.max(1, Math.floor((tileX + 1) * tw) - dx);
-            const dh = Math.max(1, Math.floor((tileY + 1) * th) - dy);
+            // Fixed tile-sized box; feet at interpolated tile bottom-center
+            const cx = (p.visualX + 0.5 - drawCamX) * tw;
+            const cy = (p.visualY + 1 - drawCamY) * th;
+            const dx = cx - dw / 2;
+            const dy = cy - dh;
             const artFacing = PlayerAssets.defaultFacing(p.appearanceId);
             const flip = p.facing && artFacing && p.facing !== artFacing;
 
             ctx.save();
             if (flip) {
-                ctx.translate(dx + dw, dy);
+                ctx.translate(cx, dy);
                 ctx.scale(-1, 1);
                 ctx.drawImage(
                     frame.img, frame.sx, frame.sy, frame.sw, frame.sh,
-                    0, 0, dw, dh
+                    -dw / 2, 0, dw, dh
                 );
             } else {
                 ctx.drawImage(
@@ -213,8 +204,10 @@ const MapRenderer = (function () {
         const th = Math.max(1, state.tileH);
         const fog = state.lastFog;
         const entities = state.lastEntities || [];
-        const camY = state.cameraY | 0;
-        const camX = state.cameraX | 0;
+        const sliceY = state.cameraY | 0;
+        const sliceX = state.cameraX | 0;
+        const drawCamY = Number.isFinite(state.drawCamY) ? state.drawCamY : sliceY;
+        const drawCamX = Number.isFinite(state.drawCamX) ? state.drawCamX : sliceX;
         const fontPx = Math.max(1, Math.floor(th));
         const overlayPlayers = useGraphics && typeof PlayerPresentation !== 'undefined';
 
@@ -225,25 +218,30 @@ const MapRenderer = (function () {
         for (let y = 0; y < mapData.length; y++) {
             const row = mapData[y];
             const fogRow = fog && fog[y] ? fog[y] : null;
-            const py = Math.floor(y * th);
+            const worldY = sliceY + y;
+            const py = (worldY - drawCamY) * th;
             if (py >= paneH) {
-                break;
+                continue;
             }
-            const dh = Math.max(1, Math.floor((y + 1) * th) - py);
+            if (py + th <= 0) {
+                continue;
+            }
+            const dh = th;
             for (let x = 0; x < row.length; x++) {
                 const ch = row[x];
                 if (ch === ' ' || ch === '\u00a0') {
                     continue;
                 }
-                const px = Math.floor(x * tw);
-                if (px >= paneW) {
-                    break;
+                const worldX = sliceX + x;
+                const px = (worldX - drawCamX) * tw;
+                if (px >= paneW || px + tw <= 0) {
+                    continue;
                 }
                 const fogState = fogRow ? (fogRow[x] || 'visible') : 'visible';
                 if (fogState === 'unexplored') {
                     continue;
                 }
-                const dw = Math.max(1, Math.floor((x + 1) * tw) - px);
+                const dw = tw;
 
                 let drewEntitySprite = false;
                 if (useGraphics) {
@@ -276,10 +274,7 @@ const MapRenderer = (function () {
         }
 
         if (overlayPlayers) {
-            drawPlayerOverlays(state, tw, th, camY, camX);
-            if (PlayerPresentation.anyMoving()) {
-                PlayerPresentation.kick();
-            }
+            drawPlayerOverlays(state, tw, th, drawCamY, drawCamX);
         }
     }
 

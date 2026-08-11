@@ -1,9 +1,9 @@
 // map_view.js — authoritative client map viewport state + RAF update pipeline
 const MapView = (function () {
-    // Zoom = visible tile span (N×N). Last entry is max zoom → exactly 10×10.
-    const ZOOM_SPANS = [40, 36, 32, 28, 24, 20, 16, 14, 12, 10];
+    // Zoom = visible tile span (N×N). Last entry is max zoom → exactly 5×5.
+    const ZOOM_SPANS = [40, 36, 32, 28, 24, 20, 16, 14, 12, 10, 5];
     const DEFAULT_ZOOM_INDEX = 5; // 20×20 — matches camera.DEFAULT_VIEW_SPAN
-    const MIN_VISIBLE = 10; // furthest zoom-in
+    const MIN_VISIBLE = 5; // furthest zoom-in
     const MARGIN_REF_SPAN = 20; // matches camera.DEFAULT_VIEW_SPAN
     const EDGE_MARGIN_REF = 4; // matches camera.EDGE_MARGIN at default span
 
@@ -18,6 +18,9 @@ const MapView = (function () {
         visibleRows: ZOOM_SPANS[DEFAULT_ZOOM_INDEX],
         cameraY: 0,
         cameraX: 0,
+        drawCamY: 0,
+        drawCamX: 0,
+        playerId: '',
         paneW: 0,
         paneH: 0,
         mapH: 0,
@@ -43,6 +46,9 @@ const MapView = (function () {
     let initialViewportSynced = false;
     // Pinch/wheel zoom: keep this world point under the same pane pixel after zoom
     let pendingZoomAnchor = null;
+    let drawCamReady = false;
+    let pendingPanSnap = false;
+    let followSuspended = false;
 
     function currentSpan() {
         return ZOOM_SPANS[state.zoomIndex] || ZOOM_SPANS[DEFAULT_ZOOM_INDEX];
@@ -108,6 +114,69 @@ const MapView = (function () {
         state.visibleRows = n;
     }
 
+    function snapDrawCam() {
+        state.drawCamY = state.cameraY;
+        state.drawCamX = state.cameraX;
+        drawCamReady = true;
+    }
+
+    function followDrawCam() {
+        const n = state.visibleRows;
+        const vis = (typeof PlayerPresentation !== 'undefined' && PlayerPresentation.visualPos)
+            ? PlayerPresentation.visualPos(state.playerId)
+            : null;
+        const py = vis ? vis.y : state.playerY;
+        const px = vis ? vis.x : state.playerX;
+        const m = effectiveMargin(n, marginForSpan(n));
+
+        if (!drawCamReady) {
+            snapDrawCam();
+        }
+
+        if (state.mapH > 0 && n >= state.mapH) {
+            state.drawCamY = (state.mapH - n) / 2;
+        } else {
+            let cy = state.drawCamY;
+            const sy = py - cy;
+            if (sy < m) cy = py - m;
+            else if (sy > n - 1 - m) cy = py - (n - 1 - m);
+            cy = Math.max(py - (n - 1), Math.min(cy, py));
+            state.drawCamY = cy;
+        }
+
+        if (state.mapW > 0 && n >= state.mapW) {
+            state.drawCamX = (state.mapW - n) / 2;
+        } else {
+            let cx = state.drawCamX;
+            const sx = px - cx;
+            if (sx < m) cx = px - m;
+            else if (sx > n - 1 - m) cx = px - (n - 1 - m);
+            cx = Math.max(px - (n - 1), Math.min(cx, px));
+            state.drawCamX = cx;
+        }
+    }
+
+    function localPlayerMoving() {
+        return !!(state.playerId
+            && typeof PlayerPresentation !== 'undefined'
+            && PlayerPresentation.isMoving
+            && PlayerPresentation.isMoving(state.playerId));
+    }
+
+    function updateDrawCam() {
+        if (!localPlayerMoving()) {
+            followSuspended = false;
+            if (!drawCamReady) {
+                snapDrawCam();
+            }
+            return;
+        }
+        if (followSuspended || pendingPanSnap) {
+            return;
+        }
+        followDrawCam();
+    }
+
     function updateCameraForPlayer() {
         // Client camera is advisory until server ack. Square viewport → one margin.
         const n = state.visibleRows;
@@ -139,6 +208,7 @@ const MapView = (function () {
     }
 
     function applyRender() {
+        updateDrawCam();
         if (typeof MapRenderer !== 'undefined' && MapRenderer.render) {
             MapRenderer.render(state);
         }
@@ -214,6 +284,8 @@ const MapView = (function () {
         if (pendingZoomAnchor) {
             applyZoomAnchor(pendingZoomAnchor);
             pendingZoomAnchor = null;
+            snapDrawCam();
+            followSuspended = true;
         } else {
             updateCameraForPlayer();
         }
@@ -273,6 +345,7 @@ const MapView = (function () {
         if ((!dTilesY && !dTilesX) || !emitPan) {
             return false;
         }
+        pendingPanSnap = true;
         emitPan({ dy: dTilesY, dx: dTilesX });
         return true;
     }
@@ -288,9 +361,19 @@ const MapView = (function () {
         if (Object.prototype.hasOwnProperty.call(data, 'entities')) {
             state.lastEntities = Array.isArray(data.entities) ? data.entities : [];
         }
+        if (data.player && data.player.id != null) {
+            state.playerId = String(data.player.id);
+        }
         if (data.camera) {
             state.cameraY = data.camera.y | 0;
             state.cameraX = data.camera.x | 0;
+            if (opts.snapPlayer || opts.snapDrawCam || pendingPanSnap || !drawCamReady) {
+                snapDrawCam();
+                if (pendingPanSnap || opts.snapPlayer || opts.snapDrawCam) {
+                    followSuspended = true;
+                }
+                pendingPanSnap = false;
+            }
         }
         if (data.viewport) {
             if (data.viewport.h) state.visibleRows = data.viewport.h | 0;
@@ -421,6 +504,9 @@ const MapView = (function () {
         state.ready = true;
         initialViewportSynced = false;
         lastEmitted = { h: 0, w: 0 };
+        drawCamReady = false;
+        pendingPanSnap = false;
+        followSuspended = false;
     }
 
     function getState() {
@@ -444,5 +530,6 @@ const MapView = (function () {
         requestMapUpdate,
         ingestGameState,
         captureZoomAnchor,
+        paint: applyRender,
     };
 })();
