@@ -24,6 +24,7 @@ const MapView = (function () {
         mapW: 0,
         playerY: 0,
         playerX: 0,
+        dungeonLevel: null,
         lastMap: null,
         lastFog: null,
         lastEntities: [],
@@ -37,6 +38,7 @@ const MapView = (function () {
     let emitViewport = null;
     let emitPan = null;
     let lastEmitted = { h: 0, w: 0 };
+    let pendingStairArrive = null;
     // Hold first paint until server uses our measured pane size (avoids 20×20 → real jump)
     let initialViewportSynced = false;
     // Pinch/wheel zoom: keep this world point under the same pane pixel after zoom
@@ -275,19 +277,8 @@ const MapView = (function () {
         return true;
     }
 
-    function ingestGameState(data) {
-        if (!data) {
-            return;
-        }
-        // Pre-join spectator updates (no player) — ignore for map paint during login
-        if (!data.player && !initialViewportSynced) {
-            return;
-        }
-        // After join: never paint spectator payloads (mobile reconnect flash)
-        if (!data.player && initialViewportSynced) {
-            return;
-        }
-
+    function applySnapshot(data, opts) {
+        opts = opts || {};
         if (data.map) {
             state.lastMap = data.map;
         }
@@ -304,7 +295,6 @@ const MapView = (function () {
         if (data.viewport) {
             if (data.viewport.h) state.visibleRows = data.viewport.h | 0;
             if (data.viewport.w) state.visibleCols = data.viewport.w | 0;
-            // Keep square if server ever differs
             if (state.visibleRows !== state.visibleCols) {
                 const n = Math.min(state.visibleRows, state.visibleCols);
                 state.visibleRows = n;
@@ -319,6 +309,80 @@ const MapView = (function () {
             state.playerY = data.player.pos[0] | 0;
             state.playerX = data.player.pos[1] | 0;
         }
+        if (data.player && data.player.dungeon_level != null) {
+            state.dungeonLevel = data.player.dungeon_level | 0;
+        }
+
+        if (typeof PlayerPresentation !== 'undefined') {
+            if (opts.snapPlayer && data.player && data.player.id != null && data.player.pos
+                && PlayerPresentation.snapTo) {
+                PlayerPresentation.snapTo(data.player.id, data.player.pos[0], data.player.pos[1]);
+            }
+            if (PlayerPresentation.sync) {
+                const camY = data.camera ? (data.camera.y | 0) : state.cameraY;
+                const camX = data.camera ? (data.camera.x | 0) : state.cameraX;
+                PlayerPresentation.sync(state.lastEntities || [], camY, camX, data.player || null);
+            }
+        }
+    }
+
+    function finishStairArrive() {
+        const held = pendingStairArrive;
+        pendingStairArrive = null;
+        if (!held) {
+            applyRender();
+            return;
+        }
+        applySnapshot(held, { snapPlayer: true });
+        applyRender();
+    }
+
+    function ingestGameState(data) {
+        if (!data) {
+            return;
+        }
+        // Pre-join spectator updates (no player) — ignore for map paint during login
+        if (!data.player && !initialViewportSynced) {
+            return;
+        }
+        // After join: never paint spectator payloads (mobile reconnect flash)
+        if (!data.player && initialViewportSynced) {
+            return;
+        }
+
+        // Hold further snapshots until the walk-onto-stairs clip finishes
+        if (pendingStairArrive && data.player) {
+            pendingStairArrive = data;
+            return;
+        }
+
+        const newLevel = data.player && data.player.dungeon_level != null
+            ? (data.player.dungeon_level | 0)
+            : null;
+        const levelChanged = state.dungeonLevel != null && newLevel != null
+            && newLevel !== state.dungeonLevel;
+        const step = data.stair_step;
+        const canApproach = levelChanged && step && state.lastMap
+            && typeof PlayerPresentation !== 'undefined'
+            && PlayerPresentation.walkToThen
+            && data.player && data.player.id != null;
+
+        if (canApproach) {
+            pendingStairArrive = data;
+            PlayerPresentation.walkToThen(
+                data.player.id,
+                step.y,
+                step.x,
+                finishStairArrive
+            );
+            if (typeof PlayerPresentation.kick === 'function') {
+                PlayerPresentation.kick();
+            }
+            applyRender();
+            return;
+        }
+
+        applySnapshot(data, { snapPlayer: !!levelChanged });
 
         if (!initialViewportSynced) {
             const matched = data.viewport &&

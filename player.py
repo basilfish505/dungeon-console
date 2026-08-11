@@ -24,6 +24,10 @@ class Player:
         self.sight_range = 20
         self.explored = {}  # dungeon_level -> set of (y, x)
         self.visible = set()  # current LOS tiles (y, x)
+        self.appearance_id = 'peasant'
+
+    def sprite_url(self):
+        return '/static/player/sprites/player_walk1.png'
 
     def to_dict(self):
         return {
@@ -40,6 +44,9 @@ class Player:
             'agi': self.agi,
             'sight_range': self.sight_range,
             'pos': list(self.pos),
+            'dungeon_level': self.dungeon_level,
+            'appearance_id': self.appearance_id,
+            'sprite': self.sprite_url(),
         }
 
     def move(self, direction):

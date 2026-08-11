@@ -1,4 +1,4 @@
-// map_renderer.js — canvas map paint (terrain + monster sprites under ASCII)
+// map_renderer.js — canvas map paint (terrain + monster/player sprites under ASCII)
 const MapRenderer = (function () {
     const FOG_COLORS = {
         visible: '#00ff00',
@@ -50,6 +50,21 @@ const MapRenderer = (function () {
         if (typeof MonsterAssets !== 'undefined') {
             MonsterAssets.preloadKnown();
             MonsterAssets.setOnReady(function () {
+                if (typeof MapView !== 'undefined' && MapView.getState) {
+                    render(MapView.getState());
+                }
+            });
+        }
+        if (typeof PlayerAssets !== 'undefined') {
+            PlayerAssets.preload();
+            PlayerAssets.setOnReady(function () {
+                if (typeof MapView !== 'undefined' && MapView.getState) {
+                    render(MapView.getState());
+                }
+            });
+        }
+        if (typeof PlayerPresentation !== 'undefined') {
+            PlayerPresentation.setOnFrame(function () {
                 if (typeof MapView !== 'undefined' && MapView.getState) {
                     render(MapView.getState());
                 }
@@ -120,6 +135,45 @@ const MapRenderer = (function () {
         return null;
     }
 
+    function drawPlayerOverlays(state, tw, th, camY, camX) {
+        if (typeof PlayerPresentation === 'undefined' || typeof PlayerAssets === 'undefined') {
+            return;
+        }
+        const samples = PlayerPresentation.sample();
+        for (let i = 0; i < samples.length; i++) {
+            const p = samples[i];
+            const frame = PlayerAssets.getFrame(p.appearanceId, p.clip, p.clipElapsedMs);
+            if (!frame || !frame.img) {
+                continue;
+            }
+            // Same dest box as a map tile (top-left of the visual tile, tile-sized)
+            const tileX = p.visualX - camX;
+            const tileY = p.visualY - camY;
+            const dx = Math.floor(tileX * tw);
+            const dy = Math.floor(tileY * th);
+            const dw = Math.max(1, Math.floor((tileX + 1) * tw) - dx);
+            const dh = Math.max(1, Math.floor((tileY + 1) * th) - dy);
+            const artFacing = PlayerAssets.defaultFacing(p.appearanceId);
+            const flip = p.facing && artFacing && p.facing !== artFacing;
+
+            ctx.save();
+            if (flip) {
+                ctx.translate(dx + dw, dy);
+                ctx.scale(-1, 1);
+                ctx.drawImage(
+                    frame.img, frame.sx, frame.sy, frame.sw, frame.sh,
+                    0, 0, dw, dh
+                );
+            } else {
+                ctx.drawImage(
+                    frame.img, frame.sx, frame.sy, frame.sw, frame.sh,
+                    dx, dy, dw, dh
+                );
+            }
+            ctx.restore();
+        }
+    }
+
     function render(state) {
         const el = ensureCanvas();
         if (!el || !ctx || !state) {
@@ -159,7 +213,10 @@ const MapRenderer = (function () {
         const th = Math.max(1, state.tileH);
         const fog = state.lastFog;
         const entities = state.lastEntities || [];
+        const camY = state.cameraY | 0;
+        const camX = state.cameraX | 0;
         const fontPx = Math.max(1, Math.floor(th));
+        const overlayPlayers = useGraphics && typeof PlayerPresentation !== 'undefined';
 
         ctx.font = fontPx + 'px ' + FONT_STACK;
         ctx.textBaseline = 'top';
@@ -188,9 +245,11 @@ const MapRenderer = (function () {
                 }
                 const dw = Math.max(1, Math.floor((x + 1) * tw) - px);
 
-                let drewMonsterSprite = false;
+                let drewEntitySprite = false;
                 if (useGraphics) {
-                    const terrainKey = TileAssets.terrainKeyForCell(ch);
+                    const ent = (ch === '@' || ch === '&') ? entityAt(entities, y, x) : null;
+                    const terrainCh = (ch === '@' && ent && ent.under) ? ent.under : ch;
+                    const terrainKey = TileAssets.terrainKeyForCell(terrainCh);
                     const drewTerrain = terrainKey
                         ? drawTerrain(terrainKey, px, py, dw, dh, fogState)
                         : false;
@@ -198,19 +257,28 @@ const MapRenderer = (function () {
                         continue;
                     }
                     if (ch === '&') {
-                        const ent = entityAt(entities, y, x);
                         if (ent && ent.kind === 'monster') {
-                            drewMonsterSprite = drawMonsterSprite(
+                            drewEntitySprite = drawMonsterSprite(
                                 ent.type_id, ent.sprite, px, py, dw, dh, fogState
                             );
                         }
-                        if (drewMonsterSprite) {
+                        if (drewEntitySprite) {
                             continue;
                         }
+                    }
+                    if (ch === '@' && overlayPlayers) {
+                        continue;
                     }
                 }
                 ctx.fillStyle = FOG_COLORS[fogState] || FOG_COLORS.visible;
                 ctx.fillText(ch, px, py);
+            }
+        }
+
+        if (overlayPlayers) {
+            drawPlayerOverlays(state, tw, th, camY, camX);
+            if (PlayerPresentation.anyMoving()) {
+                PlayerPresentation.kick();
             }
         }
     }

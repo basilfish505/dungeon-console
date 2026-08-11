@@ -54,6 +54,7 @@ class GameState:
         self.cameras = {}  # player_id -> (cam_y, cam_x) viewport origin
         self.viewports = {}  # player_id -> (vh, vw) adaptive viewport size
         self.manual_pan = {}  # player_id -> True while user is freely panning
+        self.stair_steps = {}  # player_id -> (y, x) origin stair just stepped on
         self.generate_top_level()
 
     def generate_top_level(self):
@@ -347,6 +348,7 @@ class GameState:
                         player_id, "The way down is blocked; you stay put."
                     )
                     return False
+                self.stair_steps[player_id] = (new_pos[0], new_pos[1])
                 self.add_player_message(player_id, "You descend deeper into the dungeon...")
                 return True
 
@@ -359,6 +361,7 @@ class GameState:
                         player_id, "The way up is blocked; you stay put."
                     )
                     return False
+                self.stair_steps[player_id] = (new_pos[0], new_pos[1])
                 self.add_player_message(player_id, "You climb back toward the surface...")
                 return True
 
@@ -447,6 +450,20 @@ class GameState:
                 visible_map[pos[0]][pos[1]] = '&'
             visible_map = slice_map(visible_map, cam_y, cam_x, vh=vh, vw=vw)
             fog = [['visible' for _ in row] for row in visible_map]
+            for player in self.players.values():
+                if player.dungeon_level == level:
+                    vy = player.pos[0] - cam_y
+                    vx = player.pos[1] - cam_x
+                    if 0 <= vy < vh and 0 <= vx < vw:
+                        entities.append({
+                            'kind': 'player',
+                            'id': player.id,
+                            'appearance_id': player.appearance_id,
+                            'vy': vy,
+                            'vx': vx,
+                            'sprite': player.sprite_url(),
+                            'under': game_map[player.pos[0]][player.pos[1]],
+                        })
             for pos, monster in monsters.items():
                 vy = pos[0] - cam_y
                 vx = pos[1] - cam_x
@@ -480,6 +497,18 @@ class GameState:
                     py, px = player.pos[0], player.pos[1]
                     if (py, px) in los or player.id == viewer.id:
                         entity_at[(py, px)] = '@'
+                        vy = py - cam_y
+                        vx = px - cam_x
+                        if 0 <= vy < vh and 0 <= vx < vw:
+                            entities.append({
+                                'kind': 'player',
+                                'id': player.id,
+                                'appearance_id': player.appearance_id,
+                                'vy': vy,
+                                'vx': vx,
+                                'sprite': player.sprite_url(),
+                                'under': game_map[py][px],
+                            })
 
             visible_map = []
             fog = []
@@ -517,7 +546,7 @@ class GameState:
         player_data = viewer.to_dict() if viewer is not None else None
         player_messages = self.player_messages.get(current_player_id, []) if current_player_id else []
 
-        return {
+        payload = {
             'map': visible_map,
             'fog': fog,
             'entities': entities,
@@ -529,6 +558,10 @@ class GameState:
             'viewport': {'h': vh, 'w': vw},
             'map_size': {'h': map_h, 'w': map_w},
         }
+        step = self.stair_steps.get(current_player_id)
+        if step:
+            payload['stair_step'] = {'y': step[0], 'x': step[1]}
+        return payload
 
 # Create game state and combat system
 game_state = GameState()
@@ -658,6 +691,7 @@ def handle_move(direction):
             for pid in game_state.players:
                 if pid in game_state.active_players:
                     emit('game_state', game_state.get_game_state(pid), room=pid)
+            game_state.stair_steps.pop(moving_player_id, None)
 
 
 @socketio.on('inspect_map')
