@@ -119,9 +119,9 @@ body {
 .player-info-pane {
     min-height: 0;
     padding: 6px 10px;
-    /* WASD sits beside stats (raised); keep a modest right/bottom clearance */
+    /* Arrow pad sits beside stats (raised); keep clearance for the 3×3 cluster */
     padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
-    padding-right: calc(170px + env(safe-area-inset-right, 0px));
+    padding-right: calc(200px + env(safe-area-inset-right, 0px));
     overflow-y: auto;
     max-height: 26vh;
 }
@@ -157,12 +157,12 @@ body {
 .mobile-controls {
     position: fixed;
     right: max(10px, env(safe-area-inset-right, 0px));
-    /* Raise cluster so it sits beside the compact stats block */
-    bottom: max(72px, calc(56px + env(safe-area-inset-bottom, 0px)));
+    /* Sit at the bottom of the screen so the 3×3 pad does not cover the map */
+    bottom: max(10px, env(safe-area-inset-bottom, 0px));
     z-index: 1500;
     display: grid;
-    grid-template-columns: repeat(3, 48px);
-    grid-template-rows: repeat(2, 48px);
+    grid-template-columns: repeat(3, 56px);
+    grid-template-rows: repeat(3, 56px);
     gap: 6px;
     pointer-events: auto;
 }
@@ -184,6 +184,11 @@ body {
 
 .mobile-btn:active {
     background: #003300;
+}
+
+.mobile-btn-center {
+    font-size: 1.1rem;
+    padding: 0;
 }
 
 #combat-box {

@@ -24,7 +24,7 @@ from visibility import (
     update_explored,
     remembered_terrain,
 )
-from monster_ai import monster_ai_loop
+from monster_ai import monster_ai_loop, is_terrain_passable
 from collections import deque
 
 # Constants (map spawn rates live in map_generator.py)
@@ -225,11 +225,16 @@ class GameState:
         )
 
     def remove_monster_at(self, position):
-        """Remove a monster from whichever level it lives on"""
+        """Remove a monster from whichever level it lives on.
+
+        Only clear a `&` marker. Stairs under the monster must stay.
+        """
         for game_map, monsters in self.levels.values():
             if position in monsters:
                 del monsters[position]
-                game_map[position[0]][position[1]] = '.'
+                y, x = position[0], position[1]
+                if game_map[y][x] == '&':
+                    game_map[y][x] = '.'
                 return True
         return False
 
@@ -330,7 +335,7 @@ class GameState:
         game_map, monsters = self.ensure_level(player.dungeon_level)
         new_pos = player.move(direction)
 
-        if self.is_valid_move(new_pos, game_map):
+        if self.is_valid_move(player.pos, new_pos, game_map):
             # Occupied tiles (players/monsters) take priority over stairs —
             # you must defeat whoever is on the stair before using it.
             if self.is_combat_scenario(player_id, new_pos, monsters):
@@ -370,12 +375,20 @@ class GameState:
             return True
         return False
 
-    def is_valid_move(self, new_pos, game_map):
-        h = len(game_map)
-        w = len(game_map[0]) if h else 0
-        return (0 <= new_pos[0] < h and
-                0 <= new_pos[1] < w and
-                game_map[new_pos[0]][new_pos[1]] != '#')
+    def is_valid_move(self, from_pos, new_pos, game_map):
+        """Adjacent 8-dir step; diagonals may not cut a blocked corner."""
+        if not is_terrain_passable(game_map, new_pos[0], new_pos[1]):
+            return False
+        dy = new_pos[0] - from_pos[0]
+        dx = new_pos[1] - from_pos[1]
+        if abs(dy) > 1 or abs(dx) > 1 or (dy == 0 and dx == 0):
+            return False
+        if dy != 0 and dx != 0:
+            if not is_terrain_passable(game_map, from_pos[0] + dy, from_pos[1]):
+                return False
+            if not is_terrain_passable(game_map, from_pos[0], from_pos[1] + dx):
+                return False
+        return True
 
     def is_combat_scenario(self, player_id, new_pos, monsters):
         player = self.players[player_id]
@@ -470,10 +483,12 @@ class GameState:
                 if 0 <= vy < vh and 0 <= vx < vw:
                     entities.append({
                         'kind': 'monster',
+                        'id': monster.id,
                         'type_id': monster.type_id,
                         'vy': vy,
                         'vx': vx,
                         'sprite': monster.sprite_url(),
+                        'under': game_map[pos[0]][pos[1]],
                     })
         else:
             explored = viewer.explored.get(level, set())
@@ -487,10 +502,12 @@ class GameState:
                     if 0 <= vy < vh and 0 <= vx < vw:
                         entities.append({
                             'kind': 'monster',
+                            'id': monster.id,
                             'type_id': monster.type_id,
                             'vy': vy,
                             'vx': vx,
                             'sprite': monster.sprite_url(),
+                            'under': game_map[pos[0]][pos[1]],
                         })
             for player in self.players.values():
                 if player.dungeon_level == level:

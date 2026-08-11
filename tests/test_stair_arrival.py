@@ -233,6 +233,23 @@ class StairArrivalTests(unittest.TestCase):
         self.assertEqual(mover.dungeon_level, 0)
         self.assertEqual(mover.pos, [2, 1])
 
+    def test_killing_monster_on_stairs_keeps_stairs(self):
+        m = _blank_map()
+        m[3][3] = '↓'
+        dummy = type('M', (), {'pos': [3, 3]})()
+        self._set_level(0, m, {(3, 3): dummy})
+        self.assertTrue(self.gs.remove_monster_at((3, 3)))
+        self.assertEqual(m[3][3], '↓')
+        self.assertNotIn((3, 3), self.gs.levels[0][1])
+
+    def test_killing_monster_on_floor_clears_marker(self):
+        m = _blank_map()
+        m[2][2] = '&'
+        dummy = type('M', (), {'pos': [2, 2]})()
+        self._set_level(0, m, {(2, 2): dummy})
+        self.assertTrue(self.gs.remove_monster_at((2, 2)))
+        self.assertEqual(m[2][2], '.')
+
 
 if __name__ == '__main__':
     unittest.main()

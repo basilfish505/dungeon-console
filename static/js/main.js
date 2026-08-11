@@ -1,8 +1,24 @@
 // main.js - Main game initialization
 const Game = (function () {
-    const KEY_TO_DIR = {
-        w: 'w', a: 'a', s: 's', d: 'd',
-        ArrowUp: 'w', ArrowLeft: 'a', ArrowDown: 's', ArrowRight: 'd',
+    /** Keyboard keys map to cardinals only; chords become diagonals. */
+    const KEY_TO_CARDINAL = {
+        w: 'n', a: 'west', s: 's', d: 'e',
+        ArrowUp: 'n', ArrowLeft: 'west', ArrowDown: 's', ArrowRight: 'e',
+    };
+    const CARDINALS = { n: true, e: true, s: true, west: true };
+    const DELTA_TO_DIR = {
+        '-1,0': 'n',
+        '-1,1': 'ne',
+        '0,1': 'e',
+        '1,1': 'se',
+        '1,0': 's',
+        '1,-1': 'sw',
+        '0,-1': 'west',
+        '-1,-1': 'nw',
+    };
+    const DIR_DELTA = {
+        n: [-1, 0], ne: [-1, 1], e: [0, 1], se: [1, 1],
+        s: [1, 0], sw: [1, -1], west: [0, -1], nw: [-1, -1],
     };
 
     /** Most-recently-pressed held direction is last. */
@@ -16,8 +32,32 @@ const Game = (function () {
         window.socket = SocketHandler.socket;
     }
 
+    function combineHeld() {
+        let dy = 0;
+        let dx = 0;
+        let hasCardinal = false;
+        let lastDiagonal = null;
+        for (let i = 0; i < heldDirs.length; i++) {
+            const dir = heldDirs[i];
+            if (CARDINALS[dir]) {
+                hasCardinal = true;
+                const d = DIR_DELTA[dir];
+                dy += d[0];
+                dx += d[1];
+            } else if (DIR_DELTA[dir]) {
+                lastDiagonal = dir;
+            }
+        }
+        if (hasCardinal) {
+            dy = dy < 0 ? -1 : (dy > 0 ? 1 : 0);
+            dx = dx < 0 ? -1 : (dx > 0 ? 1 : 0);
+            return DELTA_TO_DIR[dy + ',' + dx] || null;
+        }
+        return lastDiagonal;
+    }
+
     function currentDir() {
-        return heldDirs.length ? heldDirs[heldDirs.length - 1] : null;
+        return combineHeld();
     }
 
     function pressDir(dir) {
@@ -69,7 +109,7 @@ const Game = (function () {
                 }
                 return;
             }
-            const dir = KEY_TO_DIR[e.key];
+            const dir = KEY_TO_CARDINAL[e.key];
             if (!dir) {
                 return;
             }
@@ -81,7 +121,7 @@ const Game = (function () {
         });
 
         document.addEventListener('keyup', function (e) {
-            const dir = KEY_TO_DIR[e.key];
+            const dir = KEY_TO_CARDINAL[e.key];
             if (dir) {
                 releaseDir(dir);
             }

@@ -72,12 +72,15 @@
     </div>
 
     <div id="mobile-controls" class="mobile-controls" style="display: none;" aria-label="Movement">
-        <div></div>
-        <div class="mobile-btn" data-direction="w">W</div>
-        <div></div>
-        <div class="mobile-btn" data-direction="a">A</div>
-        <div class="mobile-btn" data-direction="s">S</div>
-        <div class="mobile-btn" data-direction="d">D</div>
+        <div class="mobile-btn" data-direction="nw" aria-label="Northwest">↖</div>
+        <div class="mobile-btn" data-direction="n" aria-label="North">↑</div>
+        <div class="mobile-btn" data-direction="ne" aria-label="Northeast">↗</div>
+        <div class="mobile-btn" data-direction="west" aria-label="West">←</div>
+        <button type="button" id="pad-center-btn" class="mobile-btn mobile-btn-center" aria-label="Action"></button>
+        <div class="mobile-btn" data-direction="e" aria-label="East">→</div>
+        <div class="mobile-btn" data-direction="sw" aria-label="Southwest">↙</div>
+        <div class="mobile-btn" data-direction="s" aria-label="South">↓</div>
+        <div class="mobile-btn" data-direction="se" aria-label="Southeast">↘</div>
     </div>
 
     <div id="inspect-overlay" class="inspect-overlay" hidden aria-hidden="true">

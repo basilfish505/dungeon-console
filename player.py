@@ -1,5 +1,22 @@
 import random
 
+# Compass steps (dy, dx). Legacy WASD: w=n, a=west, s=s, d=e.
+# Token "w" stays north so cached clients do not strafe west on W.
+MOVE_DELTAS = {
+    'n': (-1, 0),
+    'ne': (-1, 1),
+    'e': (0, 1),
+    'se': (1, 1),
+    's': (1, 0),
+    'sw': (1, -1),
+    'west': (0, -1),
+    'nw': (-1, -1),
+    'w': (-1, 0),
+    'a': (0, -1),
+    'd': (0, 1),
+}
+
+
 class Player:
     def __init__(self, player_id, position):
         self.id = player_id
@@ -51,12 +68,9 @@ class Player:
 
     def move(self, direction):
         new_pos = self.pos.copy()
-        if direction == 'w':
-            new_pos[0] -= 1
-        elif direction == 's':
-            new_pos[0] += 1
-        elif direction == 'a':
-            new_pos[1] -= 1
-        elif direction == 'd':
-            new_pos[1] += 1
+        delta = MOVE_DELTAS.get(direction)
+        if delta is None:
+            return new_pos
+        new_pos[0] += delta[0]
+        new_pos[1] += delta[1]
         return new_pos

@@ -21,9 +21,12 @@ const PlayerPresentation = (function () {
         return t;
     }
 
-    function makeActor(id, appearanceId, sprite) {
+    function makeActor(id, appearanceId, sprite, extras) {
+        extras = extras || {};
         return {
             id: id,
+            kind: extras.kind || 'player',
+            typeId: extras.typeId || null,
             tileY: 0,
             tileX: 0,
             visualY: 0,
@@ -43,6 +46,7 @@ const PlayerPresentation = (function () {
             appearanceId: appearanceId || 'peasant',
             sprite: sprite || null,
             dungeonLevel: null,
+            present: true,
         };
     }
 
@@ -187,13 +191,14 @@ const PlayerPresentation = (function () {
 
         for (let i = 0; i < list.length; i++) {
             const e = list[i];
-            if (!e || e.kind !== 'player' || e.id == null || e.id === '') {
+            if (!e || (e.kind !== 'player' && e.kind !== 'monster') || e.id == null || e.id === '') {
                 continue;
             }
-            const id = String(e.id);
+            const isMonster = e.kind === 'monster';
+            const id = isMonster ? ('m:' + String(e.id)) : String(e.id);
             let tileY = camY + (e.vy | 0);
             let tileX = camX + (e.vx | 0);
-            if (localId && id === localId && localPos) {
+            if (!isMonster && localId && id === localId && localPos) {
                 tileY = localPos[0] | 0;
                 tileX = localPos[1] | 0;
             }
@@ -201,12 +206,17 @@ const PlayerPresentation = (function () {
 
             let actor = actors[id];
             if (!actor) {
-                actor = makeActor(id, e.appearance_id, e.sprite);
+                actor = makeActor(id, e.appearance_id, e.sprite, {
+                    kind: e.kind,
+                    typeId: e.type_id || null,
+                });
                 actors[id] = actor;
                 snap(actor, tileY, tileX, now);
                 continue;
             }
 
+            actor.kind = e.kind || actor.kind;
+            actor.typeId = e.type_id || actor.typeId;
             actor.appearanceId = e.appearance_id || actor.appearanceId;
             if (e.sprite) {
                 actor.sprite = e.sprite;
@@ -217,12 +227,22 @@ const PlayerPresentation = (function () {
                 && (newLevel | 0) !== actor.dungeonLevel) {
                 actor.dungeonLevel = newLevel | 0;
                 delete localAckUntil[id];
+                actor.present = true;
                 snap(actor, tileY, tileX, now);
                 continue;
             }
             if (id === localId && newLevel != null) {
                 actor.dungeonLevel = newLevel | 0;
             }
+
+            // Left the viewport (or LOS) and came back: show current tile, do not replay.
+            if (!actor.present) {
+                actor.present = true;
+                delete localAckUntil[id];
+                snap(actor, tileY, tileX, now);
+                continue;
+            }
+            actor.present = true;
 
             if (actor.tileY === tileY && actor.tileX === tileX) {
                 continue;
@@ -236,21 +256,43 @@ const PlayerPresentation = (function () {
             updateFacing(actor, dy, dx);
             delete localAckUntil[id];
 
-            if (dist > 1) {
+            const isLocal = !isMonster && localId && id === localId;
+            const visualDist = Math.max(
+                Math.abs(tileY - actor.visualY),
+                Math.abs(tileX - actor.visualX)
+            );
+            if (dist > 1 || (!isLocal && visualDist > 1)) {
                 snap(actor, tileY, tileX, now);
                 continue;
             }
 
             if (actor.moving || actor.queue.length) {
-                actor.queue.push({ y: tileY, x: tileX });
+                if (isLocal) {
+                    actor.queue.push({ y: tileY, x: tileX });
+                } else {
+                    // Remotes: at most one pending step; never replay a backlog.
+                    actor.queue = [{ y: tileY, x: tileX }];
+                }
             } else {
                 beginSegment(actor, tileY, tileX, now);
             }
         }
 
         for (const id in actors) {
-            if (!seen[id]) {
-                delete actors[id];
+            if (seen[id]) {
+                continue;
+            }
+            if (localId && id === localId) {
+                continue;
+            }
+            // Keep a hidden stub so the next sighting snaps instead of tweening.
+            const actor = actors[id];
+            if (actor) {
+                actor.present = false;
+                actor.queue = [];
+                actor.moving = false;
+                actor.clip = 'idle';
+                actor.idleAt = 0;
             }
         }
 
@@ -267,7 +309,8 @@ const PlayerPresentation = (function () {
         const now = performance.now();
         for (const id in actors) {
             const actor = actors[id];
-            if (actor && actor.clip === 'walk' && actor.idleAt && (now - actor.idleAt) < IDLE_GRACE_MS) {
+            if (actor && actor.present && actor.clip === 'walk' && actor.idleAt
+                && (now - actor.idleAt) < IDLE_GRACE_MS) {
                 return true;
             }
         }
@@ -276,7 +319,8 @@ const PlayerPresentation = (function () {
 
     function anyMoving() {
         for (const id in actors) {
-            if (actorBusy(actors[id])) {
+            const actor = actors[id];
+            if (actor && actor.present && actorBusy(actor)) {
                 return true;
             }
         }
@@ -369,9 +413,14 @@ const PlayerPresentation = (function () {
         const out = [];
         for (const id in actors) {
             const actor = actors[id];
+            if (!actor.present) {
+                continue;
+            }
             sampleVisual(actor, now);
             out.push({
                 id: actor.id,
+                kind: actor.kind || 'player',
+                typeId: actor.typeId,
                 visualY: actor.visualY,
                 visualX: actor.visualX,
                 facing: actor.facing,

@@ -7,8 +7,12 @@ const MonsterAssets = (function () {
         troll: {
             sprite: '/static/monsters/sprites/troll.png',
             portrait: '/static/monsters/portraits/troll.png',
+            defaultFacing: 'left',
         },
     };
+
+    /** One footfall; two per 250ms tile. */
+    const WALK_STEP_MS = 125;
 
     const spriteCache = Object.create(null);
     const portraitCache = Object.create(null);
@@ -89,6 +93,29 @@ const MonsterAssets = (function () {
         });
     }
 
+    function defaultFacing(typeId) {
+        const def = DEFAULTS[typeId] || {};
+        return def.defaultFacing || 'left';
+    }
+
+    /**
+     * Procedural step on a single standing sprite (no walk-sheet yet).
+     * Returns fractions of the dest box: bob up from feet, squash on plant.
+     */
+    function walkPose(clipName, elapsedMs) {
+        if (clipName !== 'walk') {
+            return { bob: 0, scaleX: 1, scaleY: 1 };
+        }
+        const t = elapsedMs > 0 ? elapsedMs : 0;
+        const cycle = (t % WALK_STEP_MS) / WALK_STEP_MS;
+        const lift = Math.sin(cycle * Math.PI);
+        return {
+            bob: lift * 0.12,
+            scaleX: 1 + 0.06 * (1 - lift),
+            scaleY: 1 - 0.08 * (1 - lift),
+        };
+    }
+
     function getSprite(typeId, spriteUrl) {
         if (!GRAPHICS_MONSTERS_ENABLED || !typeId) {
             return null;
@@ -134,6 +161,8 @@ const MonsterAssets = (function () {
         preloadKnown,
         getSprite,
         getPortrait,
+        defaultFacing,
+        walkPose,
         setOnReady,
     };
 })();

@@ -126,8 +126,20 @@ const MapRenderer = (function () {
         return null;
     }
 
-    function drawPlayerOverlays(state, tw, th, drawCamY, drawCamX) {
-        if (typeof PlayerPresentation === 'undefined' || typeof PlayerAssets === 'undefined') {
+    function drawActorImage(img, sx, sy, sw, sh, cx, cy, dw, dh, flip, pose) {
+        pose = pose || { bob: 0, scaleX: 1, scaleY: 1 };
+        const bobPx = (pose.bob || 0) * dh;
+        ctx.save();
+        ctx.translate(cx, cy);
+        ctx.scale(flip ? -1 : 1, 1);
+        ctx.translate(0, -bobPx);
+        ctx.scale(pose.scaleX || 1, pose.scaleY || 1);
+        ctx.drawImage(img, sx, sy, sw, sh, -dw / 2, -dh, dw, dh);
+        ctx.restore();
+    }
+
+    function drawActorOverlays(state, tw, th, drawCamY, drawCamX) {
+        if (typeof PlayerPresentation === 'undefined') {
             return;
         }
         const samples = PlayerPresentation.sample();
@@ -135,33 +147,45 @@ const MapRenderer = (function () {
         const dh = Math.max(1, Math.round(th));
         for (let i = 0; i < samples.length; i++) {
             const p = samples[i];
+            const cx = (p.visualX + 0.5 - drawCamX) * tw;
+            const cy = (p.visualY + 1 - drawCamY) * th;
+
+            if (p.kind === 'monster') {
+                if (typeof MonsterAssets === 'undefined') {
+                    continue;
+                }
+                MonsterAssets.ensureType(p.typeId, p.sprite, null);
+                const img = MonsterAssets.getSprite(p.typeId, p.sprite);
+                if (!img) {
+                    continue;
+                }
+                const artFacing = MonsterAssets.defaultFacing
+                    ? MonsterAssets.defaultFacing(p.typeId)
+                    : 'left';
+                const flip = p.facing && artFacing && p.facing !== artFacing;
+                const pose = MonsterAssets.walkPose
+                    ? MonsterAssets.walkPose(p.clip, p.clipElapsedMs)
+                    : null;
+                drawActorImage(
+                    img, 0, 0, img.naturalWidth, img.naturalHeight,
+                    cx, cy, dw, dh, flip, pose
+                );
+                continue;
+            }
+
+            if (typeof PlayerAssets === 'undefined') {
+                continue;
+            }
             const frame = PlayerAssets.getFrame(p.appearanceId, p.clip, p.clipElapsedMs);
             if (!frame || !frame.img) {
                 continue;
             }
-            // Fixed tile-sized box; feet at interpolated tile bottom-center
-            const cx = (p.visualX + 0.5 - drawCamX) * tw;
-            const cy = (p.visualY + 1 - drawCamY) * th;
-            const dx = cx - dw / 2;
-            const dy = cy - dh;
             const artFacing = PlayerAssets.defaultFacing(p.appearanceId);
             const flip = p.facing && artFacing && p.facing !== artFacing;
-
-            ctx.save();
-            if (flip) {
-                ctx.translate(cx, dy);
-                ctx.scale(-1, 1);
-                ctx.drawImage(
-                    frame.img, frame.sx, frame.sy, frame.sw, frame.sh,
-                    -dw / 2, 0, dw, dh
-                );
-            } else {
-                ctx.drawImage(
-                    frame.img, frame.sx, frame.sy, frame.sw, frame.sh,
-                    dx, dy, dw, dh
-                );
-            }
-            ctx.restore();
+            drawActorImage(
+                frame.img, frame.sx, frame.sy, frame.sw, frame.sh,
+                cx, cy, dw, dh, flip, null
+            );
         }
     }
 
@@ -209,7 +233,7 @@ const MapRenderer = (function () {
         const drawCamY = Number.isFinite(state.drawCamY) ? state.drawCamY : sliceY;
         const drawCamX = Number.isFinite(state.drawCamX) ? state.drawCamX : sliceX;
         const fontPx = Math.max(1, Math.floor(th));
-        const overlayPlayers = useGraphics && typeof PlayerPresentation !== 'undefined';
+        const overlayActors = useGraphics && typeof PlayerPresentation !== 'undefined';
 
         ctx.font = fontPx + 'px ' + FONT_STACK;
         ctx.textBaseline = 'top';
@@ -246,12 +270,15 @@ const MapRenderer = (function () {
                 let drewEntitySprite = false;
                 if (useGraphics) {
                     const ent = (ch === '@' || ch === '&') ? entityAt(entities, y, x) : null;
-                    const terrainCh = (ch === '@' && ent && ent.under) ? ent.under : ch;
+                    const terrainCh = (ent && ent.under) ? ent.under : ch;
                     const terrainKey = TileAssets.terrainKeyForCell(terrainCh);
                     const drewTerrain = terrainKey
                         ? drawTerrain(terrainKey, px, py, dw, dh, fogState)
                         : false;
                     if (TileAssets.isTerrainOnly(ch) && drewTerrain) {
+                        continue;
+                    }
+                    if (ch === '&' && overlayActors) {
                         continue;
                     }
                     if (ch === '&') {
@@ -264,7 +291,7 @@ const MapRenderer = (function () {
                             continue;
                         }
                     }
-                    if (ch === '@' && overlayPlayers) {
+                    if (ch === '@' && overlayActors) {
                         continue;
                     }
                 }
@@ -273,8 +300,8 @@ const MapRenderer = (function () {
             }
         }
 
-        if (overlayPlayers) {
-            drawPlayerOverlays(state, tw, th, drawCamY, drawCamX);
+        if (overlayActors) {
+            drawActorOverlays(state, tw, th, drawCamY, drawCamX);
         }
     }
 
