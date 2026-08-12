@@ -25,7 +25,8 @@ from visibility import (
     update_explored,
     remembered_terrain,
 )
-from monster_ai import monster_ai_loop, is_terrain_passable
+from monster_ai import monster_ai_loop, is_terrain_passable, MONSTER_AI_REALTIME
+from level_turns import register_player_turn_action
 from collections import deque
 
 # Constants (map spawn rates live in map_generator.py)
@@ -58,6 +59,7 @@ class GameState:
         self.viewports = {}  # player_id -> (vh, vw) adaptive viewport size
         self.manual_pan = {}  # player_id -> True while user is freely panning
         self.stair_steps = {}  # player_id -> (y, x) origin stair just stepped on
+        self.level_turns = {}  # dungeon_level -> LevelTurnState
         self.generate_top_level()
 
     def generate_top_level(self):
@@ -595,11 +597,14 @@ _monster_ai_started = False
 
 
 def ensure_monster_ai_started():
-    """Idempotent: launch monster_ai_loop as a Socket.IO background task."""
+    """Idempotent: launch monster_ai_loop when realtime mode is enabled."""
     global _monster_ai_started
     if _monster_ai_started:
         return
     _monster_ai_started = True
+    if not MONSTER_AI_REALTIME:
+        print("[monster_ai] realtime loop disabled (per-level turn rounds)")
+        return
     socketio.start_background_task(monster_ai_loop, socketio, game_state, combat_system)
     print("[monster_ai] background loop started")
 
@@ -720,6 +725,9 @@ def handle_move(direction):
             return  # Ignore movement commands during combat
         
         if game_state.move_player(moving_player_id, direction):
+            register_player_turn_action(
+                game_state, moving_player_id, combat_system, socketio
+            )
             # Update everyone's view
             for pid in game_state.players:
                 if pid in game_state.active_players:

@@ -19,6 +19,9 @@ from visibility import compute_fov
 DEFAULT_MONSTER_MEMORY_SECONDS = 5.0
 MONSTER_AI_TICK_SECONDS = 0.1
 MONSTER_AI_DEBUG = False
+# When False, overworld monsters only act via run_monster_round_for_level
+# (player-action turn system). Realtime loop is not started.
+MONSTER_AI_REALTIME = False
 
 # Aggression anchors: aggression -> (toward%, neutral%, away%)
 # Rows for integer 0..10; decimals lerp between floor and ceil.
@@ -413,6 +416,30 @@ def _debug_log(monster, focus, currently_visible, now):
         f"mem_left={mem_left} dest={monster.last_chosen_dest} "
         f"fail={monster.last_fail_reason} next={monster.next_move_at}"
     )
+
+
+def run_monster_round_for_level(game_state, level_number, combat_system, socketio, now=None):
+    """
+    One discrete monster/world round on a single dungeon level.
+
+    Every non-combat monster gets one process_monster_opportunity (ignores next_move_at).
+    """
+    now = now if now is not None else time.monotonic()
+    game_map, monsters = game_state.ensure_level(level_number)
+    changed = False
+    for monster in list(monsters.values()):
+        if monster.in_combat:
+            continue
+        if monster.speed <= 0:
+            continue
+        if process_monster_opportunity(
+            game_state, level_number, monster, combat_system, now=now
+        ):
+            changed = True
+    if socketio is not None:
+        # Always refresh clients after a round so FOV/positions stay in sync
+        game_state.broadcast_active_players(socketio)
+    return changed
 
 
 def run_monster_ai_tick(game_state, combat_system, socketio, now=None):
