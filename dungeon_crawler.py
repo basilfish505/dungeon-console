@@ -403,14 +403,14 @@ class GameState:
             if (other_id != player_id and 
                 other_player.dungeon_level == player.dungeon_level and
                 other_player.pos == new_pos):
-                combat_system.start_combat(player_id, other_id)
+                combat_system.start_combat(player_id, other_id, emit_game_state=False)
                 return True
         
         # Check for player-monster combat
         monster_pos = (new_pos[0], new_pos[1])
         if monster_pos in monsters:
             monster = monsters[monster_pos]
-            combat_system.start_combat(player_id, monster)
+            combat_system.start_combat(player_id, monster, emit_game_state=False)
             return True
         
         return False
@@ -459,15 +459,29 @@ class GameState:
         entities = []
 
         if not use_fog:
-            visible_map = [row[:] for row in game_map]
+            # Build viewport only (no full-map deep copy) — keeps hold-to-move snappy.
+            overlay = {}
             for player in self.players.values():
                 if player.dungeon_level == level:
-                    pos = player.pos
-                    visible_map[pos[0]][pos[1]] = '@'
-            for pos, monster in monsters.items():
-                visible_map[pos[0]][pos[1]] = '&'
-            visible_map = slice_map(visible_map, cam_y, cam_x, vh=vh, vw=vw)
-            fog = [['visible' for _ in row] for row in visible_map]
+                    overlay[(player.pos[0], player.pos[1])] = '@'
+            for pos in monsters:
+                overlay[pos] = '&'
+            visible_map = []
+            fog = []
+            for vy in range(vh):
+                row_chars = []
+                row_fog = []
+                wy = cam_y + vy
+                for vx in range(vw):
+                    wx = cam_x + vx
+                    if 0 <= wy < map_h and 0 <= wx < map_w:
+                        char = overlay.get((wy, wx), game_map[wy][wx])
+                    else:
+                        char = '#'
+                    row_chars.append(char)
+                    row_fog.append('visible')
+                visible_map.append(row_chars)
+                fog.append(row_fog)
             for player in self.players.values():
                 if player.dungeon_level == level:
                     vy = player.pos[0] - cam_y

@@ -21,7 +21,7 @@ class CombatSystem:
         else:
             self.socketio.emit(event, data, room=room)
     
-    def start_combat(self, attacker_id, defender_id):
+    def start_combat(self, attacker_id, defender_id, emit_game_state=True):
         """Initialize combat between two entities (players or monsters)"""
         attacker = self.game_state.players[attacker_id]
         
@@ -37,11 +37,15 @@ class CombatSystem:
         existing_battle_id = self._find_existing_battle(attacker_id, defender_id)
         
         if existing_battle_id:
-            # Add the new combatant to an existing battle
-            return self._add_to_existing_battle(existing_battle_id, attacker_id, defender_id, defender, is_monster_combat)
+            return self._add_to_existing_battle(
+                existing_battle_id, attacker_id, defender_id, defender,
+                is_monster_combat, emit_game_state=emit_game_state,
+            )
         else:
-            # Create a new battle
-            return self._create_new_battle(attacker_id, defender_id, defender, is_monster_combat)
+            return self._create_new_battle(
+                attacker_id, defender_id, defender, is_monster_combat,
+                emit_game_state=emit_game_state,
+            )
     
     def _find_existing_battle(self, attacker_id, defender_id):
         """Check if any participant is already in a battle"""
@@ -82,7 +86,9 @@ class CombatSystem:
             entity.in_combat = True
             self.game_state.active_combats[entity_id] = battle['battle_id']
     
-    def _create_new_battle(self, attacker_id, defender_id, defender, is_monster_combat):
+    def _create_new_battle(
+        self, attacker_id, defender_id, defender, is_monster_combat, emit_game_state=True
+    ):
         """Create a new battle between combatants"""
         # Generate a unique battle ID
         battle_id = str(uuid.uuid4())
@@ -132,16 +138,18 @@ class CombatSystem:
         # Start turn timer for the opening actor (attacker)
         self._start_turn_timer(battle, attacker_id)
         
-        # Update all players' game state
-        self._update_all_players()
+        if emit_game_state:
+            self._update_all_players()
         
         return battle_id
     
-    def _add_to_existing_battle(self, battle_id, new_player_id, defender_id, defender, is_monster_combat):
+    def _add_to_existing_battle(
+        self, battle_id, new_player_id, defender_id, defender, is_monster_combat,
+        emit_game_state=True,
+    ):
         """Add new combatants to an existing battle"""
         battle = self.battles[battle_id]
         new_player = self.game_state.players[new_player_id]
-        defender_display_name = defender.type if is_monster_combat else defender.id
         
         # Add the defender to the battle if not already present
         self._add_entity_to_battle(battle, defender_id, defender, is_monster_combat)
@@ -154,8 +162,8 @@ class CombatSystem:
         for participant_id in battle['participants']:
             self._send_combat_start(participant_id, battle)
         
-        # Update all players' game state
-        self._update_all_players()
+        if emit_game_state:
+            self._update_all_players()
         
         return battle_id
     

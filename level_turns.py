@@ -5,7 +5,7 @@ then one monster/world round runs on that level only.
 """
 
 ACTIVE_PLAYER_ROUND_WINDOW = 3
-LEVEL_TURNS_DEBUG = True
+LEVEL_TURNS_DEBUG = False
 
 
 def _debug(msg):
@@ -133,7 +133,8 @@ def register_player_turn_action(game_state, player_id, combat_system=None, socke
         }
 
         run_monster_round_for_level(
-            game_state, level_number, combat_system, socketio
+            game_state, level_number, combat_system, socketio,
+            broadcast=False,
         )
         turn_state.completed_round += 1
         rounds_fired += 1

@@ -1,0 +1,219 @@
+// movement_controller.js — single hold-to-move input + paced emit loop
+const MovementController = (function () {
+    const KEY_TO_CARDINAL = {
+        w: 'n', a: 'west', s: 's', d: 'e',
+        ArrowUp: 'n', ArrowLeft: 'west', ArrowDown: 's', ArrowRight: 'e',
+    };
+    const CARDINALS = { n: true, e: true, s: true, west: true };
+    const DELTA_TO_DIR = {
+        '-1,0': 'n',
+        '-1,1': 'ne',
+        '0,1': 'e',
+        '1,1': 'se',
+        '1,0': 's',
+        '1,-1': 'sw',
+        '0,-1': 'west',
+        '-1,-1': 'nw',
+    };
+    const DIR_DELTA = {
+        n: [-1, 0], ne: [-1, 1], e: [0, 1], se: [1, 1],
+        s: [1, 0], sw: [1, -1], west: [0, -1], nw: [-1, -1],
+    };
+
+    /** Most-recently-pressed held direction is last. */
+    const heldDirs = [];
+    let holdRafId = null;
+    let nextEmitAt = 0;
+    let bound = false;
+
+    function stepMs() {
+        if (typeof PlayerPresentation !== 'undefined' && PlayerPresentation.MOVE_MS) {
+            return PlayerPresentation.MOVE_MS;
+        }
+        return 250;
+    }
+
+    function pipelineT() {
+        if (typeof PlayerPresentation !== 'undefined' && PlayerPresentation.PIPELINE_T != null) {
+            return PlayerPresentation.PIPELINE_T;
+        }
+        return 0.9;
+    }
+
+    function combineHeld() {
+        let dy = 0;
+        let dx = 0;
+        let hasCardinal = false;
+        let lastDiagonal = null;
+        for (let i = 0; i < heldDirs.length; i++) {
+            const dir = heldDirs[i];
+            if (CARDINALS[dir]) {
+                hasCardinal = true;
+                const d = DIR_DELTA[dir];
+                dy += d[0];
+                dx += d[1];
+            } else if (DIR_DELTA[dir]) {
+                lastDiagonal = dir;
+            }
+        }
+        if (hasCardinal) {
+            dy = dy < 0 ? -1 : (dy > 0 ? 1 : 0);
+            dx = dx < 0 ? -1 : (dx > 0 ? 1 : 0);
+            return DELTA_TO_DIR[dy + ',' + dx] || null;
+        }
+        return lastDiagonal;
+    }
+
+    function currentDir() {
+        return combineHeld();
+    }
+
+    function localPlayerId() {
+        const el = document.getElementById('player-id');
+        return el && el.value ? el.value : '';
+    }
+
+    /**
+     * @param {boolean} force  true on fresh press (ignore STEP_MS floor)
+     */
+    function tryEmit(force) {
+        const direction = currentDir();
+        if (!direction) {
+            return false;
+        }
+        if (typeof InspectUI !== 'undefined' && InspectUI.isOpen()) {
+            return false;
+        }
+        const now = performance.now();
+        if (!force && now < nextEmitAt) {
+            return false;
+        }
+
+        if (typeof PlayerPresentation !== 'undefined' && PlayerPresentation.beginLocalStep) {
+            const id = localPlayerId();
+            const t = PlayerPresentation.progress ? PlayerPresentation.progress(id) : 0;
+            const opts = (t >= pipelineT()) ? { pipeline: true } : {};
+            if (!PlayerPresentation.beginLocalStep(id, opts)) {
+                return false;
+            }
+        }
+
+        if (typeof SocketHandler === 'undefined' || !SocketHandler.sendMove) {
+            return false;
+        }
+        SocketHandler.sendMove(direction);
+        nextEmitAt = now + stepMs();
+        return true;
+    }
+
+    function startHoldLoop() {
+        if (holdRafId !== null) {
+            return;
+        }
+        holdRafId = requestAnimationFrame(function tick() {
+            holdRafId = null;
+            if (!currentDir()) {
+                return;
+            }
+            tryEmit(false);
+            holdRafId = requestAnimationFrame(tick);
+        });
+    }
+
+    function pressDir(dir) {
+        if (!dir || !DIR_DELTA[dir]) {
+            return;
+        }
+        const i = heldDirs.indexOf(dir);
+        if (i >= 0) {
+            heldDirs.splice(i, 1);
+        }
+        heldDirs.push(dir);
+        tryEmit(true);
+        startHoldLoop();
+    }
+
+    function releaseDir(dir) {
+        const i = heldDirs.indexOf(dir);
+        if (i >= 0) {
+            heldDirs.splice(i, 1);
+        }
+    }
+
+    function clearHeld() {
+        heldDirs.length = 0;
+    }
+
+    function bind() {
+        if (bound) {
+            return;
+        }
+        bound = true;
+
+        document.addEventListener('keydown', function (e) {
+            if (typeof InspectUI !== 'undefined' && InspectUI.isOpen()) {
+                if (e.key === 'Escape') {
+                    InspectUI.hide();
+                }
+                return;
+            }
+            const dir = KEY_TO_CARDINAL[e.key];
+            if (!dir) {
+                return;
+            }
+            e.preventDefault();
+            if (e.repeat) {
+                return;
+            }
+            pressDir(dir);
+        });
+
+        document.addEventListener('keyup', function (e) {
+            const dir = KEY_TO_CARDINAL[e.key];
+            if (dir) {
+                releaseDir(dir);
+            }
+        });
+
+        window.addEventListener('blur', clearHeld);
+        document.addEventListener('visibilitychange', function () {
+            if (document.hidden) {
+                clearHeld();
+            }
+        });
+
+        document.querySelectorAll('.mobile-btn').forEach(function (btn) {
+            const direction = btn.getAttribute('data-direction');
+            if (!direction) {
+                return;
+            }
+            btn.addEventListener('pointerdown', function (e) {
+                e.preventDefault();
+                if (typeof InspectUI !== 'undefined' && InspectUI.isOpen()) {
+                    return;
+                }
+                if (btn.setPointerCapture && e.pointerId != null) {
+                    try {
+                        btn.setPointerCapture(e.pointerId);
+                    } catch (err) { /* ignore */ }
+                }
+                pressDir(direction);
+            });
+            const up = function (e) {
+                e.preventDefault();
+                releaseDir(direction);
+            };
+            btn.addEventListener('pointerup', up);
+            btn.addEventListener('pointercancel', up);
+            btn.addEventListener('lostpointercapture', up);
+        });
+    }
+
+    return {
+        bind: bind,
+        pressDir: pressDir,
+        releaseDir: releaseDir,
+        clearHeld: clearHeld,
+        currentDir: currentDir,
+    };
+})();

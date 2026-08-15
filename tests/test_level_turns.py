@@ -179,17 +179,44 @@ class MonsterRoundApiTests(unittest.TestCase):
             def broadcast_active_players(self, socketio):
                 self._broadcasts += 1
 
+            def move_monster(self, level_number, monster, dest):
+                monster.pos = list(dest)
+                return True
+
         gs = GS()
         m = Monster.from_type('troll', [1, 1], monster_id='m1', speed=5.0)
         m.next_move_at = 1e18  # far in the future — realtime tick would skip
         gs.levels[0][1][(1, 1)] = m
 
         with patch('monster_ai.process_monster_opportunity', wraps=process_monster_opportunity) as opp:
-            # Stay-still; ensure opportunity is invoked despite next_move_at
             with patch('monster_ai.random.random', return_value=0.0):
                 run_monster_round_for_level(gs, 0, combat_system=None, socketio=object())
             self.assertEqual(opp.call_count, 1)
             self.assertEqual(gs._broadcasts, 1)
+
+            gs._broadcasts = 0
+            with patch('monster_ai.random.random', return_value=0.0):
+                run_monster_round_for_level(
+                    gs, 0, combat_system=None, socketio=object(), broadcast=False
+                )
+            self.assertEqual(gs._broadcasts, 0)
+
+    def test_visible_players_skips_fov_when_out_of_range(self):
+        from monster import Monster
+        from monster_ai import visible_players, compute_fov
+
+        mon = Monster.from_type('troll', [0, 0], monster_id='m', sight_range=2)
+        far = type('P', (), {'pos': [10, 10]})()
+        game_map = [['.' for _ in range(12)] for _ in range(12)]
+        with patch('monster_ai.compute_fov', wraps=compute_fov) as fov:
+            seen = visible_players(game_map, mon, {'hero': far})
+            self.assertEqual(seen, [])
+            self.assertEqual(fov.call_count, 0)
+
+        near = type('P', (), {'pos': [1, 1]})()
+        with patch('monster_ai.compute_fov', wraps=compute_fov) as fov:
+            visible_players(game_map, mon, {'hero': near})
+            self.assertEqual(fov.call_count, 1)
 
 
 if __name__ == '__main__':

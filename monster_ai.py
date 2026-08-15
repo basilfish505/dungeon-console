@@ -243,7 +243,18 @@ def select_away_tile(game_map, pos, focus, monsters, monster_id, players_on_leve
 
 def visible_players(game_map, monster, players_on_level):
     """Players currently in monster FOV (same level assumed)."""
-    fov = compute_fov(game_map, monster.pos, monster.sight_range)
+    if not players_on_level:
+        return []
+    sight = max(0, int(getattr(monster, 'sight_range', 0) or 0))
+    # Cheap Chebyshev prefilter — skip shadowcasting when nobody is in range.
+    anyone_near = False
+    for player in players_on_level.values():
+        if chebyshev(monster.pos, player.pos) <= sight:
+            anyone_near = True
+            break
+    if not anyone_near:
+        return []
+    fov = compute_fov(game_map, monster.pos, sight)
     seen = []
     for pid, player in players_on_level.items():
         key = (player.pos[0], player.pos[1])
@@ -418,11 +429,14 @@ def _debug_log(monster, focus, currently_visible, now):
     )
 
 
-def run_monster_round_for_level(game_state, level_number, combat_system, socketio, now=None):
+def run_monster_round_for_level(
+    game_state, level_number, combat_system, socketio, now=None, broadcast=True
+):
     """
     One discrete monster/world round on a single dungeon level.
 
     Every non-combat monster gets one process_monster_opportunity (ignores next_move_at).
+    Set broadcast=False when the caller will emit game_state once afterward.
     """
     now = now if now is not None else time.monotonic()
     game_map, monsters = game_state.ensure_level(level_number)
@@ -436,8 +450,7 @@ def run_monster_round_for_level(game_state, level_number, combat_system, socketi
             game_state, level_number, monster, combat_system, now=now
         ):
             changed = True
-    if socketio is not None:
-        # Always refresh clients after a round so FOV/positions stay in sync
+    if broadcast and socketio is not None:
         game_state.broadcast_active_players(socketio)
     return changed
 

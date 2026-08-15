@@ -1,9 +1,10 @@
 // player_presentation.js — visual waypoint tween + facing + clips (client-only)
 const PlayerPresentation = (function () {
     const MOVE_MS = 250;
-    const ACK_MS = 200;
+    /** Soft-lock failsafe if a move never gets game_state (rejected / dropped). */
+    const ACK_FAILSAFE_MS = 500;
     const IDLE_GRACE_MS = 80;
-    const PIPELINE_T = 0.85;
+    const PIPELINE_T = 0.9;
 
     const actors = Object.create(null);
     /** id -> timestamp until which a sent move is awaiting game_state */
@@ -333,7 +334,8 @@ const PlayerPresentation = (function () {
         }
         id = String(id);
         const until = localAckUntil[id];
-        if (until && performance.now() < until) {
+        const now = performance.now();
+        if (until && now < until) {
             return true;
         }
         if (until) {
@@ -380,6 +382,8 @@ const PlayerPresentation = (function () {
     }
 
     /**
+     * Gate a local move emit. Ack clears on game_state tile sync (or failsafe).
+     * Does not re-arm emits solely because a short timeout elapsed.
      * @param {string} id
      * @param {{ pipeline?: boolean }} [opts]
      */
@@ -391,8 +395,7 @@ const PlayerPresentation = (function () {
         id = String(id);
         const now = performance.now();
         const until = localAckUntil[id];
-        const ackPending = until && now < until;
-        if (ackPending) {
+        if (until && now < until) {
             return false;
         }
         if (until) {
@@ -404,7 +407,7 @@ const PlayerPresentation = (function () {
                 return false;
             }
         }
-        localAckUntil[id] = now + ACK_MS;
+        localAckUntil[id] = now + ACK_FAILSAFE_MS;
         return true;
     }
 
@@ -464,6 +467,7 @@ const PlayerPresentation = (function () {
     return {
         MOVE_MS,
         PIPELINE_T,
+        ACK_FAILSAFE_MS,
         sync,
         sample,
         anyMoving,
