@@ -246,6 +246,9 @@ const PlayerPresentation = (function () {
             actor.present = true;
 
             if (actor.tileY === tileY && actor.tileX === tileX) {
+                if (!isMonster && localId && id === localId) {
+                    delete localAckUntil[id];
+                }
                 continue;
             }
 
@@ -362,6 +365,17 @@ const PlayerPresentation = (function () {
         return segmentT(actor, performance.now());
     }
 
+    function tilePos(id) {
+        if (id == null || id === '') {
+            return null;
+        }
+        const actor = actors[String(id)];
+        if (!actor) {
+            return null;
+        }
+        return { y: actor.tileY, x: actor.tileX };
+    }
+
     function visualPos(id) {
         if (id == null || id === '') {
             return null;
@@ -408,6 +422,42 @@ const PlayerPresentation = (function () {
             }
         }
         localAckUntil[id] = now + ACK_FAILSAFE_MS;
+        return true;
+    }
+
+    /**
+     * Start the walk tween immediately (before game_state). Server confirm
+     * is a no-op when the predicted tile matches.
+     */
+    function predictLocalStep(id, dy, dx) {
+        if (id == null || id === '') {
+            return false;
+        }
+        id = String(id);
+        const actor = actors[id];
+        if (!actor) {
+            return false;
+        }
+        dy = dy | 0;
+        dx = dx | 0;
+        if (Math.max(Math.abs(dy), Math.abs(dx)) !== 1) {
+            return false;
+        }
+        const toY = actor.tileY + dy;
+        const toX = actor.tileX + dx;
+        if (actor.tileY === toY && actor.tileX === toX) {
+            return false;
+        }
+        updateFacing(actor, dy, dx);
+        actor.tileY = toY;
+        actor.tileX = toX;
+        const now = performance.now();
+        if (actor.moving || actor.queue.length) {
+            actor.queue.push({ y: toY, x: toX });
+        } else {
+            beginSegment(actor, toY, toX, now);
+        }
+        kick();
         return true;
     }
 
@@ -475,7 +525,9 @@ const PlayerPresentation = (function () {
         isMoving,
         progress,
         visualPos,
+        tilePos,
         beginLocalStep,
+        predictLocalStep,
         walkToThen,
         snapTo,
         setClip,

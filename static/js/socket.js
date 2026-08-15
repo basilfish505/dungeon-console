@@ -1,6 +1,7 @@
 // socket.js - Socket event handlers + reconnect resume
 const SocketHandler = (function () {
     const socket = io({
+        transports: ['websocket', 'polling'],
         reconnection: true,
         reconnectionAttempts: Infinity,
         reconnectionDelay: 500,

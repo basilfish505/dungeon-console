@@ -33,6 +33,8 @@ from collections import deque
 SECRET_KEY = 'your-secret-key-here'
 # New process ⇒ new id. Stale tabs must not silently recreate old characters.
 SERVER_BOOT_ID = uuid.uuid4().hex
+# Keep each game_state payload small (full log was resent on every step).
+MAX_PLAYER_MESSAGES = 50
 
 # Eight adjacent directions (N, NE, E, SE, S, SW, W, NW)
 _STAIR_ADJACENT_DIRS = (
@@ -322,7 +324,11 @@ class GameState:
     def add_player_message(self, player_id, message):
         """Add a message to a specific player's message list"""
         if player_id in self.player_messages:
-            self.player_messages[player_id].append(message)
+            msgs = self.player_messages[player_id]
+            msgs.append(message)
+            overflow = len(msgs) - MAX_PLAYER_MESSAGES
+            if overflow > 0:
+                del msgs[:overflow]
 
     def add_global_message(self, message):
         """Add a message to all active players' message lists"""
@@ -721,14 +727,21 @@ def handle_move(direction):
             return  # Ignore movement commands during combat
         
         if game_state.move_player(moving_player_id, direction):
-            register_player_turn_action(
+            # Ack the mover first so walk animation is not blocked by AI / others.
+            emit(
+                'game_state',
+                game_state.get_game_state(moving_player_id),
+                room=moving_player_id,
+            )
+            game_state.stair_steps.pop(moving_player_id, None)
+
+            round_fired = register_player_turn_action(
                 game_state, moving_player_id, combat_system, socketio
             )
-            # Update everyone's view
-            for pid in game_state.players:
-                if pid in game_state.active_players:
-                    emit('game_state', game_state.get_game_state(pid), room=pid)
-            game_state.stair_steps.pop(moving_player_id, None)
+            for pid in list(game_state.active_players.keys()):
+                if pid == moving_player_id and not round_fired:
+                    continue
+                emit('game_state', game_state.get_game_state(pid), room=pid)
 
 
 @socketio.on('inspect_map')
