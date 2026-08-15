@@ -173,30 +173,29 @@ class SelectionTests(unittest.TestCase):
 
 
 class MemoryTests(unittest.TestCase):
-    def test_memory_expires(self):
-        mon = Monster.from_type('troll', [1, 1], monster_id='g', memory_duration=5.0)
-        now = 100.0
-        focus, vis = update_memory(mon, 'p1', type('P', (), {'pos': [2, 2]})(), now)
+    def test_memory_tracks_live_pos_while_on_level(self):
+        mon = Monster.from_type('troll', [1, 1], monster_id='g')
+        p = type('P', (), {'pos': [2, 2]})()
+        players = {'p1': p}
+        focus, vis = update_memory(mon, 'p1', p, players)
         self.assertTrue(vis)
         self.assertEqual(focus, [2, 2])
-        # Still in memory window, not visible
-        focus2, vis2 = update_memory(mon, None, None, now + 3.0)
-        self.assertFalse(vis2)
-        self.assertEqual(focus2, [2, 2])
-        # Expired
-        focus3, vis3 = update_memory(mon, None, None, now + 6.0)
-        self.assertIsNone(focus3)
-        self.assertFalse(vis3)
-        self.assertIsNone(mon.memory_pos)
 
-    def test_memory_does_not_track_unseen_live_pos(self):
-        mon = Monster.from_type('troll', [1, 1], monster_id='g', memory_duration=5.0)
-        now = 50.0
-        update_memory(mon, 'p1', type('P', (), {'pos': [5, 5]})(), now)
-        # Player "moved" but not visible — memory stays at old tile
-        focus, vis = update_memory(mon, None, None, now + 1.0)
-        self.assertEqual(focus, [5, 5])
+        p.pos = [8, 8]
+        focus2, vis2 = update_memory(mon, None, None, players)
+        self.assertFalse(vis2)
+        self.assertEqual(focus2, [8, 8])
+        self.assertEqual(mon.memory_player_id, 'p1')
+
+    def test_memory_clears_when_player_leaves_level(self):
+        mon = Monster.from_type('troll', [1, 1], monster_id='g')
+        p = type('P', (), {'pos': [5, 5]})()
+        update_memory(mon, 'p1', p, {'p1': p})
+        focus, vis = update_memory(mon, None, None, {})
+        self.assertIsNone(focus)
         self.assertFalse(vis)
+        self.assertIsNone(mon.memory_pos)
+        self.assertIsNone(mon.memory_player_id)
 
 
 class SpeedZeroTests(unittest.TestCase):

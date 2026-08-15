@@ -37,7 +37,6 @@ class MonsterTypeDef:
         speed=10,
         activeness=5,
         sight_range=20,
-        memory_duration=5.0,
         attack_power=5,
     ):
         self.id = str(type_id)
@@ -56,7 +55,6 @@ class MonsterTypeDef:
         self.speed = speed
         self.activeness = activeness
         self.sight_range = sight_range
-        self.memory_duration = memory_duration
         self.attack_power = attack_power
 
     def stats_for_level(self, level=None):

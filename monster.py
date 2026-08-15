@@ -12,7 +12,6 @@ DEFAULT_AGGRESSION = 0
 DEFAULT_SPEED = 10
 DEFAULT_ACTIVENESS = 5
 DEFAULT_SIGHT_RANGE = 20
-DEFAULT_MEMORY_DURATION = 5.0
 
 # 8-direction deltas: (dy, dx) — N, NE, E, SE, S, SW, W, NW
 EIGHT_DIRECTIONS = (
@@ -68,9 +67,6 @@ class Monster:
         speed = runtime_overrides.pop('speed', type_def.speed)
         activeness = runtime_overrides.pop('activeness', type_def.activeness)
         sight_range = runtime_overrides.pop('sight_range', type_def.sight_range)
-        memory_duration = runtime_overrides.pop(
-            'memory_duration', type_def.memory_duration
-        )
         if runtime_overrides:
             unknown = ', '.join(sorted(runtime_overrides))
             raise TypeError(f'Unexpected Monster keyword arguments: {unknown}')
@@ -79,17 +75,15 @@ class Monster:
         self.speed = _clamp_stat(speed)
         self.activeness = _clamp_stat(activeness)
         self.sight_range = max(0, int(round(float(sight_range))))
-        self.memory_duration = float(memory_duration)
 
         # Movement timing (monotonic clock); None means never schedule
         self.next_move_at = None
         if self.speed > 0:
             self.next_move_at = time.monotonic()
 
-        # Player memory
+        # Player memory (last seen player on this level; live position, no timer)
         self.memory_player_id = None
         self.memory_pos = None  # [y, x]
-        self.memory_until = None
 
         # Debug snapshot (last opportunity)
         self.last_intention = None
@@ -111,7 +105,6 @@ class Monster:
     def clear_memory(self):
         self.memory_player_id = None
         self.memory_pos = None
-        self.memory_until = None
 
     def schedule_next_move(self, interval, now=None):
         """Set next_move_at from now + interval; clear if interval is None."""

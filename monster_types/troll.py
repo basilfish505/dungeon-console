@@ -23,7 +23,6 @@ TROLL = MonsterTypeDef(
     speed=10,
     activeness=5,
     sight_range=20,
-    memory_duration=5.0,
     attack_power=5,
 )
 

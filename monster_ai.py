@@ -16,7 +16,6 @@ from visibility import compute_fov
 
 # --- Config (centralized balancing) -----------------------------------------
 
-DEFAULT_MONSTER_MEMORY_SECONDS = 5.0
 MONSTER_AI_TICK_SECONDS = 0.1
 MONSTER_AI_DEBUG = False
 # When False, overworld monsters only act via run_monster_round_for_level
@@ -279,20 +278,27 @@ def choose_closest_player(monster, visible, rng=None):
     return rng.choice(best)
 
 
-def update_memory(monster, visible_pid, visible_player, now):
-    """Refresh or expire memory. Returns focus_pos list or None, and whether target currently visible."""
+def update_memory(monster, visible_pid, visible_player, players_on_level=None):
+    """
+    Once a player has been seen, remember them and always know their live
+    position while they remain on this level. No wall-clock expiry.
+
+    Returns (focus_pos list or None, currently_visible bool).
+    """
+    players_on_level = players_on_level or {}
+
     if visible_pid is not None and visible_player is not None:
         monster.memory_player_id = visible_pid
         monster.memory_pos = list(visible_player.pos)
-        duration = getattr(monster, 'memory_duration', DEFAULT_MONSTER_MEMORY_SECONDS)
-        monster.memory_until = now + duration
         monster.last_target_visible = True
         return list(visible_player.pos), True
 
     monster.last_target_visible = False
-    if (monster.memory_until is not None and now < monster.memory_until
-            and monster.memory_pos is not None):
-        return list(monster.memory_pos), False
+    remembered_id = monster.memory_player_id
+    remembered = players_on_level.get(remembered_id) if remembered_id else None
+    if remembered is not None:
+        monster.memory_pos = list(remembered.pos)
+        return list(remembered.pos), False
 
     monster.clear_memory()
     return None, False
@@ -328,7 +334,7 @@ def process_monster_opportunity(game_state, level_number, monster, combat_system
     # Detect
     visible = visible_players(game_map, monster, players)
     pid, player = choose_closest_player(monster, visible, rng)
-    focus, currently_visible = update_memory(monster, pid, player, now)
+    focus, currently_visible = update_memory(monster, pid, player, players)
 
     # Intention
     if focus is None:
@@ -373,12 +379,6 @@ def process_monster_opportunity(game_state, level_number, monster, combat_system
 
     monster.last_chosen_dest = list(dest)
 
-    # Reached last-known with no vision → clear memory next idle (optional linger)
-    if (not currently_visible and monster.memory_pos is not None
-            and dest[0] == monster.memory_pos[0] and dest[1] == monster.memory_pos[1]):
-        # After this move arrives at memory tile; clear so next opportunity idles
-        pass
-
     # Combat if player on destination
     hit_pid, hit_player = player_at_tile(players, dest[0], dest[1])
     if hit_pid is not None:
@@ -395,11 +395,6 @@ def process_monster_opportunity(game_state, level_number, monster, combat_system
     # Execute move
     if game_state.move_monster(level_number, monster, dest):
         changed = True
-        # If we stepped onto last known and still can't see player, clear memory
-        if not currently_visible and monster.memory_pos is not None:
-            if (monster.pos[0] == monster.memory_pos[0]
-                    and monster.pos[1] == monster.memory_pos[1]):
-                monster.clear_memory()
     else:
         monster.last_fail_reason = 'move_failed'
 
@@ -416,15 +411,12 @@ def _reschedule(monster, now):
 def _debug_log(monster, focus, currently_visible, now):
     if not MONSTER_AI_DEBUG:
         return
-    mem_left = None
-    if monster.memory_until is not None:
-        mem_left = max(0.0, monster.memory_until - now)
     print(
         f"[monster_ai] {monster.id} agg={monster.aggression} spd={monster.speed} "
         f"act={monster.activeness} stay={stay_still_chance(monster.activeness):.2f} "
         f"sight={monster.sight_range} intent={monster.last_intention} "
-        f"focus={focus} visible={currently_visible} mem_pos={monster.memory_pos} "
-        f"mem_left={mem_left} dest={monster.last_chosen_dest} "
+        f"focus={focus} visible={currently_visible} mem_pid={monster.memory_player_id} "
+        f"mem_pos={monster.memory_pos} dest={monster.last_chosen_dest} "
         f"fail={monster.last_fail_reason} next={monster.next_move_at}"
     )
 
