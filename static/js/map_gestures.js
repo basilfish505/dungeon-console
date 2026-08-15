@@ -1,8 +1,21 @@
-// map_gestures.js — map-pane pinch/wheel zoom + one-finger/mouse drag pan + tap inspect
+// map_gestures.js — two-finger pan + pinch/wheel zoom + one-finger swipe-to-walk + tap inspect
 const MapGestures = (function () {
     const PINCH_THRESHOLD = 1.12;
     const WHEEL_COOLDOWN_MS = 80;
     const PAN_THRESHOLD_PX = 6;
+    const WALK_THRESHOLD_PX = 14;
+    /** Recent finger travel before the walk direction updates (allows zigzags). */
+    const TURN_THRESHOLD_PX = 16;
+    const DELTA_TO_DIR = {
+        '-1,0': 'n',
+        '-1,1': 'ne',
+        '0,1': 'e',
+        '1,1': 'se',
+        '1,0': 's',
+        '1,-1': 'sw',
+        '0,-1': 'west',
+        '-1,-1': 'nw',
+    };
 
     let paneEl = null;
     let active = false;
@@ -10,147 +23,83 @@ const MapGestures = (function () {
     let pinchBaseIndex = 0;
     let lastWheelAt = 0;
 
+    const activePointers = new Map();
+    let twoFingerIds = null;
+    let twoFinger = false;
+    let lastMidX = 0;
+    let lastMidY = 0;
+    /** After a two-finger gesture, ignore walk until all fingers lift. */
+    let inhibitWalk = false;
+
     let pointerId = null;
+    let pointerType = null;
     let panLastX = 0;
     let panLastY = 0;
     let panAccX = 0;
     let panAccY = 0;
     let panning = false;
 
-    function distance(t0, t1) {
-        const dx = t0.clientX - t1.clientX;
-        const dy = t0.clientY - t1.clientY;
-        return Math.hypot(dx, dy);
-    }
-
-    function endPan() {
-        pointerId = null;
-        panning = false;
-        panAccX = 0;
-        panAccY = 0;
-    }
-
-    function midpoint(t0, t1) {
-        return {
-            clientX: (t0.clientX + t1.clientX) / 2,
-            clientY: (t0.clientY + t1.clientY) / 2,
-        };
-    }
+    let downX = 0;
+    let downY = 0;
+    let walkLastX = 0;
+    let walkLastY = 0;
+    let walkAccX = 0;
+    let walkAccY = 0;
+    let walkActive = false;
+    let skipInspect = false;
 
     function inspectUiOpen() {
         return typeof InspectUI !== 'undefined' && InspectUI.isOpen();
     }
 
-    function onTouchStart(e) {
-        if (!active || inspectUiOpen()) {
-            return;
+    function isFinger(type) {
+        return type === 'touch' || type === 'pen';
+    }
+
+    function vectorToDir(dx, dy) {
+        if (dx === 0 && dy === 0) {
+            return null;
         }
-        if (e.touches.length === 2) {
-            endPan();
-            e.preventDefault();
-            pinchStartDist = distance(e.touches[0], e.touches[1]);
-            pinchBaseIndex = MapView.getState().zoomIndex;
+        const ax = Math.abs(dx);
+        const ay = Math.abs(dy);
+        // tan(22.5°) ≈ 0.414 — eight 45° sectors
+        const sx = ax > ay * 0.414 ? (dx > 0 ? 1 : -1) : 0;
+        const sy = ay > ax * 0.414 ? (dy > 0 ? 1 : -1) : 0;
+        return DELTA_TO_DIR[sy + ',' + sx] || null;
+    }
+
+    function stopWalkStick() {
+        walkActive = false;
+        walkAccX = 0;
+        walkAccY = 0;
+        if (typeof MovementController !== 'undefined' && MovementController.setStickDir) {
+            MovementController.setStickDir(null);
         }
     }
 
-    function onTouchMove(e) {
-        if (!active || inspectUiOpen() || e.touches.length !== 2 || pinchStartDist <= 0) {
-            return;
-        }
-        e.preventDefault();
-        const dist = distance(e.touches[0], e.touches[1]);
-        const ratio = dist / pinchStartDist;
-        let steps = 0;
-        if (ratio >= PINCH_THRESHOLD) {
-            steps = Math.floor(Math.log(ratio) / Math.log(PINCH_THRESHOLD));
-        } else if (ratio <= 1 / PINCH_THRESHOLD) {
-            steps = -Math.floor(Math.log(1 / ratio) / Math.log(PINCH_THRESHOLD));
-        }
-        if (steps !== 0) {
-            const before = MapView.getState().zoomIndex;
-            const focus = midpoint(e.touches[0], e.touches[1]);
-            MapView.setZoomIndex(pinchBaseIndex + steps, focus);
-            const after = MapView.getState().zoomIndex;
-            if (after !== before || after !== pinchBaseIndex) {
-                pinchBaseIndex = after;
-                pinchStartDist = dist;
-            }
-        }
-    }
-
-    function onTouchEnd(e) {
-        if (e.touches.length < 2) {
-            pinchStartDist = 0;
-        }
-    }
-
-    function onWheel(e) {
-        if (!active || inspectUiOpen()) {
-            return;
-        }
-        e.preventDefault();
-        const now = Date.now();
-        if (now - lastWheelAt < WHEEL_COOLDOWN_MS) {
-            return;
-        }
-        lastWheelAt = now;
-        const focus = { clientX: e.clientX, clientY: e.clientY };
-        if (e.deltaY < 0) {
-            MapView.zoomBy(1, focus);
-        } else if (e.deltaY > 0) {
-            MapView.zoomBy(-1, focus);
-        }
-    }
-
-    function onPointerDown(e) {
-        if (!active || !paneEl || inspectUiOpen()) {
-            return;
-        }
-        if (pinchStartDist > 0 || (e.pointerType === 'touch' && e.isPrimary === false)) {
-            return;
-        }
-        if (pointerId !== null) {
-            return;
-        }
-        pointerId = e.pointerId;
-        panLastX = e.clientX;
-        panLastY = e.clientY;
+    function resetPointerState() {
+        pointerId = null;
+        pointerType = null;
+        panning = false;
+        walkActive = false;
         panAccX = 0;
         panAccY = 0;
-        panning = false;
-        try {
-            paneEl.setPointerCapture(e.pointerId);
-        } catch (err) {
-            /* ignore */
-        }
+        walkAccX = 0;
+        walkAccY = 0;
     }
 
-    function onPointerMove(e) {
-        if (!active || e.pointerId !== pointerId || inspectUiOpen()) {
-            return;
-        }
-        if (pinchStartDist > 0) {
-            return;
-        }
-        const dx = e.clientX - panLastX;
-        const dy = e.clientY - panLastY;
-        panLastX = e.clientX;
-        panLastY = e.clientY;
+    function applyPanPixels(dx, dy) {
         panAccX += dx;
         panAccY += dy;
-
         if (!panning) {
             if (Math.hypot(panAccX, panAccY) < PAN_THRESHOLD_PX) {
                 return;
             }
             panning = true;
         }
-
-        e.preventDefault();
         const st = MapView.getState();
         const tw = Math.max(1, st.tileW);
         const th = Math.max(1, st.tileH);
-
         let tileDx = 0;
         let tileDy = 0;
         while (panAccX >= tw) {
@@ -174,23 +123,281 @@ const MapGestures = (function () {
         }
     }
 
-    function onPointerUp(e) {
+    function fingerEntries() {
+        const list = [];
+        activePointers.forEach(function (p, id) {
+            if (isFinger(p.type)) {
+                list.push({ id: id, x: p.x, y: p.y });
+            }
+        });
+        return list;
+    }
+
+    function endTwoFinger() {
+        twoFinger = false;
+        twoFingerIds = null;
+        pinchStartDist = 0;
+        panning = false;
+        panAccX = 0;
+        panAccY = 0;
+    }
+
+    function beginTwoFinger(fingers) {
+        stopWalkStick();
+        resetPointerState();
+        skipInspect = true;
+        inhibitWalk = true;
+        twoFinger = true;
+        twoFingerIds = [fingers[0].id, fingers[1].id];
+        const a = fingers[0];
+        const b = fingers[1];
+        pinchStartDist = Math.hypot(a.x - b.x, a.y - b.y);
+        pinchBaseIndex = MapView.getState().zoomIndex;
+        lastMidX = (a.x + b.x) / 2;
+        lastMidY = (a.y + b.y) / 2;
+        panAccX = 0;
+        panAccY = 0;
+        panning = false;
+    }
+
+    function handleTwoFingerMove() {
+        if (!twoFingerIds) {
+            return;
+        }
+        const a = activePointers.get(twoFingerIds[0]);
+        const b = activePointers.get(twoFingerIds[1]);
+        if (!a || !b) {
+            endTwoFinger();
+            return;
+        }
+        const dist = Math.hypot(a.x - b.x, a.y - b.y);
+        if (pinchStartDist > 0) {
+            const ratio = dist / pinchStartDist;
+            let steps = 0;
+            if (ratio >= PINCH_THRESHOLD) {
+                steps = Math.floor(Math.log(ratio) / Math.log(PINCH_THRESHOLD));
+            } else if (ratio <= 1 / PINCH_THRESHOLD) {
+                steps = -Math.floor(Math.log(1 / ratio) / Math.log(PINCH_THRESHOLD));
+            }
+            if (steps !== 0) {
+                const before = MapView.getState().zoomIndex;
+                const focus = {
+                    clientX: (a.x + b.x) / 2,
+                    clientY: (a.y + b.y) / 2,
+                };
+                MapView.setZoomIndex(pinchBaseIndex + steps, focus);
+                const after = MapView.getState().zoomIndex;
+                if (after !== before || after !== pinchBaseIndex) {
+                    pinchBaseIndex = after;
+                    pinchStartDist = dist;
+                }
+            }
+        }
+        const midX = (a.x + b.x) / 2;
+        const midY = (a.y + b.y) / 2;
+        applyPanPixels(midX - lastMidX, midY - lastMidY);
+        lastMidX = midX;
+        lastMidY = midY;
+    }
+
+    function preventBrowserGesture(e) {
+        if (e.touches && e.touches.length >= 2) {
+            e.preventDefault();
+        }
+    }
+
+    function onWheel(e) {
+        if (!active || inspectUiOpen()) {
+            return;
+        }
+        e.preventDefault();
+        const now = Date.now();
+        if (now - lastWheelAt < WHEEL_COOLDOWN_MS) {
+            return;
+        }
+        lastWheelAt = now;
+        const focus = { clientX: e.clientX, clientY: e.clientY };
+        if (e.deltaY < 0) {
+            MapView.zoomBy(1, focus);
+        } else if (e.deltaY > 0) {
+            MapView.zoomBy(-1, focus);
+        }
+    }
+
+    function handleWalkMove(e) {
+        const dx = e.clientX - walkLastX;
+        const dy = e.clientY - walkLastY;
+        walkLastY = e.clientY;
+        walkLastX = e.clientX;
+        walkAccX += dx;
+        walkAccY += dy;
+
+        if (!walkActive) {
+            if (Math.hypot(e.clientX - downX, e.clientY - downY) < WALK_THRESHOLD_PX) {
+                return;
+            }
+            walkActive = true;
+            skipInspect = true;
+            const dir = vectorToDir(e.clientX - downX, e.clientY - downY);
+            if (typeof MovementController !== 'undefined' && MovementController.setStickDir) {
+                MovementController.setStickDir(dir);
+            }
+            walkAccX = 0;
+            walkAccY = 0;
+            return;
+        }
+
+        if (Math.hypot(walkAccX, walkAccY) < TURN_THRESHOLD_PX) {
+            return;
+        }
+        const dir = vectorToDir(walkAccX, walkAccY);
+        if (typeof MovementController !== 'undefined' && MovementController.setStickDir) {
+            MovementController.setStickDir(dir);
+        }
+        walkAccX = 0;
+        walkAccY = 0;
+    }
+
+    function handleMousePan(e) {
+        const dx = e.clientX - panLastX;
+        const dy = e.clientY - panLastY;
+        panLastX = e.clientX;
+        panLastY = e.clientY;
+        applyPanPixels(dx, dy);
+        if (panning) {
+            e.preventDefault();
+            skipInspect = true;
+        }
+    }
+
+    function beginOnePointer(e) {
+        pointerId = e.pointerId;
+        pointerType = e.pointerType;
+        downX = e.clientX;
+        downY = e.clientY;
+        panLastX = e.clientX;
+        panLastY = e.clientY;
+        walkLastX = e.clientX;
+        walkLastY = e.clientY;
+        panAccX = 0;
+        panAccY = 0;
+        walkAccX = 0;
+        walkAccY = 0;
+        panning = false;
+        walkActive = false;
+        skipInspect = false;
+        try {
+            paneEl.setPointerCapture(e.pointerId);
+        } catch (err) {
+            /* ignore */
+        }
+    }
+
+    function onPointerDown(e) {
+        if (!active || !paneEl || inspectUiOpen()) {
+            return;
+        }
+        e.preventDefault();
+        activePointers.set(e.pointerId, {
+            x: e.clientX,
+            y: e.clientY,
+            type: e.pointerType,
+        });
+        try {
+            paneEl.setPointerCapture(e.pointerId);
+        } catch (err) {
+            /* ignore */
+        }
+
+        const fingers = fingerEntries();
+        if (fingers.length >= 2) {
+            if (!twoFinger) {
+                beginTwoFinger(fingers);
+            }
+            return;
+        }
+        if (twoFinger || inhibitWalk && isFinger(e.pointerType)) {
+            return;
+        }
+        if (pointerId !== null) {
+            return;
+        }
+        beginOnePointer(e);
+    }
+
+    function onPointerMove(e) {
+        const rec = activePointers.get(e.pointerId);
+        if (rec) {
+            rec.x = e.clientX;
+            rec.y = e.clientY;
+        }
+        if (!active || inspectUiOpen()) {
+            return;
+        }
+        if (twoFinger) {
+            e.preventDefault();
+            handleTwoFingerMove();
+            return;
+        }
         if (e.pointerId !== pointerId) {
             return;
         }
-        const wasPanning = panning;
-        const upX = e.clientX;
-        const upY = e.clientY;
-        const allowInspect = e.type !== 'lostpointercapture' && e.type !== 'pointercancel';
-        endPan();
+        if (isFinger(pointerType)) {
+            e.preventDefault();
+            handleWalkMove(e);
+        } else {
+            handleMousePan(e);
+        }
+    }
 
-        if (inspectUiOpen()) {
+    function finishOnePointer(e) {
+        if (e.pointerId !== pointerId) {
             return;
         }
-        // Short tap (not a drag): try inspect before any future map tap-to-move
-        if (!wasPanning && allowInspect && typeof MapInspect !== 'undefined' && MapInspect.tryInspectAt) {
+        const wasWalk = walkActive;
+        const wasPan = panning;
+        const type = pointerType;
+        const upX = e.clientX;
+        const upY = e.clientY;
+        const startX = downX;
+        const startY = downY;
+        const allowInspect = e.type !== 'lostpointercapture' && e.type !== 'pointercancel';
+        const flickDx = upX - startX;
+        const flickDy = upY - startY;
+        const flickDist = Math.hypot(flickDx, flickDy);
+
+        stopWalkStick();
+        resetPointerState();
+
+        if (inspectUiOpen() || twoFinger) {
+            return;
+        }
+
+        if (!wasWalk && !wasPan && allowInspect && isFinger(type)
+                && flickDist >= WALK_THRESHOLD_PX) {
+            const dir = vectorToDir(flickDx, flickDy);
+            if (dir && typeof MovementController !== 'undefined' && MovementController.pressDir) {
+                MovementController.pressDir(dir);
+                MovementController.releaseDir(dir);
+            }
+            return;
+        }
+
+        if (!wasWalk && !wasPan && allowInspect && !skipInspect
+                && typeof MapInspect !== 'undefined' && MapInspect.tryInspectAt) {
             MapInspect.tryInspectAt(upX, upY);
         }
+    }
+
+    function onPointerUp(e) {
+        activePointers.delete(e.pointerId);
+        if (twoFingerIds && (e.pointerId === twoFingerIds[0] || e.pointerId === twoFingerIds[1])) {
+            endTwoFinger();
+        }
+        if (activePointers.size === 0) {
+            inhibitWalk = false;
+        }
+        finishOnePointer(e);
     }
 
     function init(options) {
@@ -201,10 +408,8 @@ const MapGestures = (function () {
         }
         active = true;
         paneEl.style.touchAction = 'none';
-        paneEl.addEventListener('touchstart', onTouchStart, { passive: false });
-        paneEl.addEventListener('touchmove', onTouchMove, { passive: false });
-        paneEl.addEventListener('touchend', onTouchEnd, { passive: true });
-        paneEl.addEventListener('touchcancel', onTouchEnd, { passive: true });
+        paneEl.addEventListener('touchstart', preventBrowserGesture, { passive: false });
+        paneEl.addEventListener('touchmove', preventBrowserGesture, { passive: false });
         paneEl.addEventListener('wheel', onWheel, { passive: false });
         paneEl.addEventListener('pointerdown', onPointerDown);
         paneEl.addEventListener('pointermove', onPointerMove, { passive: false });
@@ -215,14 +420,16 @@ const MapGestures = (function () {
 
     function destroy() {
         active = false;
-        endPan();
+        stopWalkStick();
+        resetPointerState();
+        endTwoFinger();
+        inhibitWalk = false;
+        activePointers.clear();
         if (!paneEl) {
             return;
         }
-        paneEl.removeEventListener('touchstart', onTouchStart);
-        paneEl.removeEventListener('touchmove', onTouchMove);
-        paneEl.removeEventListener('touchend', onTouchEnd);
-        paneEl.removeEventListener('touchcancel', onTouchEnd);
+        paneEl.removeEventListener('touchstart', preventBrowserGesture);
+        paneEl.removeEventListener('touchmove', preventBrowserGesture);
         paneEl.removeEventListener('wheel', onWheel);
         paneEl.removeEventListener('pointerdown', onPointerDown);
         paneEl.removeEventListener('pointermove', onPointerMove);

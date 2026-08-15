@@ -22,6 +22,8 @@ const MovementController = (function () {
 
     /** Most-recently-pressed held direction is last. */
     const heldDirs = [];
+    /** Exclusive map-swipe direction (not mixed with pad/keyboard holds). */
+    let stickDir = null;
     let holdRafId = null;
     let nextEmitAt = 0;
     let bound = false;
@@ -208,6 +210,29 @@ const MovementController = (function () {
 
     function clearHeld() {
         heldDirs.length = 0;
+        stickDir = null;
+    }
+
+    /**
+     * Exclusive virtual-stick direction for map swipe.
+     * Passing the same dir is a no-op (avoids re-emitting every pointermove).
+     */
+    function setStickDir(dir) {
+        if (!dir || !DIR_DELTA[dir]) {
+            if (stickDir) {
+                releaseDir(stickDir);
+                stickDir = null;
+            }
+            return;
+        }
+        if (dir === stickDir) {
+            return;
+        }
+        if (stickDir) {
+            releaseDir(stickDir);
+        }
+        stickDir = dir;
+        pressDir(dir);
     }
 
     function bind() {
@@ -279,6 +304,7 @@ const MovementController = (function () {
         bind: bind,
         pressDir: pressDir,
         releaseDir: releaseDir,
+        setStickDir: setStickDir,
         clearHeld: clearHeld,
         currentDir: currentDir,
     };
