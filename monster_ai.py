@@ -1,4 +1,4 @@
-"""Modular monster movement timing, decision-making, and execution.
+"""Modular monster decision-making and execution.
 
 Separation:
   Detection → Memory → Intention → Tile selection → Execution / combat
@@ -16,11 +16,7 @@ from visibility import compute_fov
 
 # --- Config (centralized balancing) -----------------------------------------
 
-MONSTER_AI_TICK_SECONDS = 0.1
 MONSTER_AI_DEBUG = False
-# When False, overworld monsters only act via run_monster_round_for_level
-# (player-action turn system). Realtime loop is not started.
-MONSTER_AI_REALTIME = False
 
 # Aggression anchors: aggression -> (toward%, neutral%, away%)
 # Rows for integer 0..10; decimals lerp between floor and ceil.
@@ -52,31 +48,6 @@ def stay_still_chance(activeness):
     """Activeness 0 → 100% stay still; 10 → 0%. Configurable linear formula."""
     a = max(0.0, min(10.0, float(activeness)))
     return 1.0 - (a / 10.0)
-
-
-def get_movement_interval(speed):
-    """
-    Seconds between movement opportunities.
-
-    Speed 0.0 → None (never moves via AI).
-    Speed 1.0 → ~10.0 s
-    Speed 10.0 → ~1/3 s
-    In between: exponential interpolate
-        t = (speed - 1) / 9
-        interval = 10.0 * ((1/3) / 10.0) ** t
-    Values between 0 and 1 scale from "very slow" toward 10s at 1.0.
-    """
-    s = float(speed)
-    if s <= 0:
-        return None
-    if s >= 10.0:
-        return 1.0 / 3.0
-    if s <= 1.0:
-        # Between 0+ and 1: stretch so 1.0 is exactly 10s; approach large as s→0
-        # Use 10 / s so speed 0.5 → 20s, speed 1 → 10s
-        return 10.0 / s
-    t = (s - 1.0) / 9.0
-    return 10.0 * ((1.0 / 3.0) / 10.0) ** t
 
 
 def aggression_probabilities(aggression):
@@ -324,7 +295,6 @@ def process_monster_opportunity(game_state, level_number, monster, combat_system
         return False
 
     if monster.speed <= 0:
-        monster.next_move_at = None
         monster.last_fail_reason = 'speed_zero'
         return False
 
@@ -347,7 +317,6 @@ def process_monster_opportunity(game_state, level_number, monster, combat_system
     if intention in (Intention.IDLE, Intention.NEUTRAL):
         if rng.random() < stay_still_chance(monster.activeness):
             monster.last_fail_reason = 'stay_still'
-            _reschedule(monster, now)
             _debug_log(monster, focus, currently_visible, now)
             return False
         dest = select_random_direction_tile(
@@ -355,7 +324,6 @@ def process_monster_opportunity(game_state, level_number, monster, combat_system
         )
         if dest is None:
             monster.last_fail_reason = 'no_valid_random_dir'
-            _reschedule(monster, now)
             _debug_log(monster, focus, currently_visible, now)
             return False
     elif intention == Intention.TOWARD_TARGET:
@@ -364,7 +332,6 @@ def process_monster_opportunity(game_state, level_number, monster, combat_system
         )
         if dest is None:
             monster.last_fail_reason = 'no_toward_tile'
-            _reschedule(monster, now)
             _debug_log(monster, focus, currently_visible, now)
             return False
     elif intention == Intention.AWAY_FROM_TARGET:
@@ -373,7 +340,6 @@ def process_monster_opportunity(game_state, level_number, monster, combat_system
         )
         if dest is None:
             monster.last_fail_reason = 'no_away_tile'
-            _reschedule(monster, now)
             _debug_log(monster, focus, currently_visible, now)
             return False
 
@@ -388,7 +354,6 @@ def process_monster_opportunity(game_state, level_number, monster, combat_system
             monster.last_fail_reason = 'initiated_combat'
         else:
             monster.last_fail_reason = 'player_tile_no_combat'
-        _reschedule(monster, now)
         _debug_log(monster, focus, currently_visible, now)
         return changed
 
@@ -398,14 +363,8 @@ def process_monster_opportunity(game_state, level_number, monster, combat_system
     else:
         monster.last_fail_reason = 'move_failed'
 
-    _reschedule(monster, now)
     _debug_log(monster, focus, currently_visible, now)
     return changed
-
-
-def _reschedule(monster, now):
-    interval = get_movement_interval(monster.speed)
-    monster.schedule_next_move(interval, now=now)
 
 
 def _debug_log(monster, focus, currently_visible, now):
@@ -417,7 +376,7 @@ def _debug_log(monster, focus, currently_visible, now):
         f"sight={monster.sight_range} intent={monster.last_intention} "
         f"focus={focus} visible={currently_visible} mem_pid={monster.memory_player_id} "
         f"mem_pos={monster.memory_pos} dest={monster.last_chosen_dest} "
-        f"fail={monster.last_fail_reason} next={monster.next_move_at}"
+        f"fail={monster.last_fail_reason}"
     )
 
 
@@ -427,7 +386,7 @@ def run_monster_round_for_level(
     """
     One discrete monster/world round on a single dungeon level.
 
-    Every non-combat monster gets one process_monster_opportunity (ignores next_move_at).
+    Every non-combat monster gets one process_monster_opportunity.
     Set broadcast=False when the caller will emit game_state once afterward.
     """
     now = now if now is not None else time.monotonic()
@@ -445,43 +404,3 @@ def run_monster_round_for_level(
     if broadcast and socketio is not None:
         game_state.broadcast_active_players(socketio)
     return changed
-
-
-def run_monster_ai_tick(game_state, combat_system, socketio, now=None):
-    """Process all due monsters on levels that have players. Broadcast if changed."""
-    now = now if now is not None else time.monotonic()
-    levels_changed = set()
-
-    # Levels with at least one player body
-    occupied_levels = set()
-    for player in game_state.players.values():
-        occupied_levels.add(player.dungeon_level)
-
-    for level_number in occupied_levels:
-        game_map, monsters = game_state.ensure_level(level_number)
-        # Snapshot list — dict may mutate during moves
-        for monster in list(monsters.values()):
-            if monster.in_combat:
-                continue
-            if monster.speed <= 0 or monster.next_move_at is None:
-                continue
-            if monster.next_move_at > now:
-                continue
-            # At most one opportunity per tick (anti-burst)
-            if process_monster_opportunity(
-                game_state, level_number, monster, combat_system, now=now
-            ):
-                levels_changed.add(level_number)
-
-    if levels_changed and socketio is not None:
-        game_state.broadcast_active_players(socketio)
-
-
-def monster_ai_loop(socketio, game_state, combat_system):
-    """Background loop — started once via socketio.start_background_task."""
-    while True:
-        socketio.sleep(MONSTER_AI_TICK_SECONDS)
-        try:
-            run_monster_ai_tick(game_state, combat_system, socketio)
-        except Exception as exc:
-            print(f"[monster_ai] tick error: {exc}")

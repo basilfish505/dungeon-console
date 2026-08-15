@@ -824,9 +824,6 @@ class CombatSystem:
         
         # Clear monster's combat flag
         monster.in_combat = False
-        # Resume AI timing after combat
-        from monster_ai import get_movement_interval
-        monster.schedule_next_move(get_movement_interval(monster.speed))
         
         # Main dialogue: slay line only
         self.game_state.add_player_message(

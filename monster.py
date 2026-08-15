@@ -1,6 +1,5 @@
 """Generic monster instance — species data lives in monster_types."""
 
-import time
 import uuid
 
 from character_stats import ATTRIBUTE_KEYS, attributes_for_inspect
@@ -76,11 +75,6 @@ class Monster:
         self.activeness = _clamp_stat(activeness)
         self.sight_range = max(0, int(round(float(sight_range))))
 
-        # Movement timing (monotonic clock); None means never schedule
-        self.next_move_at = None
-        if self.speed > 0:
-            self.next_move_at = time.monotonic()
-
         # Player memory (last seen player on this level; live position, no timer)
         self.memory_player_id = None
         self.memory_pos = None  # [y, x]
@@ -105,15 +99,6 @@ class Monster:
     def clear_memory(self):
         self.memory_player_id = None
         self.memory_pos = None
-
-    def schedule_next_move(self, interval, now=None):
-        """Set next_move_at from now + interval; clear if interval is None."""
-        if interval is None or self.speed <= 0:
-            self.next_move_at = None
-            return
-        if now is None:
-            now = time.monotonic()
-        self.next_move_at = now + interval
 
     def move(self, direction):
         """Return proposed position for a cardinal wasd key (player-compatible)."""

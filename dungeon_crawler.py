@@ -25,7 +25,7 @@ from visibility import (
     update_explored,
     remembered_terrain,
 )
-from monster_ai import monster_ai_loop, is_terrain_passable, MONSTER_AI_REALTIME
+from monster_ai import is_terrain_passable
 from level_turns import register_player_turn_action
 from collections import deque
 
@@ -604,23 +604,6 @@ class GameState:
 game_state = GameState()
 combat_system = CombatSystem(game_state, socketio)
 
-# Monster AI must start after the Socket.IO server is up. Spawning at import
-# works with socketio.run() locally but often never schedules under gunicorn
-# (Render). Start once on the first connect instead.
-_monster_ai_started = False
-
-
-def ensure_monster_ai_started():
-    """Idempotent: launch monster_ai_loop when realtime mode is enabled."""
-    global _monster_ai_started
-    if _monster_ai_started:
-        return
-    _monster_ai_started = True
-    if not MONSTER_AI_REALTIME:
-        print("[monster_ai] realtime loop disabled (per-level turn rounds)")
-        return
-    socketio.start_background_task(monster_ai_loop, socketio, game_state, combat_system)
-    print("[monster_ai] background loop started")
 
 class GameStateDisplay:
     def __init__(self, game_state):
@@ -640,7 +623,6 @@ def home():
 @socketio.on('connect')
 def handle_connect():
     """Resume an existing session if possible; otherwise send spectator map."""
-    ensure_monster_ai_started()
     emit('server_hello', {'boot_id': SERVER_BOOT_ID})
     player_id = session.get('player_id')
     if player_id and player_id in game_state.players:

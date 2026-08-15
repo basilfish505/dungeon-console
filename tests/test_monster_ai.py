@@ -8,7 +8,6 @@ from collections import Counter
 from monster import Monster, EIGHT_DIRECTIONS
 from monster_ai import (
     stay_still_chance,
-    get_movement_interval,
     aggression_probabilities,
     sample_aggression_intention,
     Intention,
@@ -31,23 +30,6 @@ class FormulaTests(unittest.TestCase):
         self.assertAlmostEqual(stay_still_chance(10.0), 0.0)
         self.assertAlmostEqual(stay_still_chance(2.5), 0.75)
         self.assertAlmostEqual(stay_still_chance(7.5), 0.25)
-
-    def test_movement_interval_endpoints(self):
-        self.assertIsNone(get_movement_interval(0.0))
-        self.assertAlmostEqual(get_movement_interval(1.0), 10.0, places=5)
-        self.assertAlmostEqual(get_movement_interval(10.0), 1.0 / 3.0, places=5)
-        # Smooth / monotonic decrease from 1 to 10
-        prev = get_movement_interval(1.0)
-        for s in (3.0, 5.0, 5.5, 7.0, 10.0):
-            cur = get_movement_interval(s)
-            self.assertIsNotNone(cur)
-            self.assertLess(cur, prev)
-            prev = cur
-
-    def test_decimal_speed(self):
-        a = get_movement_interval(5.0)
-        b = get_movement_interval(5.5)
-        self.assertLess(b, a)
 
     def test_aggression_anchors(self):
         self.assertEqual(aggression_probabilities(0), (0.0, 0.0, 1.0))
@@ -215,7 +197,6 @@ class SpeedZeroTests(unittest.TestCase):
                 raise AssertionError('should not move')
 
         mon = Monster.from_type('troll', [2, 2], monster_id='s', speed=0.0, activeness=10.0)
-        self.assertIsNone(mon.next_move_at)
         gs = FakeGS()
         gs.monster = mon
         changed = process_monster_opportunity(gs, 1, mon, None, now=time.monotonic())

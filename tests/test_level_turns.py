@@ -158,7 +158,7 @@ class LevelTurnsTests(unittest.TestCase):
 
 
 class MonsterRoundApiTests(unittest.TestCase):
-    def test_run_monster_round_ignores_next_move_at(self):
+    def test_run_monster_round_processes_each_monster(self):
         from monster import Monster
         from monster_ai import run_monster_round_for_level, process_monster_opportunity
 
@@ -185,7 +185,6 @@ class MonsterRoundApiTests(unittest.TestCase):
 
         gs = GS()
         m = Monster.from_type('troll', [1, 1], monster_id='m1', speed=5.0)
-        m.next_move_at = 1e18  # far in the future — realtime tick would skip
         gs.levels[0][1][(1, 1)] = m
 
         with patch('monster_ai.process_monster_opportunity', wraps=process_monster_opportunity) as opp:
