@@ -228,10 +228,11 @@ const MapRenderer = (function () {
         const th = Math.max(1, state.tileH);
         const fog = state.lastFog;
         const entities = state.lastEntities || [];
-        const sliceY = state.cameraY | 0;
-        const sliceX = state.cameraX | 0;
-        const drawCamY = Number.isFinite(state.drawCamY) ? state.drawCamY : sliceY;
-        const drawCamX = Number.isFinite(state.drawCamX) ? state.drawCamX : sliceX;
+        const sliceY = Number.isFinite(state.mapOriginY) ? (state.mapOriginY | 0) : (state.cameraY | 0);
+        const sliceX = Number.isFinite(state.mapOriginX) ? (state.mapOriginX | 0) : (state.cameraX | 0);
+        // Paint the slice we have. Scrolling drawCam off this origin leaves a black strip.
+        const drawCamY = sliceY;
+        const drawCamX = sliceX;
         const fontPx = Math.max(1, Math.floor(th));
         const overlayActors = useGraphics && typeof PlayerPresentation !== 'undefined';
 

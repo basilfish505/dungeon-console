@@ -20,6 +20,9 @@ const MapView = (function () {
         cameraX: 0,
         drawCamY: 0,
         drawCamX: 0,
+        // Origin of lastMap/lastFog (must match the slice, or the leading edge is empty/black)
+        mapOriginY: 0,
+        mapOriginX: 0,
         playerId: '',
         paneW: 0,
         paneH: 0,
@@ -115,8 +118,8 @@ const MapView = (function () {
     }
 
     function snapDrawCam() {
-        state.drawCamY = state.cameraY;
-        state.drawCamX = state.cameraX;
+        state.drawCamY = state.mapOriginY;
+        state.drawCamX = state.mapOriginX;
         drawCamReady = true;
     }
 
@@ -166,15 +169,16 @@ const MapView = (function () {
     function updateDrawCam() {
         if (!localPlayerMoving()) {
             followSuspended = false;
+        }
+        // Never scroll the draw camera off the current slice — that paints black
+        // at the leading edge until the next game_state map arrives.
+        if (followSuspended || pendingPanSnap) {
             if (!drawCamReady) {
                 snapDrawCam();
             }
             return;
         }
-        if (followSuspended || pendingPanSnap) {
-            return;
-        }
-        followDrawCam();
+        snapDrawCam();
     }
 
     function updateCameraForPlayer() {
@@ -367,13 +371,19 @@ const MapView = (function () {
         if (data.camera) {
             state.cameraY = data.camera.y | 0;
             state.cameraX = data.camera.x | 0;
-            if (opts.snapPlayer || opts.snapDrawCam || pendingPanSnap || !drawCamReady) {
-                snapDrawCam();
-                if (pendingPanSnap || opts.snapPlayer || opts.snapDrawCam) {
-                    followSuspended = true;
-                }
+            if (data.map) {
+                state.mapOriginY = state.cameraY;
+                state.mapOriginX = state.cameraX;
+            }
+            snapDrawCam();
+            if (pendingPanSnap || opts.snapPlayer || opts.snapDrawCam) {
+                followSuspended = true;
                 pendingPanSnap = false;
             }
+        } else if (data.map) {
+            state.mapOriginY = state.cameraY;
+            state.mapOriginX = state.cameraX;
+            snapDrawCam();
         }
         if (data.viewport) {
             if (data.viewport.h) state.visibleRows = data.viewport.h | 0;
@@ -402,9 +412,12 @@ const MapView = (function () {
                 PlayerPresentation.snapTo(data.player.id, data.player.pos[0], data.player.pos[1]);
             }
             if (PlayerPresentation.sync) {
-                const camY = data.camera ? (data.camera.y | 0) : state.cameraY;
-                const camX = data.camera ? (data.camera.x | 0) : state.cameraX;
-                PlayerPresentation.sync(state.lastEntities || [], camY, camX, data.player || null);
+                PlayerPresentation.sync(
+                    state.lastEntities || [],
+                    state.mapOriginY,
+                    state.mapOriginX,
+                    data.player || null
+                );
             }
         }
     }
