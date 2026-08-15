@@ -73,6 +73,71 @@ const MovementController = (function () {
         return el && el.value ? el.value : '';
     }
 
+    function viewportChar(y, x) {
+        if (typeof MapView === 'undefined' || !MapView.getState) {
+            return null;
+        }
+        const st = MapView.getState();
+        const map = st.lastMap;
+        if (!map || !map.length) {
+            return null;
+        }
+        const vy = y - (st.cameraY | 0);
+        const vx = x - (st.cameraX | 0);
+        if (vy < 0 || vx < 0 || vy >= map.length) {
+            return null;
+        }
+        const row = map[vy];
+        if (!row || vx >= row.length) {
+            return null;
+        }
+        return row[vx];
+    }
+
+    function isOpenFloor(ch) {
+        return ch != null && ch !== '#' && ch !== ' ' && ch !== '&' && ch !== '@'
+            && ch !== '\u2191' && ch !== '\u2193';
+    }
+
+    function canPredictStep(fromY, fromX, toY, toX) {
+        if (!isOpenFloor(viewportChar(toY, toX))) {
+            return false;
+        }
+        const dy = toY - fromY;
+        const dx = toX - fromX;
+        if (dy !== 0 && dx !== 0) {
+            if (!isOpenFloor(viewportChar(fromY + dy, fromX))
+                || !isOpenFloor(viewportChar(fromY, fromX + dx))) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    function predictStep(direction) {
+        const delta = DIR_DELTA[direction];
+        if (!delta || typeof PlayerPresentation === 'undefined'
+            || !PlayerPresentation.predictLocalStep) {
+            return;
+        }
+        const id = localPlayerId();
+        if (!id) {
+            return;
+        }
+        const tile = PlayerPresentation.tilePos ? PlayerPresentation.tilePos(id) : null;
+        if (!tile) {
+            return;
+        }
+        const fromY = tile.y;
+        const fromX = tile.x;
+        const toY = fromY + delta[0];
+        const toX = fromX + delta[1];
+        if (!canPredictStep(fromY, fromX, toY, toX)) {
+            return;
+        }
+        PlayerPresentation.predictLocalStep(id, delta[0], delta[1]);
+    }
+
     /**
      * @param {boolean} force  true on fresh press (ignore STEP_MS floor)
      */
@@ -102,6 +167,7 @@ const MovementController = (function () {
             return false;
         }
         SocketHandler.sendMove(direction);
+        predictStep(direction);
         nextEmitAt = now + stepMs();
         return true;
     }

@@ -19,6 +19,15 @@ class PlayerMoveTests(unittest.TestCase):
             self.gs.active_combats = {}
             self.gs.manual_pan = {}
 
+    def test_player_messages_capped(self):
+        self.gs.player_messages['hero'] = []
+        for i in range(60):
+            self.gs.add_player_message('hero', str(i))
+        msgs = self.gs.player_messages['hero']
+        self.assertEqual(len(msgs), 50)
+        self.assertEqual(msgs[0], '10')
+        self.assertEqual(msgs[-1], '59')
+
     def test_compass_and_legacy_deltas(self):
         p = Player('hero', [2, 2])
         self.assertEqual(p.move('n'), [1, 2])
