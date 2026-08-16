@@ -2,6 +2,7 @@ import math
 import random
 from collections import deque
 from monster import Monster
+from monster_types.registry import pick_spawn_type_id
 
 # Constants
 MAP_SIZE = 20  # Top-level / viewport footprint
@@ -456,8 +457,9 @@ class MapGenerator:
         for i in range(h):
             for j in range(w):
                 if self.game_map[i][j] == '.' and random.random() < MONSTER_PROBABILITY:
-                    monster_id = f"troll-{i},{j}"
-                    monster = Monster.from_type('troll', [i, j], monster_id=monster_id)
+                    type_id = pick_spawn_type_id()
+                    monster_id = f"{type_id}-{i},{j}"
+                    monster = Monster.from_type(type_id, [i, j], monster_id=monster_id)
                     self.monsters[(i, j)] = monster
                     self.game_map[i][j] = '&'
 

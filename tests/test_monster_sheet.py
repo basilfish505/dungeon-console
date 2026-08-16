@@ -1,0 +1,140 @@
+"""Load monster species from the spreadsheet / CSV."""
+
+import random
+import tempfile
+import unittest
+from pathlib import Path
+
+from monster_types.base import MonsterTypeDef
+from monster_types.registry import MONSTER_TYPES, pick_spawn_type_id, register_monster_type
+from monster_types.sheet import (
+    COLUMNS,
+    load_monster_sheet,
+    parse_ability_ids,
+    row_to_typedef,
+    write_monster_csv,
+)
+
+
+class ParseRowTests(unittest.TestCase):
+    def test_skips_blank_type_id(self):
+        self.assertIsNone(row_to_typedef({'type_id': '', 'name': 'Nope'}))
+        self.assertIsNone(row_to_typedef({}))
+
+    def test_parses_troll_like_row(self):
+        td = row_to_typedef({
+            'type_id': 'goblin',
+            'name': 'Goblin',
+            'description': 'Small and mean.',
+            'base_level': 1,
+            'str': 4,
+            'int': 3,
+            'wis': 2,
+            'chr': 2,
+            'dex': 6,
+            'agi': 7,
+            'base_mhp': 8,
+            'attack_power': 3,
+            'aggression': 8,
+            'speed': 10,
+            'activeness': 7,
+            'sight_range': 12,
+            'ability_ids': 'stab, yell',
+            'spawn_weight': 2,
+        })
+        self.assertEqual(td.id, 'goblin')
+        self.assertEqual(td.name, 'Goblin')
+        self.assertEqual(td.base_attributes['str'], 4)
+        self.assertEqual(td.base_attributes['agi'], 7)
+        self.assertEqual(td.base_mhp, 8)
+        self.assertEqual(td.attack_power, 3)
+        self.assertEqual(td.aggression, 8)
+        self.assertEqual(td.activeness, 7)
+        self.assertEqual(td.sight_range, 12)
+        self.assertEqual(td.ability_ids, ['stab', 'yell'])
+        self.assertEqual(td.spawn_weight, 2.0)
+        self.assertTrue(td.sprite.endswith('/goblin.png'))
+
+    def test_ability_ids_blank(self):
+        self.assertEqual(parse_ability_ids(''), [])
+        self.assertEqual(parse_ability_ids(None), [])
+        self.assertEqual(parse_ability_ids('a, b ,c'), ['a', 'b', 'c'])
+
+
+class CsvLoadTests(unittest.TestCase):
+    def test_csv_registers_multiple_types(self):
+        extra = [{
+            'type_id': 'goblin',
+            'name': 'Goblin',
+            'description': 'Small.',
+            'base_level': 1,
+            'str': 4,
+            'int': 2,
+            'wis': 2,
+            'chr': 2,
+            'dex': 6,
+            'agi': 6,
+            'base_mhp': 8,
+            'attack_power': 3,
+            'aggression': 8,
+            'speed': 10,
+            'activeness': 7,
+            'sight_range': 12,
+            'ability_ids': '',
+            'sprite': '',
+            'portrait': '',
+            'spawn_weight': 2,
+            'spawn_notes': '',
+        }]
+        previous = dict(MONSTER_TYPES)
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                path = Path(tmp) / 'monsters.csv'
+                write_monster_csv(path, extra_rows=extra)
+                loaded = load_monster_sheet(path, register=True)
+            ids = [td.id for td in loaded]
+            self.assertEqual(ids, ['troll', 'goblin'])
+            self.assertEqual(MONSTER_TYPES['goblin'].base_mhp, 8)
+            self.assertEqual(MONSTER_TYPES['goblin'].spawn_weight, 2.0)
+            self.assertEqual(MONSTER_TYPES['troll'].name, 'Troll')
+        finally:
+            MONSTER_TYPES.clear()
+            MONSTER_TYPES.update(previous)
+
+    def test_csv_header_matches_schema(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'monsters.csv'
+            write_monster_csv(path)
+            header = path.read_text(encoding='utf-8').splitlines()[0]
+        self.assertEqual(header.split(','), COLUMNS)
+
+
+class SpawnPickTests(unittest.TestCase):
+    def test_zero_weight_never_chosen(self):
+        previous = dict(MONSTER_TYPES)
+        try:
+            MONSTER_TYPES.clear()
+            register_monster_type(MonsterTypeDef(
+                type_id='a', name='A', spawn_weight=0, base_mhp=1, attack_power=1,
+            ))
+            register_monster_type(MonsterTypeDef(
+                type_id='b', name='B', spawn_weight=5, base_mhp=1, attack_power=1,
+            ))
+            rng = random.Random(0)
+            picks = {pick_spawn_type_id(rng) for _ in range(20)}
+            self.assertEqual(picks, {'b'})
+        finally:
+            MONSTER_TYPES.clear()
+            MONSTER_TYPES.update(previous)
+
+    def test_empty_registry_falls_back_to_troll(self):
+        previous = dict(MONSTER_TYPES)
+        try:
+            MONSTER_TYPES.clear()
+            self.assertEqual(pick_spawn_type_id(), 'troll')
+        finally:
+            MONSTER_TYPES.update(previous)
+
+
+if __name__ == '__main__':
+    unittest.main()

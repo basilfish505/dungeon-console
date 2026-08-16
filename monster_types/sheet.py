@@ -1,0 +1,390 @@
+"""Load and write the monster species spreadsheet.
+
+Fill monster_types.xlsx (Monsters sheet, one row per species), save, and
+restart the server. Rows with a type_id are registered and can spawn.
+"""
+
+from __future__ import annotations
+
+import csv
+from pathlib import Path
+
+from character_stats import ATTRIBUTE_KEYS
+from monster_types.base import MonsterTypeDef
+from monster_types.registry import register_monster_type
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+DEFAULT_XLSX_PATH = PROJECT_ROOT / 'monster_types.xlsx'
+DEFAULT_CSV_PATH = PROJECT_ROOT / 'monster_types.csv'
+
+COLUMNS = [
+    'type_id',
+    'name',
+    'description',
+    'base_level',
+    'str',
+    'int',
+    'wis',
+    'chr',
+    'dex',
+    'agi',
+    'base_mhp',
+    'attack_power',
+    'aggression',
+    'speed',
+    'activeness',
+    'sight_range',
+    'ability_ids',
+    'sprite',
+    'portrait',
+    'spawn_weight',
+    'spawn_notes',
+]
+
+HEADER_COMMENTS = {
+    'type_id': 'Machine id, lowercase, unique (e.g. goblin). Required.',
+    'name': 'Display name shown to players. Required.',
+    'description': 'Inspect / flavor text.',
+    'base_level': 'Starting level (default 1). Level scaling is currently a stub.',
+    'str': 'Strength. Integer.',
+    'int': 'Intelligence. Integer.',
+    'wis': 'Wisdom. Integer.',
+    'chr': 'Charisma. Integer.',
+    'dex': 'Dexterity. Integer.',
+    'agi': 'Agility. Integer.',
+    'base_mhp': 'Max HP at base level. Required.',
+    'attack_power': 'Basic attack damage. Required.',
+    'aggression': '0-10. Low flees, ~5 wanders, high chases. Default 0.',
+    'speed': '0-10. 0 never acts; any value above 0 gets one step per world round.',
+    'activeness': '0-10. Chance to stay still when idle/neutral = 1 - activeness/10.',
+    'sight_range': 'Chebyshev vision distance in tiles. Default 20.',
+    'ability_ids': 'Comma-separated ability ids, or blank. Combat hooks not implemented yet.',
+    'sprite': 'Leave blank for /static/monsters/sprites/{type_id}.png',
+    'portrait': 'Leave blank for /static/monsters/portraits/{type_id}.png',
+    'spawn_weight': 'Relative chance to appear when a monster spawns. 0 = never random-spawn.',
+    'spawn_notes': 'Design notes only; not loaded into the game.',
+}
+
+TROLL_EXAMPLE = {
+    'type_id': 'troll',
+    'name': 'Troll',
+    'description': 'A large, brutish creature that relies on strength and durability.',
+    'base_level': 1,
+    'str': 8,
+    'int': 3,
+    'wis': 3,
+    'chr': 2,
+    'dex': 4,
+    'agi': 4,
+    'base_mhp': 16,
+    'attack_power': 5,
+    'aggression': 0,
+    'speed': 10,
+    'activeness': 5,
+    'sight_range': 20,
+    'ability_ids': '',
+    'sprite': '/static/monsters/sprites/troll.png',
+    'portrait': '/static/monsters/portraits/troll.png',
+    'spawn_weight': 1,
+    'spawn_notes': 'Current default spawn. Add more rows below.',
+}
+
+
+def _blank(value):
+    if value is None:
+        return True
+    if isinstance(value, str) and not value.strip():
+        return True
+    return False
+
+
+def parse_ability_ids(value):
+    if _blank(value):
+        return []
+    return [part.strip() for part in str(value).split(',') if part.strip()]
+
+
+def _int(value, default):
+    if _blank(value):
+        return default
+    return int(float(value))
+
+
+def _float(value, default):
+    if _blank(value):
+        return default
+    return float(value)
+
+
+def _str_or_none(value):
+    if _blank(value):
+        return None
+    return str(value).strip()
+
+
+def row_to_typedef(row):
+    """Build a MonsterTypeDef from a column->value mapping. None if no type_id."""
+    type_id = _str_or_none(row.get('type_id'))
+    if not type_id:
+        return None
+    name = _str_or_none(row.get('name')) or type_id
+    attrs = {key: _int(row.get(key), 1) for key in ATTRIBUTE_KEYS}
+    return MonsterTypeDef(
+        type_id=type_id,
+        name=name,
+        description=_str_or_none(row.get('description')),
+        base_level=_int(row.get('base_level'), 1),
+        base_attributes=attrs,
+        base_mhp=_int(row.get('base_mhp'), 10),
+        attack_power=_int(row.get('attack_power'), 5),
+        aggression=_float(row.get('aggression'), 0),
+        speed=_float(row.get('speed'), 10),
+        activeness=_float(row.get('activeness'), 5),
+        sight_range=_int(row.get('sight_range'), 20),
+        ability_ids=parse_ability_ids(row.get('ability_ids')),
+        sprite=_str_or_none(row.get('sprite')),
+        portrait=_str_or_none(row.get('portrait')),
+        spawn_weight=_float(row.get('spawn_weight'), 1),
+    )
+
+
+def _normalize_header(value):
+    if value is None:
+        return ''
+    return str(value).strip()
+
+
+def iter_csv_rows(path):
+    path = Path(path)
+    with path.open(newline='', encoding='utf-8-sig') as handle:
+        reader = csv.DictReader(handle)
+        for raw in reader:
+            yield {_normalize_header(k): v for k, v in raw.items()}
+
+
+def iter_xlsx_rows(path):
+    from openpyxl import load_workbook
+
+    wb = load_workbook(Path(path), data_only=True, read_only=True)
+    try:
+        ws = wb['Monsters'] if 'Monsters' in wb.sheetnames else wb.active
+        rows = ws.iter_rows(values_only=True)
+        header_row = next(rows, None)
+        if not header_row:
+            return
+        headers = [_normalize_header(h) for h in header_row]
+        for values in rows:
+            yield {
+                headers[i]: values[i] if i < len(values) else None
+                for i in range(len(headers))
+                if headers[i]
+            }
+    finally:
+        wb.close()
+
+
+def typedefs_from_rows(rows):
+    types = []
+    for row in rows:
+        type_def = row_to_typedef(row)
+        if type_def is not None:
+            types.append(type_def)
+    return types
+
+
+def load_monster_sheet(path, register=True):
+    """Load species from .xlsx or .csv. Returns the MonsterTypeDef list."""
+    path = Path(path)
+    if not path.is_file():
+        raise FileNotFoundError(path)
+    suffix = path.suffix.lower()
+    if suffix == '.xlsx':
+        rows = iter_xlsx_rows(path)
+    elif suffix == '.csv':
+        rows = iter_csv_rows(path)
+    else:
+        raise ValueError(f'Unsupported monster sheet type: {path.suffix}')
+    types = typedefs_from_rows(rows)
+    if register:
+        for type_def in types:
+            register_monster_type(type_def)
+    return types
+
+
+def load_default_monster_sheet():
+    """Load project-root monster_types.xlsx (preferred) or .csv if present."""
+    if DEFAULT_XLSX_PATH.is_file():
+        try:
+            return load_monster_sheet(DEFAULT_XLSX_PATH)
+        except ImportError:
+            pass
+        except Exception as exc:
+            print(f'[monster_types] failed to load {DEFAULT_XLSX_PATH}: {exc}')
+    if DEFAULT_CSV_PATH.is_file():
+        try:
+            return load_monster_sheet(DEFAULT_CSV_PATH)
+        except Exception as exc:
+            print(f'[monster_types] failed to load {DEFAULT_CSV_PATH}: {exc}')
+    return []
+
+
+def write_monster_csv(path=None, extra_rows=None):
+    path = Path(path) if path else DEFAULT_CSV_PATH
+    rows = [TROLL_EXAMPLE]
+    if extra_rows:
+        rows.extend(extra_rows)
+    with path.open('w', newline='', encoding='utf-8') as handle:
+        writer = csv.DictWriter(handle, fieldnames=COLUMNS, extrasaction='ignore')
+        writer.writeheader()
+        for row in rows:
+            writer.writerow({col: row.get(col, '') for col in COLUMNS})
+    return path
+
+
+def write_monster_xlsx(path=None, extra_rows=None):
+    """Create the fill-in workbook (Monsters + Instructions + Field reference)."""
+    from openpyxl import Workbook
+    from openpyxl.comments import Comment
+    from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+    from openpyxl.utils import get_column_letter
+
+    path = Path(path) if path else DEFAULT_XLSX_PATH
+    wb = Workbook()
+
+    thin = Border(
+        left=Side(style='thin', color='C4B8A8'),
+        right=Side(style='thin', color='C4B8A8'),
+        top=Side(style='thin', color='C4B8A8'),
+        bottom=Side(style='thin', color='C4B8A8'),
+    )
+    header_fill = PatternFill('solid', fgColor='3D2B1F')
+    header_font = Font(bold=True, color='F4E8D0', name='Calibri', size=11)
+    example_fill = PatternFill('solid', fgColor='E6F4EA')
+    required_fill = PatternFill('solid', fgColor='3D2B1F')
+    wrap = Alignment(wrap_text=True, vertical='center')
+
+    ws = wb.active
+    ws.title = 'Monsters'
+    for col_idx, header in enumerate(COLUMNS, 1):
+        cell = ws.cell(1, col_idx, header)
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = Alignment(horizontal='center', vertical='center')
+        cell.border = thin
+        note = HEADER_COMMENTS.get(header)
+        if note:
+            cell.comment = Comment(note, 'dungeon-console')
+
+    data_rows = [TROLL_EXAMPLE]
+    if extra_rows:
+        data_rows.extend(extra_rows)
+    blank_count = max(0, 40 - len(data_rows))
+
+    for row_idx, row in enumerate(data_rows, 2):
+        for col_idx, header in enumerate(COLUMNS, 1):
+            cell = ws.cell(row_idx, col_idx, row.get(header, ''))
+            cell.border = thin
+            cell.alignment = wrap
+            if row_idx == 2:
+                cell.fill = example_fill
+
+    last_data = 1 + len(data_rows) + blank_count
+    for row_idx in range(2 + len(data_rows), last_data + 1):
+        for col_idx in range(1, len(COLUMNS) + 1):
+            cell = ws.cell(row_idx, col_idx, None)
+            cell.border = thin
+
+    widths = {
+        'type_id': 14,
+        'name': 16,
+        'description': 42,
+        'base_level': 12,
+        'base_mhp': 12,
+        'attack_power': 14,
+        'ability_ids': 18,
+        'sprite': 36,
+        'portrait': 38,
+        'spawn_notes': 36,
+        'spawn_weight': 14,
+        'sight_range': 13,
+        'activeness': 12,
+        'aggression': 12,
+    }
+    for col_idx, header in enumerate(COLUMNS, 1):
+        ws.column_dimensions[get_column_letter(col_idx)].width = widths.get(header, 10)
+
+    ws.freeze_panes = 'A2'
+    ws.auto_filter.ref = f'A1:{get_column_letter(len(COLUMNS))}{last_data}'
+    ws.row_dimensions[1].height = 22
+    ws.sheet_properties.tabColor = '3D2B1F'
+
+    # Instructions
+    ins = wb.create_sheet('Instructions')
+    ins['A1'] = 'How to use'
+    ins['A1'].font = Font(bold=True, size=14, color='3D2B1F')
+    instructions = [
+        '',
+        '1. Fill one row per monster on the Monsters sheet (row 2 is the existing troll as an example).',
+        '2. Required: type_id. Also fill name, description, the six attributes, base_mhp, and attack_power.',
+        '3. Leave sprite/portrait blank to use default paths under static/monsters/.',
+        '4. ability_ids: comma-separated list or blank. Abilities are data-only until combat hooks exist.',
+        '5. spawn_weight: relative chance to appear. 0 means the species is registered but never random-spawned.',
+        '6. spawn_notes is for your own comments and is not loaded.',
+        '7. Save this workbook, then restart the game. All rows with a type_id are imported together.',
+        '',
+        'AI field quick guide',
+        'aggression 0-10: low flees, ~5 wanders, high chases.',
+        'speed 0-10: 0 never gets a movement opportunity; any value above 0 acts once per world round.',
+        'activeness 0-10: higher = less likely to stand still when idle or wandering.',
+        'sight_range: Chebyshev vision distance in tiles.',
+        '',
+        'Art files',
+        'Put PNG files at static/monsters/sprites/{type_id}.png and static/monsters/portraits/{type_id}.png,',
+        'or set sprite/portrait to a custom path.',
+    ]
+    for idx, line in enumerate(instructions, 2):
+        ins[f'A{idx}'] = line
+        ins[f'A{idx}'].alignment = Alignment(wrap_text=True)
+        if line in ('AI field quick guide', 'Art files'):
+            ins[f'A{idx}'].font = Font(bold=True, size=12, color='3D2B1F')
+    ins.column_dimensions['A'].width = 110
+
+    # Field reference
+    ref = wb.create_sheet('Field reference')
+    ref_headers = ('column', 'required', 'type', 'notes')
+    for col_idx, header in enumerate(ref_headers, 1):
+        cell = ref.cell(1, col_idx, header)
+        cell.fill = required_fill
+        cell.font = header_font
+        cell.border = thin
+    fields = [
+        ('type_id', 'yes', 'string', 'Unique machine id'),
+        ('name', 'yes', 'string', 'Display name'),
+        ('description', 'no', 'string', 'Inspect text'),
+        ('base_level', 'no', 'int', 'Default 1'),
+        ('str/int/wis/chr/dex/agi', 'yes', 'int', 'Base attributes (missing keys become 1)'),
+        ('base_mhp', 'yes', 'int', 'Max HP'),
+        ('attack_power', 'yes', 'int', 'Basic attack'),
+        ('aggression', 'no', '0-10 float', 'Default 0'),
+        ('speed', 'no', '0-10 float', 'Default 10. Only 0 vs >0 matters today'),
+        ('activeness', 'no', '0-10 float', 'Default 5'),
+        ('sight_range', 'no', 'int', 'Default 20'),
+        ('ability_ids', 'no', 'csv string', 'Blank = none'),
+        ('sprite', 'no', 'url path', 'Blank = /static/monsters/sprites/{type_id}.png'),
+        ('portrait', 'no', 'url path', 'Blank = /static/monsters/portraits/{type_id}.png'),
+        ('spawn_weight', 'no', 'float', 'Default 1. 0 = do not random-spawn'),
+        ('spawn_notes', 'no', 'text', 'Ignored on import'),
+    ]
+    for row_idx, values in enumerate(fields, 2):
+        for col_idx, value in enumerate(values, 1):
+            cell = ref.cell(row_idx, col_idx, value)
+            cell.border = thin
+            cell.alignment = wrap
+    ref.column_dimensions['A'].width = 28
+    ref.column_dimensions['B'].width = 12
+    ref.column_dimensions['C'].width = 16
+    ref.column_dimensions['D'].width = 52
+    ref.freeze_panes = 'A2'
+
+    wb.save(path)
+    return path
