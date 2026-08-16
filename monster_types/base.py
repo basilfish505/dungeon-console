@@ -38,6 +38,7 @@ class MonsterTypeDef:
         activeness=5,
         sight_range=20,
         attack_power=5,
+        spawn_weight=1,
     ):
         self.id = str(type_id)
         self.name = str(name)
@@ -56,6 +57,12 @@ class MonsterTypeDef:
         self.activeness = activeness
         self.sight_range = sight_range
         self.attack_power = attack_power
+        try:
+            self.spawn_weight = float(spawn_weight)
+        except (TypeError, ValueError):
+            self.spawn_weight = 1.0
+        if self.spawn_weight < 0:
+            self.spawn_weight = 0.0
 
     def stats_for_level(self, level=None):
         """Return (attributes_dict, mhp) for the given level."""
