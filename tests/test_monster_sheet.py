@@ -1,9 +1,11 @@
-"""Load monster species from the spreadsheet / CSV."""
+"""Load monster species from the xlsx spreadsheet."""
 
 import random
 import tempfile
 import unittest
 from pathlib import Path
+
+from openpyxl import load_workbook
 
 from monster_types.base import MonsterTypeDef
 from monster_types.registry import MONSTER_TYPES, pick_spawn_type_id, register_monster_type
@@ -12,7 +14,7 @@ from monster_types.sheet import (
     load_monster_sheet,
     parse_ability_ids,
     row_to_typedef,
-    write_monster_csv,
+    write_monster_xlsx,
 )
 
 
@@ -61,8 +63,8 @@ class ParseRowTests(unittest.TestCase):
         self.assertEqual(parse_ability_ids('a, b ,c'), ['a', 'b', 'c'])
 
 
-class CsvLoadTests(unittest.TestCase):
-    def test_csv_registers_multiple_types(self):
+class XlsxLoadTests(unittest.TestCase):
+    def test_xlsx_registers_multiple_types(self):
         extra = [{
             'type_id': 'goblin',
             'name': 'Goblin',
@@ -89,8 +91,8 @@ class CsvLoadTests(unittest.TestCase):
         previous = dict(MONSTER_TYPES)
         try:
             with tempfile.TemporaryDirectory() as tmp:
-                path = Path(tmp) / 'monsters.csv'
-                write_monster_csv(path, extra_rows=extra)
+                path = Path(tmp) / 'monsters.xlsx'
+                write_monster_xlsx(path, extra_rows=extra)
                 loaded = load_monster_sheet(path, register=True)
             ids = [td.id for td in loaded]
             self.assertEqual(ids, ['troll', 'goblin'])
@@ -101,12 +103,24 @@ class CsvLoadTests(unittest.TestCase):
             MONSTER_TYPES.clear()
             MONSTER_TYPES.update(previous)
 
-    def test_csv_header_matches_schema(self):
+    def test_xlsx_header_matches_schema(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'monsters.xlsx'
+            write_monster_xlsx(path)
+            wb = load_workbook(path, read_only=True)
+            try:
+                ws = wb['Monsters']
+                header = [cell.value for cell in next(ws.iter_rows(min_row=1, max_row=1))]
+            finally:
+                wb.close()
+        self.assertEqual(header, COLUMNS)
+
+    def test_rejects_non_xlsx(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / 'monsters.csv'
-            write_monster_csv(path)
-            header = path.read_text(encoding='utf-8').splitlines()[0]
-        self.assertEqual(header.split(','), COLUMNS)
+            path.write_text('type_id,name\n', encoding='utf-8')
+            with self.assertRaises(ValueError):
+                load_monster_sheet(path, register=False)
 
 
 class SpawnPickTests(unittest.TestCase):

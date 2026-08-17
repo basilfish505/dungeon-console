@@ -11,7 +11,7 @@ from monster_types.registry import (
 # Register built-in species
 import monster_types.troll  # noqa: F401
 
-# Spreadsheet rows override / add species (monster_types.xlsx or .csv)
+# Spreadsheet rows override / add species (monster_types.xlsx)
 from monster_types.sheet import load_default_monster_sheet
 
 load_default_monster_sheet()

@@ -6,7 +6,6 @@ restart the server. Rows with a type_id are registered and can spawn.
 
 from __future__ import annotations
 
-import csv
 from pathlib import Path
 
 from character_stats import ATTRIBUTE_KEYS
@@ -15,7 +14,6 @@ from monster_types.registry import register_monster_type
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_XLSX_PATH = PROJECT_ROOT / 'monster_types.xlsx'
-DEFAULT_CSV_PATH = PROJECT_ROOT / 'monster_types.csv'
 
 COLUMNS = [
     'type_id',
@@ -154,14 +152,6 @@ def _normalize_header(value):
     return str(value).strip()
 
 
-def iter_csv_rows(path):
-    path = Path(path)
-    with path.open(newline='', encoding='utf-8-sig') as handle:
-        reader = csv.DictReader(handle)
-        for raw in reader:
-            yield {_normalize_header(k): v for k, v in raw.items()}
-
-
 def iter_xlsx_rows(path):
     from openpyxl import load_workbook
 
@@ -193,18 +183,13 @@ def typedefs_from_rows(rows):
 
 
 def load_monster_sheet(path, register=True):
-    """Load species from .xlsx or .csv. Returns the MonsterTypeDef list."""
+    """Load species from a .xlsx workbook. Returns the MonsterTypeDef list."""
     path = Path(path)
     if not path.is_file():
         raise FileNotFoundError(path)
-    suffix = path.suffix.lower()
-    if suffix == '.xlsx':
-        rows = iter_xlsx_rows(path)
-    elif suffix == '.csv':
-        rows = iter_csv_rows(path)
-    else:
-        raise ValueError(f'Unsupported monster sheet type: {path.suffix}')
-    types = typedefs_from_rows(rows)
+    if path.suffix.lower() != '.xlsx':
+        raise ValueError(f'Monster sheet must be .xlsx, got: {path.suffix}')
+    types = typedefs_from_rows(iter_xlsx_rows(path))
     if register:
         for type_def in types:
             register_monster_type(type_def)
@@ -212,33 +197,25 @@ def load_monster_sheet(path, register=True):
 
 
 def load_default_monster_sheet():
-    """Load project-root monster_types.xlsx (preferred) or .csv if present."""
-    if DEFAULT_XLSX_PATH.is_file():
-        try:
-            return load_monster_sheet(DEFAULT_XLSX_PATH)
-        except ImportError:
-            pass
-        except Exception as exc:
-            print(f'[monster_types] failed to load {DEFAULT_XLSX_PATH}: {exc}')
-    if DEFAULT_CSV_PATH.is_file():
-        try:
-            return load_monster_sheet(DEFAULT_CSV_PATH)
-        except Exception as exc:
-            print(f'[monster_types] failed to load {DEFAULT_CSV_PATH}: {exc}')
-    return []
-
-
-def write_monster_csv(path=None, extra_rows=None):
-    path = Path(path) if path else DEFAULT_CSV_PATH
-    rows = [TROLL_EXAMPLE]
-    if extra_rows:
-        rows.extend(extra_rows)
-    with path.open('w', newline='', encoding='utf-8') as handle:
-        writer = csv.DictWriter(handle, fieldnames=COLUMNS, extrasaction='ignore')
-        writer.writeheader()
-        for row in rows:
-            writer.writerow({col: row.get(col, '') for col in COLUMNS})
-    return path
+    """Load project-root monster_types.xlsx. Returns [] if missing or unloadable."""
+    if not DEFAULT_XLSX_PATH.is_file():
+        print(
+            f'[monster_types] missing {DEFAULT_XLSX_PATH}; '
+            'only built-in species will spawn'
+        )
+        return []
+    try:
+        return load_monster_sheet(DEFAULT_XLSX_PATH)
+    except ImportError as exc:
+        print(
+            f'[monster_types] cannot load {DEFAULT_XLSX_PATH}: {exc}. '
+            'Install openpyxl in this Python environment '
+            '(pip install openpyxl)'
+        )
+        return []
+    except Exception as exc:
+        print(f'[monster_types] failed to load {DEFAULT_XLSX_PATH}: {exc}')
+        return []
 
 
 def write_monster_xlsx(path=None, extra_rows=None):
