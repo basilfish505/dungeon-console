@@ -41,7 +41,7 @@ class Player:
         self.agi = random.randint(1, 10)
         self.in_combat = False
         # Vision / fog-of-war (dungeon floors only; top level uses TOP_LEVEL_SIGHT_RANGE)
-        self.sight_range = 0
+        self.sight_range = 8
         self.explored = {}  # dungeon_level -> set of (y, x)
         self.visible = set()  # current LOS tiles (y, x)
         self.appearance_id = 'peasant'
