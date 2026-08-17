@@ -9,6 +9,11 @@ const MonsterAssets = (function () {
             portrait: '/static/monsters/portraits/troll.png',
             defaultFacing: 'left',
         },
+        skeleton: {
+            sprite: '/static/monsters/sprites/skeleton.png',
+            portrait: '/static/monsters/portraits/skeleton.png',
+            defaultFacing: 'left',
+        },
     };
 
     /** One footfall; two per 250ms tile. */
