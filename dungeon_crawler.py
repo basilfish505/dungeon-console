@@ -182,7 +182,9 @@ class GameState:
         if not VISIBILITY_SYSTEM_ENABLED:
             return
         game_map, _monsters = self.ensure_level(player.dungeon_level)
-        player.visible = compute_fov(game_map, player.pos, player.sight_range)
+        player.visible = compute_fov(
+            game_map, player.pos, player.effective_sight_range()
+        )
         level = player.dungeon_level
         if level not in player.explored:
             player.explored[level] = set()

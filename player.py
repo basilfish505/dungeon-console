@@ -16,6 +16,9 @@ MOVE_DELTAS = {
     'd': (0, 1),
 }
 
+# Surface / top level always uses this FOV; dungeon floors use Player.sight_range.
+TOP_LEVEL_SIGHT_RANGE = 30
+
 
 class Player:
     def __init__(self, player_id, position):
@@ -37,11 +40,17 @@ class Player:
         self.dex = random.randint(1, 10)
         self.agi = random.randint(1, 10)
         self.in_combat = False
-        # Vision / fog-of-war (per-player; sight_range is dynamic)
-        self.sight_range = 20
+        # Vision / fog-of-war (dungeon floors only; top level uses TOP_LEVEL_SIGHT_RANGE)
+        self.sight_range = 0
         self.explored = {}  # dungeon_level -> set of (y, x)
         self.visible = set()  # current LOS tiles (y, x)
         self.appearance_id = 'peasant'
+
+    def effective_sight_range(self):
+        """FOV radius for the player's current floor."""
+        if self.dungeon_level <= 0:
+            return TOP_LEVEL_SIGHT_RANGE
+        return max(0, int(self.sight_range))
 
     def sprite_url(self):
         return '/static/player/sprites/player_walk1.png'
