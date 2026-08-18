@@ -873,6 +873,21 @@ def handle_use_item(data):
     })
 
 
+@socketio.on('reorder_inventory')
+def handle_reorder_inventory(data):
+    """Server-authoritative pack slot swap / move."""
+    player_id = session.get('player_id')
+    if not player_id:
+        return
+    player = game_state.players.get(player_id)
+    if not player or getattr(player, 'inventory', None) is None:
+        return
+    data = data or {}
+    moved = player.inventory.move(data.get('from_slot'), data.get('to_slot'))
+    if moved:
+        emit('game_state', game_state.get_game_state(player_id), room=player_id)
+
+
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     if os.environ.get('RENDER'):  # Check if we're on Render
