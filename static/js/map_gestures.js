@@ -49,7 +49,13 @@ const MapGestures = (function () {
     let skipInspect = false;
 
     function inspectUiOpen() {
-        return typeof InspectUI !== 'undefined' && InspectUI.isOpen();
+        if (typeof InspectUI !== 'undefined' && InspectUI.isOpen()) {
+            return true;
+        }
+        if (typeof InventoryUI !== 'undefined' && InventoryUI.isOpen()) {
+            return true;
+        }
+        return false;
     }
 
     function isFinger(type) {

@@ -76,7 +76,7 @@
         <div class="mobile-btn" data-direction="n" aria-label="North">↑</div>
         <div class="mobile-btn" data-direction="ne" aria-label="Northeast">↗</div>
         <div class="mobile-btn" data-direction="west" aria-label="West">←</div>
-        <button type="button" id="pad-center-btn" class="mobile-btn mobile-btn-center" aria-label="Action"></button>
+        <button type="button" id="pad-center-btn" class="mobile-btn mobile-btn-center" aria-label="Items">Items</button>
         <div class="mobile-btn" data-direction="e" aria-label="East">→</div>
         <div class="mobile-btn" data-direction="sw" aria-label="Southwest">↙</div>
         <div class="mobile-btn" data-direction="s" aria-label="South">↓</div>
@@ -90,6 +90,19 @@
                 <button type="button" id="inspect-close" class="inspect-close" aria-label="Close">Close</button>
             </div>
             <div id="inspect-body" class="inspect-body"></div>
+        </div>
+    </div>
+
+    <div id="inventory-overlay" class="inspect-overlay inventory-overlay" hidden aria-hidden="true">
+        <div id="inventory-panel" class="inspect-panel inventory-panel" role="dialog" aria-modal="true" aria-labelledby="inventory-title">
+            <div class="inspect-header">
+                <h3 id="inventory-title" class="inspect-title">Items</h3>
+                <button type="button" id="inventory-close" class="inspect-close" aria-label="Close">Close</button>
+            </div>
+            <div class="inventory-body">
+                <div id="inventory-grid" class="inventory-grid"></div>
+                <div id="inventory-detail" class="inventory-detail" aria-live="polite"></div>
+            </div>
         </div>
     </div>
 
@@ -133,10 +146,12 @@
     <script src="{{ url_for('static', filename='js/map_view.js') }}"></script>
     <script src="{{ url_for('static', filename='js/tile_assets.js') }}"></script>
     <script src="{{ url_for('static', filename='js/monster_assets.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/item_assets.js') }}"></script>
     <script src="{{ url_for('static', filename='js/player_assets.js') }}"></script>
     <script src="{{ url_for('static', filename='js/player_presentation.js') }}"></script>
     <script src="{{ url_for('static', filename='js/map_renderer.js') }}"></script>
     <script src="{{ url_for('static', filename='js/inspect_ui.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/inventory_ui.js') }}"></script>
     <script src="{{ url_for('static', filename='js/map_inspect.js') }}"></script>
     <script src="{{ url_for('static', filename='js/map_gestures.js') }}"></script>
     <script src="{{ url_for('static', filename='js/ui.js') }}"></script>

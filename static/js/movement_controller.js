@@ -151,6 +151,9 @@ const MovementController = (function () {
         if (typeof InspectUI !== 'undefined' && InspectUI.isOpen()) {
             return false;
         }
+        if (typeof InventoryUI !== 'undefined' && InventoryUI.isOpen()) {
+            return false;
+        }
         const now = performance.now();
         if (!force && now < nextEmitAt) {
             return false;
@@ -248,6 +251,16 @@ const MovementController = (function () {
                 }
                 return;
             }
+            if (typeof InventoryUI !== 'undefined' && InventoryUI.isOpen()) {
+                if (e.key === 'Escape') {
+                    if (InventoryUI.handleEscape) {
+                        InventoryUI.handleEscape();
+                    } else {
+                        InventoryUI.hide();
+                    }
+                }
+                return;
+            }
             const dir = KEY_TO_CARDINAL[e.key];
             if (!dir) {
                 return;
@@ -281,6 +294,9 @@ const MovementController = (function () {
             btn.addEventListener('pointerdown', function (e) {
                 e.preventDefault();
                 if (typeof InspectUI !== 'undefined' && InspectUI.isOpen()) {
+                    return;
+                }
+                if (typeof InventoryUI !== 'undefined' && InventoryUI.isOpen()) {
                     return;
                 }
                 if (btn.setPointerCapture && e.pointerId != null) {

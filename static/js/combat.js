@@ -112,7 +112,7 @@ const Combat = (function () {
         elements.attackBtn.disabled = disableAll;
         elements.defendBtn.disabled = disableAll;
         elements.spellBtn.disabled = true;
-        elements.itemBtn.disabled = true;
+        elements.itemBtn.disabled = disableAll;
         elements.runBtn.disabled = true;
         // Keep a single status line in #combat-message; hide the secondary thinking line
         elements.opponentThinking.style.display = 'none';
@@ -318,6 +318,16 @@ const Combat = (function () {
 
     function sendAction(action) {
         Sound.warm();
+        if (action === 'item') {
+            if (typeof InventoryUI !== 'undefined') {
+                InventoryUI.open({
+                    context: 'combat',
+                    selectable: true,
+                    items: InventoryUI.getInventory(),
+                });
+            }
+            return;
+        }
         if (window.socket) {
             window.socket.emit('combat_action', {
                 action: action,

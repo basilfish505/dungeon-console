@@ -243,6 +243,57 @@ class CombatSystem:
         if action_processed and battle['status'] == 'active':
             self._cancel_turn_timer(battle)
             self._advance_turn(battle)
+
+    def process_item_use(self, player_id, instance_id):
+        """Use an inventory item during combat (server-authoritative)."""
+        from items.service import use_item as use_item_service
+
+        result = {
+            'ok': False,
+            'message': 'Cannot use that item.',
+            'consumed': False,
+            'effects': {},
+        }
+        if not player_id or player_id not in self.game_state.active_combats:
+            result['message'] = 'You are not in combat.'
+            return result
+
+        battle_id = self.game_state.active_combats[player_id]
+        battle = self.battles.get(battle_id)
+        if not battle or battle.get('status') != 'active':
+            result['message'] = 'Combat is not active.'
+            return result
+
+        current_turn_id = battle['turn_order'][battle['current_turn_index']]
+        if current_turn_id != player_id:
+            result['message'] = 'It is not your turn.'
+            return result
+
+        player = self.game_state.players.get(player_id)
+        if not player:
+            return result
+
+        result = use_item_service(
+            player, instance_id, context='combat', game_state=self.game_state
+        )
+        if not result.get('ok'):
+            return result
+
+        message = result.get('message') or 'You use an item.'
+        participants = list(battle.get('participants') or [player_id])
+        for p_id in participants:
+            self._emit('combat_update', {
+                'type': 'combat_action',
+                'message': message if p_id == player_id else f'{player_id} uses an item.',
+                'player_id': player_id,
+                'action': 'item',
+            }, room=p_id)
+            self._emit('game_state', self.game_state.get_game_state(p_id), room=p_id)
+
+        if battle['status'] == 'active':
+            self._cancel_turn_timer(battle)
+            self._advance_turn(battle)
+        return result
     
     def _infer_target(self, player_id, battle):
         """Infer a target if only one opponent exists"""

@@ -1,5 +1,7 @@
 import random
 
+from items.inventory import Inventory
+
 # Compass steps (dy, dx). Legacy WASD: w=n, a=west, s=s, d=e.
 # Token "w" stays north so cached clients do not strafe west on W.
 MOVE_DELTAS = {
@@ -45,6 +47,7 @@ class Player:
         self.explored = {}  # dungeon_level -> set of (y, x)
         self.visible = set()  # current LOS tiles (y, x)
         self.appearance_id = 'peasant'
+        self.inventory = Inventory()
 
     def effective_sight_range(self):
         """FOV radius for the player's current floor."""
@@ -73,6 +76,7 @@ class Player:
             'dungeon_level': self.dungeon_level,
             'appearance_id': self.appearance_id,
             'sprite': self.sprite_url(),
+            'inventory': self.inventory.to_client_list(),
         }
 
     def move(self, direction):

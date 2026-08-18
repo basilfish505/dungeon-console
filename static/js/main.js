@@ -23,6 +23,21 @@ const Game = (function () {
             });
         });
 
+        const itemsBtn = document.getElementById('pad-center-btn');
+        if (itemsBtn) {
+            itemsBtn.addEventListener('click', function (e) {
+                e.preventDefault();
+                e.stopPropagation();
+                if (typeof InventoryUI !== 'undefined') {
+                    InventoryUI.open({
+                        context: 'exploration',
+                        selectable: false,
+                        items: InventoryUI.getInventory(),
+                    });
+                }
+            });
+        }
+
         window.addEventListener('resize', function () {
             UI.requestMapUpdate('window-resize');
         });

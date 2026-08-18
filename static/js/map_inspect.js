@@ -66,6 +66,9 @@ const MapInspect = (function () {
         if (typeof InspectUI !== 'undefined' && InspectUI.isOpen()) {
             return true;
         }
+        if (typeof InventoryUI !== 'undefined' && InventoryUI.isOpen()) {
+            return true;
+        }
         const tile = clientToWorldTile(clientX, clientY);
         if (!tile) {
             return false;

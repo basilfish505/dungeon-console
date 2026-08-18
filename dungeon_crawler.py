@@ -28,6 +28,8 @@ from visibility import (
 from monster_ai import is_terrain_passable
 from level_turns import register_player_turn_action
 from collections import deque
+import item_types  # noqa: F401 — load item_types.xlsx into registry
+from items.service import grant_starter_kit, use_item as use_item_service
 
 # Constants (map spawn rates live in map_generator.py)
 SECRET_KEY = 'your-secret-key-here'
@@ -296,6 +298,7 @@ class GameState:
             self.player_messages[player_id] = []
             # Add welcome message only to this player's messages
             self.add_player_message(player_id, f"Welcome, {player_id}, to the realm of PermaQuest. Thy quest begins, and glory or ruin lies ahead.")
+            grant_starter_kit(new_player)
             self.recompute_visibility(new_player)
 
         # Mark player as active
@@ -832,6 +835,43 @@ def handle_combat_action(data):
     action = data['action']
     target_id = data.get('target_id')  # Get the target if provided
     combat_system.process_action(player_id, action, target_id)
+
+
+@socketio.on('use_item')
+def handle_use_item(data):
+    """Server-authoritative item use. Context is inferred from combat state."""
+    player_id = session.get('player_id')
+    if not player_id:
+        return
+    player = game_state.players.get(player_id)
+    if not player:
+        return
+    data = data or {}
+    instance_id = data.get('instance_id')
+    if not instance_id:
+        emit('item_use_result', {'ok': False, 'message': 'No item selected.'})
+        return
+
+    in_combat = bool(getattr(player, 'in_combat', False))
+    if in_combat:
+        result = combat_system.process_item_use(player_id, instance_id)
+        context = 'combat'
+    else:
+        result = use_item_service(
+            player, instance_id, context='exploration', game_state=game_state
+        )
+        if result.get('ok') and result.get('message'):
+            game_state.add_player_message(player_id, result['message'])
+        emit('game_state', game_state.get_game_state(player_id), room=player_id)
+        context = 'exploration'
+
+    emit('item_use_result', {
+        'ok': bool(result.get('ok')),
+        'message': result.get('message'),
+        'consumed': bool(result.get('consumed')),
+        'context': context,
+    })
+
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
