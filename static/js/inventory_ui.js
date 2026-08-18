@@ -104,6 +104,7 @@ const InventoryUI = (function () {
         opts = opts || {};
         context = opts.context || 'exploration';
         selectable = !!opts.selectable;
+        overlayEl.classList.toggle('inventory-overlay-overworld', context !== 'combat');
         viewingItem = null;
         endDrag();
         if (Array.isArray(opts.items)) {

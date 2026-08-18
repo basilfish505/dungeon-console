@@ -456,9 +456,27 @@ body {
     z-index: 1600;
 }
 
+.inventory-overlay.inventory-overlay-overworld {
+    align-items: flex-start;
+    padding-top: calc(
+        env(safe-area-inset-top, 0px)
+        + 3.25rem
+        + (1.25em * 5)
+        + 32px
+    );
+}
+
 .inventory-panel {
     width: min(100%, 420px);
     height: min(85dvh, 560px);
+}
+
+.inventory-overlay-overworld .inventory-panel {
+    height: min(
+        calc(100dvh - env(safe-area-inset-top, 0px) - 3.25rem - (1.25em * 5) - 48px),
+        560px
+    );
+    max-height: calc(100dvh - env(safe-area-inset-top, 0px) - 3.25rem - (1.25em * 5) - 48px);
 }
 
 .inventory-body {
