@@ -452,6 +452,38 @@ body {
     border: 1px solid #004400;
 }
 
+.inspect-wares {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.inspect-ware {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 4px 0;
+}
+
+.inspect-ware-icon {
+    width: 28px;
+    height: 28px;
+    object-fit: contain;
+    image-rendering: pixelated;
+    flex-shrink: 0;
+}
+
+.inspect-ware-name {
+    flex: 1 1 auto;
+    color: #00ff00;
+}
+
+.inspect-ware-price {
+    color: #00aa00;
+    text-align: right;
+    white-space: nowrap;
+}
+
 .inventory-overlay {
     z-index: 1600;
 }

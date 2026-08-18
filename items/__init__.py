@@ -7,6 +7,7 @@ from items.service import (
     add_item_to_inventory,
     discard_item,
     grant_starter_kit,
+    shop_starter_wares,
     use_item,
 )
 
@@ -17,5 +18,6 @@ __all__ = [
     'add_item_to_inventory',
     'discard_item',
     'grant_starter_kit',
+    'shop_starter_wares',
     'use_item',
 ]

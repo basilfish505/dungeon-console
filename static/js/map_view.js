@@ -31,6 +31,7 @@ const MapView = (function () {
         playerY: 0,
         playerX: 0,
         dungeonLevel: null,
+        interiorId: null,
         lastMap: null,
         lastFog: null,
         lastEntities: [],
@@ -405,6 +406,9 @@ const MapView = (function () {
         if (data.player && data.player.dungeon_level != null) {
             state.dungeonLevel = data.player.dungeon_level | 0;
         }
+        if (data.player) {
+            state.interiorId = data.player.interior_id || null;
+        }
 
         if (typeof PlayerPresentation !== 'undefined') {
             if (opts.snapPlayer && data.player && data.player.id != null && data.player.pos
@@ -478,7 +482,10 @@ const MapView = (function () {
             return;
         }
 
-        applySnapshot(data, { snapPlayer: !!levelChanged });
+        const newInterior = data.player ? (data.player.interior_id || null) : null;
+        const interiorChanged = state.interiorId !== newInterior;
+
+        applySnapshot(data, { snapPlayer: !!levelChanged || interiorChanged });
 
         if (!initialViewportSynced) {
             const matched = data.viewport &&

@@ -113,6 +113,38 @@ const MapRenderer = (function () {
         return true;
     }
 
+    const npcCache = Object.create(null);
+
+    function drawNpcSprite(url, dx, dy, dw, dh, fogState) {
+        if (!url) {
+            return false;
+        }
+        let img = npcCache[url];
+        if (!img) {
+            img = new Image();
+            img.onload = function () {
+                if (typeof MapView !== 'undefined' && MapView.paint) {
+                    MapView.paint();
+                }
+            };
+            img.src = url;
+            npcCache[url] = img;
+        }
+        if (!img.complete || !img.naturalWidth) {
+            return false;
+        }
+        const explored = fogState === 'explored';
+        if (explored) {
+            ctx.save();
+            ctx.globalAlpha = EXPLORED_TERRAIN_ALPHA;
+        }
+        ctx.drawImage(img, dx, dy, dw, dh);
+        if (explored) {
+            ctx.restore();
+        }
+        return true;
+    }
+
     function entityAt(entities, vy, vx) {
         if (!entities || !entities.length) {
             return null;
@@ -270,12 +302,17 @@ const MapRenderer = (function () {
 
                 let drewEntitySprite = false;
                 if (useGraphics) {
-                    const ent = (ch === '@' || ch === '&') ? entityAt(entities, y, x) : null;
+                    const ent = entityAt(entities, y, x);
                     const terrainCh = (ent && ent.under) ? ent.under : ch;
                     const terrainKey = TileAssets.terrainKeyForCell(terrainCh);
                     const drewTerrain = terrainKey
                         ? drawTerrain(terrainKey, px, py, dw, dh, fogState)
                         : false;
+                    if (ent && ent.kind === 'npc') {
+                        if (drawNpcSprite(ent.sprite, px, py, dw, dh, fogState)) {
+                            continue;
+                        }
+                    }
                     if (TileAssets.isTerrainOnly(ch) && drewTerrain) {
                         continue;
                     }

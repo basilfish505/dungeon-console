@@ -10,8 +10,9 @@ Toggle VISIBILITY_SYSTEM_ENABLED to False for developer full-map mode.
 VISIBILITY_SYSTEM_ENABLED = True
 
 # Permanent map features remembered in fog (monsters/players are not terrain)
-PERMANENT_TERRAIN = frozenset({'#', '.', '↓', '↑'})
-BLOCKING_TERRAIN = frozenset({'#'})
+PERMANENT_TERRAIN = frozenset({'#', '.', '↓', '↑', '+', ',', '=', 'R'})
+BLOCKING_TERRAIN = frozenset({'#', 'R'})
+IMPASSABLE_TERRAIN = frozenset({'#', 'R', '='})
 
 # Octant multipliers [xx, xy, yx, yy] — roguebasin recursive shadowcasting
 _MULT = (

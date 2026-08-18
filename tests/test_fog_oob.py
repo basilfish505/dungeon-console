@@ -28,9 +28,9 @@ class FogOobPaddingTests(unittest.TestCase):
         for y in range(1, 4):
             for x in range(1, 4):
                 m[y][x] = '.'
-        self.gs.levels[0] = (m, {})
+        self.gs.levels[1] = (m, {})
         p = Player('hero', [2, 2])
-        p.dungeon_level = 0
+        p.dungeon_level = 1
         p.visible = {(2, 2), (2, 1), (2, 3), (1, 2), (3, 2)}
         p.explored = {0: set(p.visible)}
         self.gs.players['hero'] = p

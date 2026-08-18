@@ -20,6 +20,7 @@ MOVE_DELTAS = {
 
 # Surface / top level always uses this FOV; dungeon floors use Player.sight_range.
 TOP_LEVEL_SIGHT_RANGE = 30
+INTERIOR_SIGHT_RANGE = 8
 
 
 class Player:
@@ -27,6 +28,7 @@ class Player:
         self.id = player_id
         self.pos = position
         self.dungeon_level = 0  # 0 is top level
+        self.interior_id = None  # None = outdoors; e.g. 'items_shop'
         self.level = 1
         self.xp = 0
         # HP/MP properties
@@ -42,15 +44,23 @@ class Player:
         self.dex = random.randint(1, 10)
         self.agi = random.randint(1, 10)
         self.in_combat = False
-        # Vision / fog-of-war (dungeon floors only; top level uses TOP_LEVEL_SIGHT_RANGE)
+        # Vision / fog-of-war (dungeon floors only; town and interiors are fully lit)
         self.sight_range = 8
         self.explored = {}  # dungeon_level -> set of (y, x)
         self.visible = set()  # current LOS tiles (y, x)
         self.appearance_id = 'peasant'
         self.inventory = Inventory()
 
+    def explored_key(self):
+        """Fog memory key: dungeon level int, or ('interior', id)."""
+        if self.interior_id:
+            return ('interior', self.interior_id)
+        return self.dungeon_level
+
     def effective_sight_range(self):
         """FOV radius for the player's current floor."""
+        if self.interior_id:
+            return INTERIOR_SIGHT_RANGE
         if self.dungeon_level <= 0:
             return TOP_LEVEL_SIGHT_RANGE
         return max(0, int(self.sight_range))
@@ -74,6 +84,7 @@ class Player:
             'sight_range': self.sight_range,
             'pos': list(self.pos),
             'dungeon_level': self.dungeon_level,
+            'interior_id': self.interior_id,
             'appearance_id': self.appearance_id,
             'sprite': self.sprite_url(),
             'inventory': self.inventory.to_client_list(),

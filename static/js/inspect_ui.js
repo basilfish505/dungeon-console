@@ -82,11 +82,46 @@ const InspectUI = (function () {
         return html;
     }
 
+    function renderShop(data) {
+        if (!data) {
+            return '';
+        }
+        let html = '';
+        if (data.portrait) {
+            html += `<div class="inspect-portrait-wrap"><img class="inspect-portrait" src="${escapeHtml(data.portrait)}" alt="${escapeHtml(data.name || 'Shopkeeper')}"></div>`;
+        }
+        const greeting = data.greeting || data.description;
+        if (greeting) {
+            html += `<p class="inspect-desc">${escapeHtml(greeting)}</p>`;
+        }
+        const wares = data.wares || [];
+        if (wares.length) {
+            html += '<h4 class="inspect-section">For sale</h4>';
+            html += '<div class="inspect-wares">';
+            wares.forEach(function (item) {
+                const name = item.name || item.item_id || 'Item';
+                const price = item.price_pqg != null ? item.price_pqg : 0;
+                const img = item.image || '';
+                html += '<div class="inspect-ware">';
+                if (img) {
+                    html += `<img class="inspect-ware-icon" src="${escapeHtml(img)}" alt="">`;
+                }
+                html += `<span class="inspect-ware-name">${escapeHtml(name)}</span>`;
+                html += `<span class="inspect-ware-price">${escapeHtml(price)} pqg</span>`;
+                html += '</div>';
+            });
+            html += '</div>';
+        }
+        return html;
+    }
+
     function renderByKind(kind, data) {
         if (kind === 'monster') {
             return renderMonster(data);
         }
-        // Future: player, chest, stairs, …
+        if (kind === 'shop' || kind === 'npc') {
+            return renderShop(data);
+        }
         return '<p class="inspect-desc">No details available.</p>';
     }
 

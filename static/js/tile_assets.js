@@ -7,6 +7,10 @@ const TileAssets = (function () {
         '.': { key: 'floor', url: '/static/tiles/floor.png' },
         '\u2191': { key: 'stairsup', url: '/static/tiles/stairsup.png' }, // ↑
         '\u2193': { key: 'stairsdown', url: '/static/tiles/stairsdown.png' }, // ↓
+        '+': { key: 'door', url: '/static/tiles/door.png' },
+        ',': { key: 'road', url: '/static/tiles/road.png' },
+        '=': { key: 'desk', url: '/static/tiles/desk.png' },
+        'R': { key: 'roof', url: '/static/tiles/roof.png' },
     };
 
     /** Cells that sit on walkable floor (draw floor under ASCII). */
@@ -125,7 +129,7 @@ const TileAssets = (function () {
     }
 
     /**
-     * @returns {'boulder'|'floor'|'stairsup'|'stairsdown'|null}
+     * @returns {'boulder'|'floor'|'stairsup'|'stairsdown'|'door'|'road'|'desk'|'roof'|null}
      */
     function terrainKeyForCell(ch) {
         if (!ch) {
@@ -142,7 +146,8 @@ const TileAssets = (function () {
 
     /** Glyph fully replaced by a graphic (no ASCII overlay when PNG drew). */
     function isTerrainOnly(ch) {
-        return ch === '#' || ch === '.' || ch === '\u2191' || ch === '\u2193';
+        return ch === '#' || ch === '.' || ch === '\u2191' || ch === '\u2193'
+            || ch === '+' || ch === ',' || ch === '=' || ch === 'R';
     }
 
     // Start fetch as soon as this script runs (before join / first map paint)

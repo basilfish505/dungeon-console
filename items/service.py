@@ -39,6 +39,16 @@ def add_item_to_inventory(player, item_id, quantity=1):
         return None
 
 
+def shop_starter_wares():
+    """Catalog rows the items shop lists for sale (purchase comes later)."""
+    wares = []
+    for item_id in STARTER_ITEM_IDS:
+        type_def = get_item_type(item_id)
+        if type_def is not None:
+            wares.append(type_def.to_client_dict())
+    return wares
+
+
 def grant_starter_kit(player):
     """Give each registered starter item once (skips missing sheet rows)."""
     granted = []

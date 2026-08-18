@@ -3,7 +3,7 @@ const MapInspect = (function () {
     /** Glyphs that may be inspected (client-side hint; server validates). */
     const INSPECTABLE_GLYPHS = {
         '&': 'monster',
-        // Future: '@' player (other), '↑'/'↓' stairs, etc.
+        '=': 'shop',
     };
 
     function clientToWorldTile(clientX, clientY) {
@@ -58,6 +58,23 @@ const MapInspect = (function () {
         return row[vx] || 'unexplored';
     }
 
+    function entityKindAt(worldY, worldX) {
+        const st = MapView.getState();
+        const ents = st.lastEntities || [];
+        const camY = Number.isFinite(st.mapOriginY) ? (st.mapOriginY | 0) : (st.cameraY | 0);
+        const camX = Number.isFinite(st.mapOriginX) ? (st.mapOriginX | 0) : (st.cameraX | 0);
+        for (let i = 0; i < ents.length; i++) {
+            const e = ents[i];
+            if (!e) {
+                continue;
+            }
+            if (camY + (e.vy | 0) === worldY && camX + (e.vx | 0) === worldX) {
+                return e.kind || null;
+            }
+        }
+        return null;
+    }
+
     /**
      * If the tile under the pointer is inspectable, emit inspect_map.
      * @returns {boolean} true if the tap was consumed as an inspect attempt
@@ -74,7 +91,11 @@ const MapInspect = (function () {
             return false;
         }
         const ch = viewportCharAt(tile.y, tile.x);
-        if (!ch || !INSPECTABLE_GLYPHS[ch]) {
+        const entityKind = entityKindAt(tile.y, tile.x);
+        if (!ch && !entityKind) {
+            return false;
+        }
+        if (!INSPECTABLE_GLYPHS[ch] && entityKind !== 'npc' && entityKind !== 'shop') {
             return false;
         }
         // Only inspect currently visible cells (explored memory may still show terrain)

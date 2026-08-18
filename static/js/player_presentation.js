@@ -29,6 +29,7 @@ const PlayerPresentation = (function () {
             appearanceId: appearanceId || 'peasant',
             sprite: sprite || null,
             dungeonLevel: null,
+            interiorId: null,
             present: true,
         };
     }
@@ -144,9 +145,19 @@ const PlayerPresentation = (function () {
             }
 
             const newLevel = localPlayer && localPlayer.dungeon_level;
+            const newInterior = localPlayer ? (localPlayer.interior_id || null) : null;
             if (id === localId && actor.dungeonLevel != null && newLevel != null
                 && (newLevel | 0) !== actor.dungeonLevel) {
                 actor.dungeonLevel = newLevel | 0;
+                actor.interiorId = newInterior;
+                delete localAckUntil[id];
+                actor.present = true;
+                snap(actor, tileY, tileX, now, false);
+                continue;
+            }
+            if (id === localId && actor.interiorId !== newInterior
+                && actor.interiorId !== undefined) {
+                actor.interiorId = newInterior;
                 delete localAckUntil[id];
                 actor.present = true;
                 snap(actor, tileY, tileX, now, false);
@@ -154,6 +165,9 @@ const PlayerPresentation = (function () {
             }
             if (id === localId && newLevel != null) {
                 actor.dungeonLevel = newLevel | 0;
+            }
+            if (id === localId) {
+                actor.interiorId = newInterior;
             }
 
             if (!actor.present) {

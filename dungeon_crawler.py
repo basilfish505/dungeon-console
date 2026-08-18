@@ -30,6 +30,12 @@ from level_turns import register_player_turn_action
 from collections import deque
 import item_types  # noqa: F401 — load item_types.xlsx into registry
 from items.service import grant_starter_kit, use_item as use_item_service, discard_item
+from interiors.items_shop import (
+    ITEMS_SHOP_ID,
+    INTERIOR_SPAWN,
+    build_items_shop,
+    talk_tiles,
+)
 
 # Constants (map spawn rates live in map_generator.py)
 SECRET_KEY = 'your-secret-key-here'
@@ -64,12 +70,52 @@ class GameState:
         self.manual_pan = {}  # player_id -> True while user is freely panning
         self.stair_steps = {}  # player_id -> (y, x) origin stair just stepped on
         self.level_turns = {}  # dungeon_level -> LevelTurnState
+        self.interiors = {}
+        self.town_doors = {}  # (y, x) -> interior_id
+        self.town_exits = {}  # interior_id -> [y, x] road tile
+        self.pending_inspect = {}
         self.generate_top_level()
 
     def generate_top_level(self):
         """Generate the top level using the MapGenerator"""
         self.game_map, self.monsters = self.map_generator.generate_top_level()
         self.levels[0] = (self.game_map, self.monsters)
+        self.interiors = {}
+        self.town_doors = {}
+        self.town_exits = {}
+        self._register_items_shop()
+
+    def _register_items_shop(self):
+        game_map, npcs = build_items_shop()
+        self.interiors[ITEMS_SHOP_ID] = (game_map, npcs)
+        feat = (getattr(self.map_generator, 'town_features', None) or {}).get(
+            ITEMS_SHOP_ID
+        ) or {}
+        door = feat.get('door')
+        road = feat.get('road')
+        if door:
+            self.town_doors[(int(door[0]), int(door[1]))] = ITEMS_SHOP_ID
+        if road:
+            self.town_exits[ITEMS_SHOP_ID] = [int(road[0]), int(road[1])]
+
+    def view_for(self, player):
+        """(game_map, monsters, npcs) for the player's current location."""
+        iid = getattr(player, 'interior_id', None) if player is not None else None
+        interiors = getattr(self, 'interiors', None) or {}
+        if iid and iid in interiors:
+            game_map, npcs = interiors[iid]
+            return game_map, {}, npcs
+        level = 0 if player is None else player.dungeon_level
+        game_map, monsters = self.ensure_level(level)
+        return game_map, monsters, {}
+
+    def uses_fog(self, player):
+        """Fog of war is dungeon-only. Town and interiors are fully lit; isolation is submaps."""
+        if not VISIBILITY_SYSTEM_ENABLED or player is None:
+            return False
+        if getattr(player, 'dungeon_level', 0) <= 0:
+            return False
+        return True
 
     def ensure_level(self, level_number, stairs_up_pos=None):
         """Return (map, monsters) for a level, generating it if needed"""
@@ -84,10 +130,21 @@ class GameState:
         return self.levels[level_number]
 
     def players_on_level(self, level_number):
-        """Players currently on the given dungeon level"""
+        """Players currently on the given dungeon level (not inside an interior)."""
         return {
             pid: player for pid, player in self.players.items()
             if player.dungeon_level == level_number
+            and not getattr(player, 'interior_id', None)
+        }
+
+    def players_in_context(self, player):
+        """Players sharing this player's map (same level and interior)."""
+        iid = getattr(player, 'interior_id', None)
+        level = player.dungeon_level
+        return {
+            pid: other for pid, other in self.players.items()
+            if other.dungeon_level == level
+            and getattr(other, 'interior_id', None) == iid
         }
 
     def _is_arrival_tile_free(self, y, x, game_map, monsters, players, exclude_player_id=None):
@@ -96,7 +153,7 @@ class GameState:
         w = len(game_map[0]) if h else 0
         if not (0 <= y < h and 0 <= x < w):
             return False
-        if game_map[y][x] == '#':
+        if not is_terrain_passable(game_map, y, x):
             return False
         if (y, x) in monsters:
             return False
@@ -144,7 +201,7 @@ class GameState:
                     continue
                 if (ny, nx) in seen:
                     continue
-                if game_map[ny][nx] == '#':
+                if not is_terrain_passable(game_map, ny, nx):
                     continue
                 seen.add((ny, nx))
                 if self._is_arrival_tile_free(ny, nx, game_map, monsters, players, exclude_player_id):
@@ -171,6 +228,7 @@ class GameState:
             return False
 
         player.dungeon_level = level_number
+        player.interior_id = None
         player.pos = arrival
         if player.id in self.cameras:
             del self.cameras[player.id]
@@ -181,16 +239,16 @@ class GameState:
 
     def recompute_visibility(self, player):
         """Recalculate LOS and mark newly seen tiles explored for this level."""
-        if not VISIBILITY_SYSTEM_ENABLED:
+        if not self.uses_fog(player):
             return
-        game_map, _monsters = self.ensure_level(player.dungeon_level)
+        game_map, _monsters, _npcs = self.view_for(player)
         player.visible = compute_fov(
             game_map, player.pos, player.effective_sight_range()
         )
-        level = player.dungeon_level
-        if level not in player.explored:
-            player.explored[level] = set()
-        update_explored(player.explored[level], player.visible)
+        key = player.explored_key()
+        if key not in player.explored:
+            player.explored[key] = set()
+        update_explored(player.explored[key], player.visible)
 
     def inspect_map_tile(self, player_id, y, x):
         """
@@ -206,12 +264,19 @@ class GameState:
         except (TypeError, ValueError):
             return {'ok': False}
 
-        # Visibility gate (full-map mode allows any tile)
-        if VISIBILITY_SYSTEM_ENABLED:
+        # Visibility gate (full-map town/interior and developer full-map skip)
+        if self.uses_fog(player):
             if (y, x) not in getattr(player, 'visible', set()):
                 return {'ok': False}
 
-        game_map, monsters = self.ensure_level(player.dungeon_level)
+        game_map, monsters, npcs = self.view_for(player)
+
+        npc = npcs.get((y, x))
+        if npc is None and 0 <= y < len(game_map) and 0 <= x < len(game_map[0]):
+            if game_map[y][x] == '=':
+                npc = next(iter(npcs.values()), None)
+        if npc is not None:
+            return npc.to_inspect_result()
 
         # --- kind dispatch (add player / stairs / chest later) ---
         monster = monsters.get((y, x))
@@ -265,7 +330,7 @@ class GameState:
         w = len(game_map[0]) if h else 0
         if not (0 <= dest[0] < h and 0 <= dest[1] < w):
             return False
-        if game_map[dest[0]][dest[1]] == '#':
+        if not is_terrain_passable(game_map, dest[0], dest[1]):
             return False
 
         # Remove from old slot
@@ -348,8 +413,17 @@ class GameState:
         self.manual_pan.pop(player_id, None)
 
         player = self.players[player_id]
-        game_map, monsters = self.ensure_level(player.dungeon_level)
+        game_map, monsters, npcs = self.view_for(player)
         new_pos = player.move(direction)
+        dest = (new_pos[0], new_pos[1])
+
+        # Talk bumps: desk is impassable; NPC tile is floor but occupied.
+        if dest in npcs:
+            self._open_talk(player_id, npcs[dest])
+            return True
+        if self._cell(game_map, dest) == '=':
+            self._open_talk(player_id, next(iter(npcs.values()), None))
+            return True
 
         if self.is_valid_move(player.pos, new_pos, game_map):
             # Occupied tiles (players/monsters) take priority over stairs —
@@ -369,7 +443,7 @@ class GameState:
                         player_id, "The way down is blocked; you stay put."
                     )
                     return False
-                self.stair_steps[player_id] = (new_pos[0], new_pos[1])
+                self._record_stair_step(player_id, new_pos)
                 self.add_player_message(player_id, "You descend deeper into the dungeon...")
                 return True
 
@@ -382,14 +456,117 @@ class GameState:
                         player_id, "The way up is blocked; you stay put."
                     )
                     return False
-                self.stair_steps[player_id] = (new_pos[0], new_pos[1])
+                self._record_stair_step(player_id, new_pos)
                 self.add_player_message(player_id, "You climb back toward the surface...")
                 return True
 
+            if tile == '+':
+                if getattr(player, 'interior_id', None):
+                    if not self.exit_interior(player):
+                        self.add_player_message(
+                            player_id, "The doorway is blocked; you stay put."
+                        )
+                        return False
+                    self.add_player_message(player_id, "You leave the Items Shop.")
+                    return True
+                interior_id = (getattr(self, 'town_doors', None) or {}).get(dest)
+                if interior_id:
+                    if not self.enter_interior(player, interior_id):
+                        self.add_player_message(
+                            player_id, "The shop is too crowded; you stay put."
+                        )
+                        return False
+                    self.add_player_message(player_id, "You enter the Items Shop.")
+                    return True
+
             player.pos = new_pos
             self.recompute_visibility(player)
+            if dest in talk_tiles(game_map) and npcs:
+                self._open_talk(player_id, next(iter(npcs.values()), None))
             return True
         return False
+
+    def _record_stair_step(self, player_id, new_pos):
+        if not hasattr(self, 'stair_steps') or self.stair_steps is None:
+            self.stair_steps = {}
+        self.stair_steps[player_id] = (new_pos[0], new_pos[1])
+
+    def _cell(self, game_map, pos):
+        y, x = pos[0], pos[1]
+        if not game_map:
+            return None
+        h = len(game_map)
+        w = len(game_map[0]) if h else 0
+        if not (0 <= y < h and 0 <= x < w):
+            return None
+        return game_map[y][x]
+
+    def _open_talk(self, player_id, npc):
+        if npc is None:
+            return
+        if not hasattr(self, 'pending_inspect') or self.pending_inspect is None:
+            self.pending_inspect = {}
+        self.pending_inspect[player_id] = npc.to_inspect_result()
+
+    def _find_free_arrival(self, game_map, preferred, monsters, npcs, players, exclude_player_id):
+        if game_map is None or preferred is None:
+            return None
+        py, px = int(preferred[0]), int(preferred[1])
+        occupied = set(monsters) | set(npcs)
+        if self._is_arrival_tile_free(py, px, game_map, occupied, players, exclude_player_id):
+            return [py, px]
+        neighbors = list(_STAIR_ADJACENT_DIRS)
+        random.shuffle(neighbors)
+        for dy, dx in neighbors:
+            ny, nx = py + dy, px + dx
+            if self._is_arrival_tile_free(ny, nx, game_map, occupied, players, exclude_player_id):
+                return [ny, nx]
+        return None
+
+    def enter_interior(self, player, interior_id):
+        interiors = getattr(self, 'interiors', None) or {}
+        if interior_id not in interiors:
+            return False
+        game_map, npcs = interiors[interior_id]
+        spawn = list(INTERIOR_SPAWN) if interior_id == ITEMS_SHOP_ID else [1, 1]
+        players = {
+            pid: other for pid, other in self.players.items()
+            if getattr(other, 'interior_id', None) == interior_id
+        }
+        arrival = self._find_free_arrival(
+            game_map, spawn, {}, npcs, players, player.id
+        )
+        if arrival is None:
+            return False
+        player.interior_id = interior_id
+        player.pos = arrival
+        if player.id in self.cameras:
+            del self.cameras[player.id]
+        self.manual_pan.pop(player.id, None)
+        self.recompute_visibility(player)
+        return True
+
+    def exit_interior(self, player):
+        interior_id = getattr(player, 'interior_id', None)
+        if not interior_id:
+            return False
+        road = (getattr(self, 'town_exits', None) or {}).get(interior_id)
+        if not road:
+            return False
+        game_map, monsters = self.ensure_level(player.dungeon_level)
+        players = self.players_on_level(player.dungeon_level)
+        arrival = self._find_free_arrival(
+            game_map, road, monsters, {}, players, player.id
+        )
+        if arrival is None:
+            return False
+        player.interior_id = None
+        player.pos = arrival
+        if player.id in self.cameras:
+            del self.cameras[player.id]
+        self.manual_pan.pop(player.id, None)
+        self.recompute_visibility(player)
+        return True
 
     def is_valid_move(self, from_pos, new_pos, game_map):
         """Adjacent 8-dir step; diagonals may not cut a blocked corner."""
@@ -409,10 +586,11 @@ class GameState:
     def is_combat_scenario(self, player_id, new_pos, monsters):
         player = self.players[player_id]
 
-        # Check for player-player combat (same dungeon level; includes offline players)
+        # Check for player-player combat (same map; includes offline players)
         for other_id, other_player in self.players.items():
-            if (other_id != player_id and 
+            if (other_id != player_id and
                 other_player.dungeon_level == player.dungeon_level and
+                getattr(other_player, 'interior_id', None) == getattr(player, 'interior_id', None) and
                 other_player.pos == new_pos):
                 combat_system.start_combat(player_id, other_id, emit_game_state=False)
                 return True
@@ -436,7 +614,8 @@ class GameState:
             level = 0  # Pre-join / spectator view is the top level
             focus_pos = None
 
-        game_map, monsters = self.ensure_level(level)
+        game_map, monsters, npcs = self.view_for(viewer)
+        viewer_interior = getattr(viewer, 'interior_id', None) if viewer else None
         map_h = len(game_map)
         map_w = len(game_map[0]) if map_h else 0
 
@@ -465,15 +644,16 @@ class GameState:
         else:
             cam_y, cam_x = 0, 0
 
-        # Single gate: disabled toggle or no viewer → today's full-map behavior
-        use_fog = VISIBILITY_SYSTEM_ENABLED and viewer is not None
+        # Town and interiors: no fog. Isolation is a separate interior map.
+        use_fog = self.uses_fog(viewer)
         entities = []
 
         if not use_fog:
             # Build viewport only (no full-map deep copy) — keeps hold-to-move snappy.
             overlay = {}
             for player in self.players.values():
-                if player.dungeon_level == level:
+                if (player.dungeon_level == level
+                        and getattr(player, 'interior_id', None) == viewer_interior):
                     overlay[(player.pos[0], player.pos[1])] = '@'
             for pos in monsters:
                 overlay[pos] = '&'
@@ -494,7 +674,8 @@ class GameState:
                 visible_map.append(row_chars)
                 fog.append(row_fog)
             for player in self.players.values():
-                if player.dungeon_level == level:
+                if (player.dungeon_level == level
+                        and getattr(player, 'interior_id', None) == viewer_interior):
                     vy = player.pos[0] - cam_y
                     vx = player.pos[1] - cam_x
                     if 0 <= vy < vh and 0 <= vx < vw:
@@ -520,8 +701,20 @@ class GameState:
                         'sprite': monster.sprite_url(),
                         'under': game_map[pos[0]][pos[1]],
                     })
+            for pos, npc in npcs.items():
+                vy = pos[0] - cam_y
+                vx = pos[1] - cam_x
+                if 0 <= vy < vh and 0 <= vx < vw:
+                    entities.append({
+                        'kind': 'npc',
+                        'id': npc.id,
+                        'vy': vy,
+                        'vx': vx,
+                        'sprite': npc.sprite,
+                        'under': game_map[pos[0]][pos[1]],
+                    })
         else:
-            explored = viewer.explored.get(level, set())
+            explored = viewer.explored.get(viewer.explored_key(), set())
             los = viewer.visible
             entity_at = {}
             for pos, monster in monsters.items():
@@ -540,7 +733,8 @@ class GameState:
                             'under': game_map[pos[0]][pos[1]],
                         })
             for player in self.players.values():
-                if player.dungeon_level == level:
+                if (player.dungeon_level == level
+                        and getattr(player, 'interior_id', None) == viewer_interior):
                     py, px = player.pos[0], player.pos[1]
                     if (py, px) in los or player.id == viewer.id:
                         entity_at[(py, px)] = '@'
@@ -556,6 +750,20 @@ class GameState:
                                 'sprite': player.sprite_url(),
                                 'under': game_map[py][px],
                             })
+
+            for pos, npc in npcs.items():
+                if pos in los:
+                    vy = pos[0] - cam_y
+                    vx = pos[1] - cam_x
+                    if 0 <= vy < vh and 0 <= vx < vw:
+                        entities.append({
+                            'kind': 'npc',
+                            'id': npc.id,
+                            'vy': vy,
+                            'vx': vx,
+                            'sprite': npc.sprite,
+                            'under': game_map[pos[0]][pos[1]],
+                        })
 
             visible_map = []
             fog = []
@@ -606,7 +814,7 @@ class GameState:
             'map_size': {'h': map_h, 'w': map_w},
             'boot_id': SERVER_BOOT_ID,
         }
-        step = self.stair_steps.get(current_player_id)
+        step = (getattr(self, 'stair_steps', None) or {}).get(current_player_id)
         if step:
             payload['stair_step'] = {'y': step[0], 'x': step[1]}
         return payload
@@ -738,11 +946,18 @@ def handle_move(direction):
                 game_state.get_game_state(moving_player_id),
                 room=moving_player_id,
             )
+            pending = (getattr(game_state, 'pending_inspect', None) or {}).pop(
+                moving_player_id, None
+            )
+            if pending:
+                emit('inspect_result', pending, room=moving_player_id)
             game_state.stair_steps.pop(moving_player_id, None)
 
-            round_fired = register_player_turn_action(
-                game_state, moving_player_id, combat_system, socketio
-            )
+            round_fired = False
+            if not getattr(player, 'interior_id', None):
+                round_fired = register_player_turn_action(
+                    game_state, moving_player_id, combat_system, socketio
+                )
             for pid in list(game_state.active_players.keys()):
                 if pid == moving_player_id and not round_fired:
                     continue
@@ -791,7 +1006,7 @@ def handle_set_viewport(data):
             cam_y = cam_x = None
         if cam_y is not None:
             player = game_state.players[player_id]
-            game_map, _monsters = game_state.ensure_level(player.dungeon_level)
+            game_map, _monsters, _npcs = game_state.view_for(player)
             map_h = len(game_map)
             map_w = len(game_map[0]) if map_h else 0
             cam_y, cam_x = clamp_pan_extents(cam_y, cam_x, map_h, map_w, vh, vw)
@@ -809,7 +1024,7 @@ def handle_pan_camera(data):
     if not isinstance(data, dict):
         return
     player = game_state.players[player_id]
-    game_map, _monsters = game_state.ensure_level(player.dungeon_level)
+    game_map, _monsters, _npcs = game_state.view_for(player)
     map_h = len(game_map)
     map_w = len(game_map[0]) if map_h else 0
     vh, vw = game_state.viewports.get(player_id, (VIEWPORT_H, VIEWPORT_W))

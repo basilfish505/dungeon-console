@@ -12,7 +12,7 @@ import time
 from enum import Enum
 
 from monster import EIGHT_DIRECTIONS
-from visibility import compute_fov
+from visibility import IMPASSABLE_TERRAIN, compute_fov
 
 # --- Config (centralized balancing) -----------------------------------------
 
@@ -95,10 +95,10 @@ def _in_bounds(game_map, y, x):
 
 
 def is_terrain_passable(game_map, y, x):
-    """Walkable terrain (not wall/boulder, in bounds)."""
+    """Walkable terrain (not wall/boulder/desk, in bounds)."""
     if not _in_bounds(game_map, y, x):
         return False
-    return game_map[y][x] != '#'
+    return game_map[y][x] not in IMPASSABLE_TERRAIN
 
 
 def can_monster_step(game_map, from_pos, to_pos, monsters, ignore_monster_id=None):

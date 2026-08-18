@@ -3,9 +3,12 @@ import random
 from collections import deque
 from monster import Monster
 from monster_types.registry import pick_spawn_type_id
+from interiors.items_shop import ITEMS_SHOP_ID, stamp_items_shop
+from visibility import IMPASSABLE_TERRAIN
 
 # Constants
-MAP_SIZE = 20  # Top-level / viewport footprint
+MAP_SIZE = 20  # Viewport / simple-dungeon footprint
+TOWN_MAP_SIZE = 20  # Top-level yard (shop, road, stairs)
 MONSTER_PROBABILITY = 0.03
 MIN_FLOOR_AREA = 300
 MAX_FLOOR_AREA = 500
@@ -21,6 +24,7 @@ class MapGenerator:
         self.map_size = map_size
         self.game_map = None
         self.monsters = {}
+        self.town_features = {}
 
     def generate_level(self, stairs_up_pos=None):
         """Generate a lower level (simple rectangle or procedural rooms/tunnels)."""
@@ -45,15 +49,17 @@ class MapGenerator:
         return self.game_map, self.monsters
 
     def generate_top_level(self):
-        """Generate the top level without boulders or monsters, but with stairs down."""
-        self.game_map = [['.' for _ in range(self.map_size)] for _ in range(self.map_size)]
-        for i in range(self.map_size):
+        """Generate the top level: open yard, items shop, road at the door, stairs down."""
+        size = TOWN_MAP_SIZE
+        self.game_map = [['.' for _ in range(size)] for _ in range(size)]
+        for i in range(size):
             self.game_map[0][i] = '#'
-            self.game_map[self.map_size - 1][i] = '#'
+            self.game_map[size - 1][i] = '#'
             self.game_map[i][0] = '#'
-            self.game_map[i][self.map_size - 1] = '#'
+            self.game_map[i][size - 1] = '#'
 
         self.monsters = {}
+        self.town_features = {ITEMS_SHOP_ID: stamp_items_shop(self.game_map)}
         self.place_stair('↓')
         return self.game_map, self.monsters
 
@@ -327,7 +333,7 @@ class MapGenerator:
         h, w = len(m), len(m[0])
         if not (0 <= y < h and 0 <= x < w):
             return False
-        return m[y][x] != '#'
+        return m[y][x] not in IMPASSABLE_TERRAIN
 
     def _nearest_walkable(self, preferred, game_map=None):
         m = game_map if game_map is not None else self.game_map

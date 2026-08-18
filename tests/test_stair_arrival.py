@@ -228,7 +228,9 @@ class StairArrivalTests(unittest.TestCase):
         with patch('dungeon_crawler.combat_system') as mock_combat:
             mock_combat.start_combat.return_value = None
             self.assertTrue(self.gs.move_player('mover', 'd'))
-            mock_combat.start_combat.assert_called_once_with('mover', 'guard')
+            mock_combat.start_combat.assert_called_once_with(
+                'mover', 'guard', emit_game_state=False
+            )
 
         self.assertEqual(mover.dungeon_level, 0)
         self.assertEqual(mover.pos, [2, 1])
