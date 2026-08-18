@@ -1,6 +1,9 @@
-// inventory_ui.js — 16-slot pack with a fixed info pane below the grid
+// inventory_ui.js — 16-slot pack; hold-and-drag to reorder
 const InventoryUI = (function () {
     const SLOT_COUNT = 16;
+    const HOLD_MS = 280;
+    const MOVE_CANCEL_PX = 14;
+
     let overlayEl = null;
     let gridEl = null;
     let detailEl = null;
@@ -9,6 +12,12 @@ const InventoryUI = (function () {
     let lastInventory = [];
     let selectable = false;
     let viewingItem = null;
+
+    let holdTimer = null;
+    let pendingHold = null;
+    let drag = null;
+    let ghostEl = null;
+    let suppressClick = false;
 
     function cacheDom() {
         if (overlayEl) {
@@ -35,10 +44,38 @@ const InventoryUI = (function () {
                 e.stopPropagation();
             });
         }
+        document.addEventListener('pointermove', onPointerMove);
+        document.addEventListener('pointerup', onPointerUp);
+        document.addEventListener('pointercancel', onPointerUp);
+    }
+
+    function normalizeSlots(items) {
+        const slots = [];
+        for (let i = 0; i < SLOT_COUNT; i++) {
+            slots.push(null);
+        }
+        if (!Array.isArray(items)) {
+            return slots;
+        }
+        if (items.length === SLOT_COUNT) {
+            for (let i = 0; i < SLOT_COUNT; i++) {
+                slots[i] = items[i] || null;
+            }
+            return slots;
+        }
+        items.forEach(function (item, i) {
+            if (i < SLOT_COUNT && item) {
+                slots[i] = item;
+            }
+        });
+        return slots;
     }
 
     function setInventory(items) {
-        lastInventory = Array.isArray(items) ? items.slice() : [];
+        if (drag) {
+            return;
+        }
+        lastInventory = normalizeSlots(items);
         if (overlayEl && !overlayEl.hidden) {
             if (viewingItem) {
                 const still = lastInventory.find(function (row) {
@@ -51,7 +88,7 @@ const InventoryUI = (function () {
     }
 
     function getInventory() {
-        return lastInventory;
+        return lastInventory.slice();
     }
 
     function open(opts) {
@@ -63,8 +100,11 @@ const InventoryUI = (function () {
         context = opts.context || 'exploration';
         selectable = !!opts.selectable;
         viewingItem = null;
+        endDrag();
         if (Array.isArray(opts.items)) {
-            lastInventory = opts.items.slice();
+            lastInventory = normalizeSlots(opts.items);
+        } else {
+            lastInventory = normalizeSlots(lastInventory);
         }
         render();
         overlayEl.hidden = false;
@@ -76,6 +116,7 @@ const InventoryUI = (function () {
         if (!overlayEl) {
             return;
         }
+        endDrag();
         overlayEl.hidden = true;
         overlayEl.setAttribute('aria-hidden', 'true');
         selectable = false;
@@ -91,6 +132,11 @@ const InventoryUI = (function () {
     }
 
     function handleEscape() {
+        if (drag) {
+            endDrag();
+            render();
+            return;
+        }
         if (viewingItem) {
             viewingItem = null;
             render();
@@ -123,6 +169,7 @@ const InventoryUI = (function () {
             const slot = document.createElement('button');
             slot.type = 'button';
             slot.className = 'inventory-slot';
+            slot.dataset.slot = String(i);
             if (item) {
                 slot.classList.add('inventory-slot-filled');
                 if (viewingItem && viewingItem.instance_id === item.instance_id) {
@@ -130,17 +177,205 @@ const InventoryUI = (function () {
                 }
                 slot.textContent = item.name || item.type_id || 'Item';
                 slot.setAttribute('aria-label', slot.textContent);
-                slot.addEventListener('click', function () {
+                slot.addEventListener('pointerdown', function (e) {
+                    onSlotPointerDown(e, i, item, slot);
+                });
+                slot.addEventListener('click', function (e) {
+                    if (suppressClick) {
+                        e.preventDefault();
+                        suppressClick = false;
+                        return;
+                    }
                     viewingItem = item;
                     render();
                 });
             } else {
                 slot.classList.add('inventory-slot-empty');
-                slot.disabled = true;
                 slot.setAttribute('aria-label', 'Empty slot');
                 slot.textContent = '';
             }
             gridEl.appendChild(slot);
+        }
+    }
+
+    function clearHold() {
+        if (holdTimer) {
+            clearTimeout(holdTimer);
+            holdTimer = null;
+        }
+        pendingHold = null;
+    }
+
+    function onSlotPointerDown(e, slotIndex, item, slotEl) {
+        if (e.button != null && e.button !== 0) {
+            return;
+        }
+        e.preventDefault();
+        clearHold();
+        const startX = e.clientX;
+        const startY = e.clientY;
+        pendingHold = {
+            x: startX,
+            y: startY,
+            slot: slotIndex,
+            item: item,
+            el: slotEl,
+            pointerId: e.pointerId,
+        };
+        holdTimer = setTimeout(function () {
+            const pending = pendingHold;
+            holdTimer = null;
+            pendingHold = null;
+            if (!pending) {
+                return;
+            }
+            beginDrag(
+                pending.slot,
+                pending.item,
+                pending.el,
+                pending.x,
+                pending.y,
+                pending.pointerId
+            );
+        }, HOLD_MS);
+        try {
+            slotEl.setPointerCapture(e.pointerId);
+        } catch (err) { /* ignore */ }
+    }
+
+    function beginDrag(slotIndex, item, slotEl, x, y, pointerId) {
+        if (!item) {
+            return;
+        }
+        drag = {
+            from: slotIndex,
+            item: item,
+            pointerId: pointerId,
+            startX: x,
+            startY: y,
+            over: slotIndex,
+        };
+        suppressClick = true;
+        slotEl.classList.add('inventory-slot-dragging');
+        ghostEl = document.createElement('div');
+        ghostEl.className = 'inventory-drag-ghost';
+        ghostEl.textContent = item.name || item.type_id || 'Item';
+        const rect = slotEl.getBoundingClientRect();
+        ghostEl.style.width = rect.width + 'px';
+        ghostEl.style.height = rect.height + 'px';
+        document.body.appendChild(ghostEl);
+        moveGhost(x, y, rect.width, rect.height);
+        highlightDrop(slotIndex);
+        if (navigator.vibrate) {
+            try { navigator.vibrate(12); } catch (err) { /* ignore */ }
+        }
+    }
+
+    function moveGhost(x, y, w, h) {
+        if (!ghostEl) {
+            return;
+        }
+        const width = w || ghostEl.offsetWidth || 72;
+        const height = h || ghostEl.offsetHeight || 52;
+        ghostEl.style.left = (x - width / 2) + 'px';
+        ghostEl.style.top = (y - height / 2) + 'px';
+    }
+
+    function slotFromPoint(x, y) {
+        const el = document.elementFromPoint(x, y);
+        if (!el || !gridEl) {
+            return null;
+        }
+        const slot = el.closest ? el.closest('.inventory-slot') : null;
+        if (!slot || !gridEl.contains(slot)) {
+            return null;
+        }
+        const idx = parseInt(slot.dataset.slot, 10);
+        return Number.isFinite(idx) ? idx : null;
+    }
+
+    function highlightDrop(index) {
+        if (!gridEl) {
+            return;
+        }
+        const slots = gridEl.querySelectorAll('.inventory-slot');
+        slots.forEach(function (el) {
+            el.classList.toggle(
+                'inventory-slot-drop-target',
+                parseInt(el.dataset.slot, 10) === index
+            );
+        });
+    }
+
+    function onPointerMove(e) {
+        if (pendingHold && !drag) {
+            const dx = e.clientX - pendingHold.x;
+            const dy = e.clientY - pendingHold.y;
+            if ((dx * dx + dy * dy) > (MOVE_CANCEL_PX * MOVE_CANCEL_PX)) {
+                clearHold();
+            }
+        }
+        if (!drag) {
+            return;
+        }
+        e.preventDefault();
+        moveGhost(e.clientX, e.clientY);
+        const over = slotFromPoint(e.clientX, e.clientY);
+        drag.over = over;
+        highlightDrop(over);
+    }
+
+    function onPointerUp(e) {
+        const wasDragging = !!drag;
+        const fromSlot = drag ? drag.from : null;
+        const toSlot = wasDragging ? slotFromPoint(e.clientX, e.clientY) : null;
+        clearHold();
+        if (!wasDragging) {
+            return;
+        }
+        endDrag();
+        suppressClick = true;
+        setTimeout(function () {
+            suppressClick = false;
+        }, 50);
+        if (toSlot == null || toSlot === fromSlot) {
+            render();
+            return;
+        }
+        applyMove(fromSlot, toSlot);
+    }
+
+    function applyMove(fromSlot, toSlot) {
+        const moved = lastInventory[fromSlot];
+        if (!moved) {
+            render();
+            return;
+        }
+        lastInventory[fromSlot] = lastInventory[toSlot] || null;
+        lastInventory[toSlot] = moved;
+        render();
+        if (typeof window.socket !== 'undefined' && window.socket) {
+            window.socket.emit('reorder_inventory', {
+                from_slot: fromSlot,
+                to_slot: toSlot,
+            });
+        }
+    }
+
+    function endDrag() {
+        clearHold();
+        if (ghostEl && ghostEl.parentNode) {
+            ghostEl.parentNode.removeChild(ghostEl);
+        }
+        ghostEl = null;
+        drag = null;
+        pendingHold = null;
+        if (gridEl) {
+            gridEl.querySelectorAll('.inventory-slot-dragging, .inventory-slot-drop-target')
+                .forEach(function (el) {
+                    el.classList.remove('inventory-slot-dragging');
+                    el.classList.remove('inventory-slot-drop-target');
+                });
         }
     }
 

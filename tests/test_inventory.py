@@ -47,7 +47,7 @@ class InventoryServiceTests(unittest.TestCase):
         inst = add_item_to_inventory(player, 'torch')
         self.assertIsNotNone(inst)
         rows = player.inventory.to_client_list()
-        self.assertEqual(len(rows), 1)
+        self.assertEqual(len(rows), 16)
         self.assertEqual(rows[0]['instance_id'], inst.instance_id)
         self.assertEqual(rows[0]['type_id'], 'torch')
         self.assertEqual(rows[0]['name'], 'Torch')
@@ -103,6 +103,33 @@ class InventoryServiceTests(unittest.TestCase):
             self.assertIsNotNone(add_item_to_inventory(player, 'torch'))
         self.assertEqual(len(player.inventory), 16)
         self.assertIsNone(add_item_to_inventory(player, 'torch'))
+
+    def test_move_swaps_filled_slots(self):
+        player = FakePlayer()
+        a = add_item_to_inventory(player, 'healing_potion')
+        b = add_item_to_inventory(player, 'torch')
+        self.assertTrue(player.inventory.move(0, 1))
+        rows = player.inventory.to_client_list()
+        self.assertEqual(rows[0]['instance_id'], b.instance_id)
+        self.assertEqual(rows[1]['instance_id'], a.instance_id)
+
+    def test_move_into_empty_slot_leaves_a_gap(self):
+        player = FakePlayer()
+        inst = add_item_to_inventory(player, 'torch')
+        self.assertTrue(player.inventory.move(0, 5))
+        rows = player.inventory.to_client_list()
+        self.assertIsNone(rows[0])
+        self.assertEqual(rows[5]['instance_id'], inst.instance_id)
+        self.assertEqual(len(player.inventory), 1)
+
+    def test_remove_leaves_a_hole(self):
+        player = FakePlayer()
+        a = add_item_to_inventory(player, 'healing_potion')
+        add_item_to_inventory(player, 'torch')
+        player.inventory.remove(a.instance_id)
+        rows = player.inventory.to_client_list()
+        self.assertIsNone(rows[0])
+        self.assertEqual(rows[1]['type_id'], 'torch')
 
 
 if __name__ == '__main__':
