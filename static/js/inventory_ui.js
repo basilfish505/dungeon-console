@@ -3,6 +3,11 @@ const InventoryUI = (function () {
     const SLOT_COUNT = 16;
     const HOLD_MS = 280;
     const MOVE_CANCEL_PX = 14;
+    // Add future pack verbs here (equip, give, drop, …). Server must accept the id.
+    const ITEM_ACTIONS = [
+        { id: 'use', label: 'Use' },
+        { id: 'discard', label: 'Discard' },
+    ];
 
     let overlayEl = null;
     let gridEl = null;
@@ -437,35 +442,58 @@ const InventoryUI = (function () {
         meta.appendChild(desc);
         meta.appendChild(price);
 
-        if (selectable && context === 'combat') {
-            const actions = document.createElement('div');
-            actions.className = 'inventory-detail-actions';
-            const useBtn = document.createElement('button');
-            useBtn.type = 'button';
-            useBtn.className = 'inventory-use-btn';
-            useBtn.textContent = 'Use';
-            useBtn.addEventListener('click', function () {
-                useItem(item);
+        const actions = document.createElement('div');
+        actions.className = 'inventory-detail-actions';
+        ITEM_ACTIONS.forEach(function (spec) {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'inventory-use-btn';
+            if (spec.id === 'discard') {
+                btn.classList.add('inventory-action-discard');
+            }
+            btn.textContent = spec.label;
+            btn.addEventListener('click', function (e) {
+                e.preventDefault();
+                e.stopPropagation();
+                runAction(spec.id, item);
             });
-            actions.appendChild(useBtn);
-            meta.appendChild(actions);
-        }
+            actions.appendChild(btn);
+        });
 
         detailEl.appendChild(iconWrap);
         detailEl.appendChild(meta);
+        detailEl.appendChild(actions);
     }
 
-    function useItem(item) {
-        if (!item || !item.instance_id) {
+    function runAction(actionId, item) {
+        if (!item || !item.instance_id || !actionId) {
             return;
         }
         if (typeof window.socket === 'undefined' || !window.socket) {
             return;
         }
-        window.socket.emit('use_item', {
+        window.socket.emit('inventory_action', {
             instance_id: item.instance_id,
+            action: actionId,
         });
-        close();
+        if (actionId === 'use' && context === 'combat') {
+            close();
+            return;
+        }
+        if (actionId === 'discard') {
+            const idx = lastInventory.findIndex(function (row) {
+                return row && row.instance_id === item.instance_id;
+            });
+            if (idx >= 0) {
+                lastInventory[idx] = null;
+            }
+            viewingItem = null;
+            render();
+        }
+    }
+
+    function useItem(item) {
+        runAction('use', item);
     }
 
     return {

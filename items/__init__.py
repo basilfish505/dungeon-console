@@ -5,6 +5,7 @@ from items.inventory import Inventory
 from items.service import (
     STARTER_ITEM_IDS,
     add_item_to_inventory,
+    discard_item,
     grant_starter_kit,
     use_item,
 )
@@ -14,6 +15,7 @@ __all__ = [
     'Inventory',
     'STARTER_ITEM_IDS',
     'add_item_to_inventory',
+    'discard_item',
     'grant_starter_kit',
     'use_item',
 ]

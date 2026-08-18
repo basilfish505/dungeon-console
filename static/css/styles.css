@@ -605,9 +605,11 @@ body {
 }
 
 .inventory-detail-actions {
-    display: flex;
-    gap: 8px;
-    margin-top: 8px;
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-top: 18px;
 }
 
 .inventory-use-btn {
@@ -618,12 +620,24 @@ body {
     border: 1px solid #0f0;
     padding: 8px 12px;
     cursor: pointer;
-    min-height: 40px;
+    min-height: 44px;
+    width: 100%;
+    box-sizing: border-box;
 }
 
 .inventory-use-btn:hover,
 .inventory-use-btn:focus {
     background: #001100;
+}
+
+.inventory-action-discard {
+    color: #c90;
+    border-color: #c90;
+}
+
+.inventory-action-discard:hover,
+.inventory-action-discard:focus {
+    background: #110800;
 }
 
 .combat-target-row {

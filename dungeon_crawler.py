@@ -29,7 +29,7 @@ from monster_ai import is_terrain_passable
 from level_turns import register_player_turn_action
 from collections import deque
 import item_types  # noqa: F401 — load item_types.xlsx into registry
-from items.service import grant_starter_kit, use_item as use_item_service
+from items.service import grant_starter_kit, use_item as use_item_service, discard_item
 
 # Constants (map spawn rates live in map_generator.py)
 SECRET_KEY = 'your-secret-key-here'
@@ -837,9 +837,9 @@ def handle_combat_action(data):
     combat_system.process_action(player_id, action, target_id)
 
 
-@socketio.on('use_item')
-def handle_use_item(data):
-    """Server-authoritative item use. Context is inferred from combat state."""
+@socketio.on('inventory_action')
+def handle_inventory_action(data):
+    """Server-authoritative pack actions (use, discard, later equip/give/drop)."""
     player_id = session.get('player_id')
     if not player_id:
         return
@@ -848,29 +848,46 @@ def handle_use_item(data):
         return
     data = data or {}
     instance_id = data.get('instance_id')
+    action = str(data.get('action') or '').strip().lower()
     if not instance_id:
-        emit('item_use_result', {'ok': False, 'message': 'No item selected.'})
+        emit('item_action_result', {'ok': False, 'message': 'No item selected.', 'action': action})
         return
 
     in_combat = bool(getattr(player, 'in_combat', False))
-    if in_combat:
-        result = combat_system.process_item_use(player_id, instance_id)
-        context = 'combat'
-    else:
-        result = use_item_service(
-            player, instance_id, context='exploration', game_state=game_state
-        )
+    result = {'ok': False, 'message': 'Unknown action.', 'consumed': False}
+
+    if action == 'use':
+        if in_combat:
+            result = combat_system.process_item_use(player_id, instance_id)
+        else:
+            result = use_item_service(
+                player, instance_id, context='exploration', game_state=game_state
+            )
+            if result.get('ok') and result.get('message'):
+                game_state.add_player_message(player_id, result['message'])
+            emit('game_state', game_state.get_game_state(player_id), room=player_id)
+    elif action == 'discard':
+        result = discard_item(player, instance_id)
         if result.get('ok') and result.get('message'):
             game_state.add_player_message(player_id, result['message'])
         emit('game_state', game_state.get_game_state(player_id), room=player_id)
-        context = 'exploration'
+    else:
+        result['message'] = f'Cannot {action or "do that"} yet.'
 
-    emit('item_use_result', {
+    emit('item_action_result', {
         'ok': bool(result.get('ok')),
         'message': result.get('message'),
         'consumed': bool(result.get('consumed')),
-        'context': context,
+        'action': action,
     })
+
+
+@socketio.on('use_item')
+def handle_use_item(data):
+    """Back-compat wrapper for inventory use."""
+    data = data or {}
+    data['action'] = 'use'
+    handle_inventory_action(data)
 
 
 @socketio.on('reorder_inventory')

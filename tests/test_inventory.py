@@ -5,7 +5,7 @@ import unittest
 from item_types.base import ItemTypeDef
 from item_types.registry import ITEM_TYPES, register_item_type
 from items.inventory import Inventory
-from items.service import add_item_to_inventory, grant_starter_kit, use_item
+from items.service import add_item_to_inventory, discard_item, grant_starter_kit, use_item
 from player import Player
 
 
@@ -130,6 +130,21 @@ class InventoryServiceTests(unittest.TestCase):
         rows = player.inventory.to_client_list()
         self.assertIsNone(rows[0])
         self.assertEqual(rows[1]['type_id'], 'torch')
+
+    def test_discard_item_removes_owned_instance(self):
+        player = FakePlayer()
+        inst = add_item_to_inventory(player, 'torch')
+        result = discard_item(player, inst.instance_id)
+        self.assertTrue(result['ok'])
+        self.assertTrue(result['consumed'])
+        self.assertEqual(len(player.inventory), 0)
+        self.assertIsNone(player.inventory.get(inst.instance_id))
+        self.assertIn('discard', result['message'].lower())
+
+    def test_discard_item_requires_ownership(self):
+        player = FakePlayer()
+        result = discard_item(player, 'missing')
+        self.assertFalse(result['ok'])
 
 
 if __name__ == '__main__':

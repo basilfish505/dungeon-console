@@ -84,3 +84,28 @@ def use_item(player, instance_id, context='exploration', game_state=None):
     result['ok'] = True
     result['message'] = f'You cannot use the {name} yet.'
     return result
+
+
+def discard_item(player, instance_id):
+    """Destroy an owned instance. Leaves an empty slot (does not compact)."""
+    result = {
+        'ok': False,
+        'message': 'Cannot discard that item.',
+        'consumed': False,
+        'effects': {},
+    }
+    if player is None or getattr(player, 'inventory', None) is None:
+        return result
+
+    inst = player.inventory.get(instance_id)
+    if inst is None:
+        result['message'] = 'You do not have that item.'
+        return result
+
+    type_def = get_item_type(inst.type_id)
+    name = type_def.name if type_def else inst.type_id
+    player.inventory.remove(instance_id)
+    result['ok'] = True
+    result['consumed'] = True
+    result['message'] = f'You discard the {name}.'
+    return result
