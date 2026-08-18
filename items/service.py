@@ -9,6 +9,8 @@ exploration / future merchant-or-give contexts.
 
 from __future__ import annotations
 
+import random
+
 from item_types.registry import get_item_type
 
 
@@ -80,9 +82,37 @@ def use_item(player, instance_id, context='exploration', game_state=None):
         result['message'] = 'You are not in combat.'
         return result
 
+    if inst.type_id == 'healing_potion':
+        return _use_healing_potion(player, instance_id, type_def, result)
+
     name = type_def.name or inst.type_id
     result['ok'] = True
     result['message'] = f'You cannot use the {name} yet.'
+    return result
+
+
+HEALING_POTION_HEAL_MIN = 5
+HEALING_POTION_HEAL_MAX = 8
+
+
+def _use_healing_potion(player, instance_id, type_def, result):
+    roll = random.randint(HEALING_POTION_HEAL_MIN, HEALING_POTION_HEAL_MAX)
+    before = int(player.hp)
+    max_hp = int(player.mhp)
+    player.hp = min(max_hp, before + roll)
+    gained = player.hp - before
+    player.inventory.remove(instance_id)
+    result['ok'] = True
+    result['consumed'] = True
+    result['effects'] = {'heal': gained, 'heal_roll': roll}
+    if gained > 0:
+        result['message'] = (
+            f'You drink the Healing Potion and recover {gained} HP.'
+        )
+    else:
+        result['message'] = (
+            'You drink the Healing Potion, but you are already at full health.'
+        )
     return result
 
 

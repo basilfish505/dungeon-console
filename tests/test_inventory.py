@@ -1,6 +1,7 @@
 """Inventory grant / use service tests."""
 
 import unittest
+from unittest.mock import patch
 
 from item_types.base import ItemTypeDef
 from item_types.registry import ITEM_TYPES, register_item_type
@@ -75,6 +76,45 @@ class InventoryServiceTests(unittest.TestCase):
         self.assertFalse(result['consumed'])
         self.assertEqual(len(player.inventory), 1)
         self.assertIn('cannot use', result['message'].lower())
+
+    def test_healing_potion_heals_and_consumes(self):
+        player = FakePlayer()
+        player.hp = 4
+        player.mhp = 20
+        inst = add_item_to_inventory(player, 'healing_potion')
+        with patch('items.service.random.randint', return_value=7):
+            result = use_item(player, inst.instance_id, context='exploration')
+        self.assertTrue(result['ok'])
+        self.assertTrue(result['consumed'])
+        self.assertEqual(player.hp, 11)
+        self.assertEqual(result['effects']['heal'], 7)
+        self.assertEqual(result['effects']['heal_roll'], 7)
+        self.assertEqual(len(player.inventory), 0)
+        self.assertIn('7', result['message'])
+
+    def test_healing_potion_never_exceeds_max_hp(self):
+        player = FakePlayer()
+        player.hp = 18
+        player.mhp = 20
+        inst = add_item_to_inventory(player, 'healing_potion')
+        with patch('items.service.random.randint', return_value=8):
+            result = use_item(player, inst.instance_id)
+        self.assertEqual(player.hp, 20)
+        self.assertEqual(result['effects']['heal'], 2)
+        self.assertTrue(result['consumed'])
+
+    def test_healing_potion_usable_at_full_health(self):
+        player = FakePlayer()
+        player.hp = 10
+        player.mhp = 10
+        inst = add_item_to_inventory(player, 'healing_potion')
+        with patch('items.service.random.randint', return_value=5):
+            result = use_item(player, inst.instance_id)
+        self.assertTrue(result['ok'])
+        self.assertTrue(result['consumed'])
+        self.assertEqual(player.hp, 10)
+        self.assertEqual(result['effects']['heal'], 0)
+        self.assertIn('full health', result['message'].lower())
 
     def test_use_item_combat_requires_in_combat(self):
         player = FakePlayer()
