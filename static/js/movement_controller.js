@@ -96,9 +96,32 @@ const MovementController = (function () {
         return row[vx];
     }
 
+    function isSolidTerrain(ch) {
+        // Match server IMPASSABLE_TERRAIN plus void.
+        return ch === '#' || ch === ' ' || ch === 'R' || ch === '=' || ch === 'T';
+    }
+
     function isOpenFloor(ch) {
-        return ch != null && ch !== '#' && ch !== ' ' && ch !== '&' && ch !== '@'
+        // Walkable for client prediction. Stairs omitted so we do not
+        // predict across a floor change.
+        return ch != null && !isSolidTerrain(ch) && ch !== '&' && ch !== '@'
             && ch !== '\u2191' && ch !== '\u2193';
+    }
+
+    function canAttemptStep(fromY, fromX, toY, toX) {
+        const dest = viewportChar(toY, toX);
+        if (dest == null || isSolidTerrain(dest) || dest === '&' || dest === '@') {
+            return false;
+        }
+        const dy = toY - fromY;
+        const dx = toX - fromX;
+        if (dy !== 0 && dx !== 0) {
+            if (isSolidTerrain(viewportChar(fromY + dy, fromX))
+                || isSolidTerrain(viewportChar(fromY, fromX + dx))) {
+                return false;
+            }
+        }
+        return true;
     }
 
     function canPredictStep(fromY, fromX, toY, toX) {
@@ -114,6 +137,21 @@ const MovementController = (function () {
             }
         }
         return true;
+    }
+
+    function localStepBlocked(direction) {
+        const delta = DIR_DELTA[direction];
+        if (!delta || typeof PlayerPresentation === 'undefined'
+            || !PlayerPresentation.tilePos) {
+            return false;
+        }
+        const tile = PlayerPresentation.tilePos(localPlayerId());
+        if (!tile) {
+            return false;
+        }
+        return !canAttemptStep(
+            tile.y, tile.x, tile.y + delta[0], tile.x + delta[1]
+        );
     }
 
     function predictStep(direction) {
@@ -156,6 +194,9 @@ const MovementController = (function () {
         }
         const now = performance.now();
         if (!force && now < nextEmitAt) {
+            return false;
+        }
+        if (localStepBlocked(direction)) {
             return false;
         }
 

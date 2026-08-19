@@ -304,6 +304,10 @@ const MapRenderer = (function () {
                 if (useGraphics) {
                     const ent = entityAt(entities, y, x);
                     const terrainCh = (ent && ent.under) ? ent.under : ch;
+                    const underlayKey = TileAssets.underlayKeyForCell(terrainCh);
+                    if (underlayKey) {
+                        drawTerrain(underlayKey, px, py, dw, dh, fogState);
+                    }
                     const terrainKey = TileAssets.terrainKeyForCell(terrainCh);
                     const drewTerrain = terrainKey
                         ? drawTerrain(terrainKey, px, py, dw, dh, fogState)

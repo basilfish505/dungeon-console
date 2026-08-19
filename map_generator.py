@@ -4,12 +4,15 @@ from collections import deque
 from monster import Monster
 from monster_types.registry import pick_spawn_type_id
 from interiors.items_shop import ITEMS_SHOP_ID, stamp_items_shop
-from visibility import IMPASSABLE_TERRAIN
+from visibility import GRASS, IMPASSABLE_TERRAIN, OPEN_GROUND, TREE
 
 # Constants
 MAP_SIZE = 20  # Viewport / simple-dungeon footprint
 TOWN_MAP_SIZE = 20  # Top-level yard (shop, road, stairs)
 MONSTER_PROBABILITY = 0.03
+TREE_SPAWN_RATE = 0.04
+# Keep trees off these tiles and their 8-neighbors (doors, road, stairs).
+TREE_CLEAR_GLYPHS = frozenset({'+', ',', '↓', '↑'})
 MIN_FLOOR_AREA = 300
 MAX_FLOOR_AREA = 500
 MAX_GEN_ATTEMPTS = 50
@@ -51,7 +54,7 @@ class MapGenerator:
     def generate_top_level(self):
         """Generate the top level: open yard, items shop, road at the door, stairs down."""
         size = TOWN_MAP_SIZE
-        self.game_map = [['.' for _ in range(size)] for _ in range(size)]
+        self.game_map = [[GRASS for _ in range(size)] for _ in range(size)]
         for i in range(size):
             self.game_map[0][i] = '#'
             self.game_map[size - 1][i] = '#'
@@ -61,7 +64,36 @@ class MapGenerator:
         self.monsters = {}
         self.town_features = {ITEMS_SHOP_ID: stamp_items_shop(self.game_map)}
         self.place_stair('↓')
+        self._plant_trees()
         return self.game_map, self.monsters
+
+    def _tree_keep_clear(self, game_map=None):
+        """Tiles that must stay open: reserved glyphs and every 8-neighbor."""
+        m = game_map if game_map is not None else self.game_map
+        h, w = len(m), len(m[0])
+        keep_clear = set()
+        for y, row in enumerate(m):
+            for x, cell in enumerate(row):
+                if cell not in TREE_CLEAR_GLYPHS:
+                    continue
+                for dy in (-1, 0, 1):
+                    for dx in (-1, 0, 1):
+                        ny, nx = y + dy, x + dx
+                        if 0 <= ny < h and 0 <= nx < w:
+                            keep_clear.add((ny, nx))
+        return keep_clear
+
+    def _plant_trees(self):
+        """Scatter trees on grass; never block doors, road, or stairs."""
+        m = self.game_map
+        h, w = len(m), len(m[0])
+        keep_clear = self._tree_keep_clear(m)
+        for y in range(1, h - 1):
+            for x in range(1, w - 1):
+                if m[y][x] != GRASS or (y, x) in keep_clear:
+                    continue
+                if random.random() < TREE_SPAWN_RATE:
+                    m[y][x] = TREE
 
     def _generate_simple_level(self, stairs_up_pos=None):
         """Classic fixed 20x20 map: wall border, random interior boulders, stairs both ways."""
@@ -325,7 +357,7 @@ class MapGenerator:
             (y, x)
             for y, row in enumerate(m)
             for x, cell in enumerate(row)
-            if cell in ('.', '&')
+            if cell in OPEN_GROUND or cell == '&'
         ]
 
     def _is_walkable_cell(self, y, x, game_map=None):
@@ -340,7 +372,7 @@ class MapGenerator:
         if preferred is None:
             return None
         py, px = preferred
-        if self._is_walkable_cell(py, px, m) and m[py][px] in ('.', '&'):
+        if self._is_walkable_cell(py, px, m) and m[py][px] in OPEN_GROUND | {'&'}:
             return [py, px]
         best = None
         best_d = None
@@ -439,14 +471,14 @@ class MapGenerator:
                 y, x = nearest
                 if (y, x) in self.monsters:
                     del self.monsters[(y, x)]
-                if self.game_map[y][x] in ('.', '&'):
+                if self.game_map[y][x] in OPEN_GROUND | {'&'}:
                     self.game_map[y][x] = symbol
                     return [y, x]
 
         floors = [
             (y, x)
             for y, x in self._walkable_tiles()
-            if self.game_map[y][x] == '.'
+            if self.game_map[y][x] in OPEN_GROUND
             and (avoid_pos is None or [y, x] != avoid_pos)
         ]
         if not floors:
@@ -482,7 +514,7 @@ class MapGenerator:
             (y, x)
             for y, row in enumerate(check_map)
             for x, cell in enumerate(row)
-            if cell == '.'
+            if cell in OPEN_GROUND
         ]
         random.shuffle(floors)
         for y, x in floors:
@@ -503,7 +535,7 @@ class MapGenerator:
         if not (0 <= y < h and 0 <= x < w):
             return False
         return (
-            check_map[y][x] == '.'
+            check_map[y][x] in OPEN_GROUND
             and not any(p.pos == [y, x] for p in players.values())
             and (y, x) not in existing_monsters
         )

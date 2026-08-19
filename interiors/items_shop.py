@@ -3,6 +3,7 @@
 import random
 
 from interiors.npc import Npc
+from visibility import OPEN_GROUND
 
 ITEMS_SHOP_ID = 'items_shop'
 INTERIOR_W = 4
@@ -113,14 +114,14 @@ def _placement_fits(game_map, building, oy, ox, facing):
         return False
     for y in range(bh):
         for x in range(bw):
-            if game_map[oy + y][ox + x] != '.':
+            if game_map[oy + y][ox + x] not in OPEN_GROUND:
                 return False
     door = find_glyph(building, '+')
     dy, dx = FACING_DELTA[facing]
     ry, rx = oy + door[0] + dy, ox + door[1] + dx
     if not (1 <= ry < h - 1 and 1 <= rx < w - 1):
         return False
-    if game_map[ry][rx] != '.':
+    if game_map[ry][rx] not in OPEN_GROUND:
         return False
     return True
 

@@ -5,12 +5,19 @@ const TileAssets = (function () {
     const TERRAIN = {
         '#': { key: 'boulder', url: '/static/tiles/boulder.png' },
         '.': { key: 'floor', url: '/static/tiles/floor.png' },
+        'g': { key: 'grass', url: '/static/tiles/grass.png' },
+        'T': { key: 'tree', url: '/static/tiles/tree.png' },
         '\u2191': { key: 'stairsup', url: '/static/tiles/stairsup.png' }, // ↑
         '\u2193': { key: 'stairsdown', url: '/static/tiles/stairsdown.png' }, // ↓
         '+': { key: 'door', url: '/static/tiles/door.png' },
         ',': { key: 'road', url: '/static/tiles/road.png' },
         '=': { key: 'desk', url: '/static/tiles/desk.png' },
         'R': { key: 'roof', url: '/static/tiles/roof.png' },
+    };
+
+    /** Draw this terrain first (tree sprite sits on grass). */
+    const UNDERLAY = {
+        'T': 'grass',
     };
 
     /** Cells that sit on walkable floor (draw floor under ASCII). */
@@ -129,7 +136,7 @@ const TileAssets = (function () {
     }
 
     /**
-     * @returns {'boulder'|'floor'|'stairsup'|'stairsdown'|'door'|'road'|'desk'|'roof'|null}
+     * @returns {'boulder'|'floor'|'grass'|'tree'|'stairsup'|'stairsdown'|'door'|'road'|'desk'|'roof'|null}
      */
     function terrainKeyForCell(ch) {
         if (!ch) {
@@ -144,9 +151,17 @@ const TileAssets = (function () {
         return null;
     }
 
+    function underlayKeyForCell(ch) {
+        if (!ch) {
+            return null;
+        }
+        return UNDERLAY[ch] || null;
+    }
+
     /** Glyph fully replaced by a graphic (no ASCII overlay when PNG drew). */
     function isTerrainOnly(ch) {
-        return ch === '#' || ch === '.' || ch === '\u2191' || ch === '\u2193'
+        return ch === '#' || ch === '.' || ch === 'g' || ch === 'T'
+            || ch === '\u2191' || ch === '\u2193'
             || ch === '+' || ch === ',' || ch === '=' || ch === 'R';
     }
 
@@ -161,6 +176,7 @@ const TileAssets = (function () {
         preload,
         getImage,
         terrainKeyForCell,
+        underlayKeyForCell,
         isTerrainOnly,
         isReady,
         setOnReady,

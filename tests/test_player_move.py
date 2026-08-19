@@ -61,3 +61,12 @@ class PlayerMoveTests(unittest.TestCase):
     def test_same_tile_rejected(self):
         m = _blank_map()
         self.assertFalse(self.gs.is_valid_move([2, 2], [2, 2], m))
+
+    def test_tree_blocks_step_and_corner(self):
+        m = _blank_map(fill='g')
+        m[1][2] = 'T'
+        self.assertFalse(self.gs.is_valid_move([2, 2], [1, 2], m))
+        m[1][3] = 'g'
+        self.assertFalse(self.gs.is_valid_move([2, 2], [1, 3], m))
+        m[1][2] = 'g'
+        self.assertTrue(self.gs.is_valid_move([2, 2], [1, 3], m))

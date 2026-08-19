@@ -118,7 +118,7 @@ class TownShopStampTests(unittest.TestCase):
             facings.add(feat['facing'])
         self.assertGreater(len(origins), 1)
         self.assertGreater(len(facings), 1)
-        yard = [['.' for _ in range(TOWN_MAP_SIZE)] for _ in range(TOWN_MAP_SIZE)]
+        yard = [['g' for _ in range(TOWN_MAP_SIZE)] for _ in range(TOWN_MAP_SIZE)]
         for i in range(TOWN_MAP_SIZE):
             yard[0][i] = yard[TOWN_MAP_SIZE - 1][i] = '#'
             yard[i][0] = yard[i][TOWN_MAP_SIZE - 1] = '#'
