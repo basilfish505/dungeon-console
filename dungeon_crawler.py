@@ -32,9 +32,8 @@ import item_types  # noqa: F401 — load item_types.xlsx into registry
 from items.service import grant_starter_kit, use_item as use_item_service, discard_item
 from interiors.items_shop import (
     ITEMS_SHOP_ID,
-    INTERIOR_SPAWN,
     build_items_shop,
-    talk_tiles,
+    interior_spawn,
 )
 
 # Constants (map spawn rates live in map_generator.py)
@@ -86,11 +85,12 @@ class GameState:
         self._register_items_shop()
 
     def _register_items_shop(self):
-        game_map, npcs = build_items_shop()
-        self.interiors[ITEMS_SHOP_ID] = (game_map, npcs)
         feat = (getattr(self.map_generator, 'town_features', None) or {}).get(
             ITEMS_SHOP_ID
         ) or {}
+        facing = feat.get('facing', 's')
+        game_map, npcs = build_items_shop(facing)
+        self.interiors[ITEMS_SHOP_ID] = (game_map, npcs)
         door = feat.get('door')
         road = feat.get('road')
         if door:
@@ -417,10 +417,9 @@ class GameState:
         new_pos = player.move(direction)
         dest = (new_pos[0], new_pos[1])
 
-        # Talk bumps: desk is impassable; NPC tile is floor but occupied.
+        # Shop talk only when bumping the desk. NPC tiles are occupied, not chat.
         if dest in npcs:
-            self._open_talk(player_id, npcs[dest])
-            return True
+            return False
         if self._cell(game_map, dest) == '=':
             self._open_talk(player_id, next(iter(npcs.values()), None))
             return True
@@ -481,8 +480,6 @@ class GameState:
 
             player.pos = new_pos
             self.recompute_visibility(player)
-            if dest in talk_tiles(game_map) and npcs:
-                self._open_talk(player_id, next(iter(npcs.values()), None))
             return True
         return False
 
@@ -528,16 +525,21 @@ class GameState:
         if interior_id not in interiors:
             return False
         game_map, npcs = interiors[interior_id]
-        spawn = list(INTERIOR_SPAWN) if interior_id == ITEMS_SHOP_ID else [1, 1]
+        spawn = interior_spawn(game_map)
         players = {
             pid: other for pid, other in self.players.items()
             if getattr(other, 'interior_id', None) == interior_id
         }
-        arrival = self._find_free_arrival(
-            game_map, spawn, {}, npcs, players, player.id
-        )
-        if arrival is None:
+        occupied = set(npcs)
+        for pid, other in players.items():
+            if pid == player.id:
+                continue
+            occupied.add((other.pos[0], other.pos[1]))
+        if tuple(spawn) in occupied or not is_terrain_passable(
+            game_map, spawn[0], spawn[1]
+        ):
             return False
+        arrival = list(spawn)
         player.interior_id = interior_id
         player.pos = arrival
         if player.id in self.cameras:
