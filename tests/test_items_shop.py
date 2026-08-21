@@ -210,19 +210,25 @@ class ItemsShopPlayTests(unittest.TestCase):
         self.assertGreaterEqual(defender.mhp, 400)
         self.assertEqual(npc.combat_type_id, 'shopkeeper')
 
-    def test_shopkeeper_hits_for_hundreds(self):
-        from combat import monster_hit_damage
+    def test_shopkeeper_uses_strength_damage_formula(self):
+        from combat_damage import damage_between
         from monster import Monster
         from monster_types import get_monster_type
 
         self.assertIsNotNone(get_monster_type('shopkeeper'))
         mon = Monster.from_type('shopkeeper', [1, 1], monster_id='k')
+        self.assertEqual(mon.str, 20)
+        self.assertEqual(mon.armour, 1)
+        target = Player('hero', [0, 0])
+        target.armour = 1
         rng = __import__('random').Random(1)
-        hits = [monster_hit_damage(mon, rng) for _ in range(20)]
-        self.assertTrue(all(150 <= d <= 300 for d in hits))
-        self.assertTrue(any(d >= 200 for d in hits))
-        troll_hits = [monster_hit_damage(Monster.from_type('troll', [0, 0], monster_id='t'), rng) for _ in range(30)]
-        self.assertTrue(all(1 <= d <= 6 for d in troll_hits))
+        hits = [damage_between(mon, target, rng=rng) for _ in range(20)]
+        self.assertTrue(all(isinstance(d, int) and d >= 0 for d in hits))
+        # Unarmed: mean ~= strength 20, sd ~= 10 — not the old hundreds from attack_power
+        self.assertTrue(all(d < 80 for d in hits))
+        avg = sum(hits) / len(hits)
+        self.assertGreater(avg, 5.0)
+        self.assertLess(avg, 40.0)
 
     def test_player_bump_on_town_still_starts_combat(self):
         p = self.gs.players['hero']

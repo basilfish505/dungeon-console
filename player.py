@@ -43,6 +43,8 @@ class Player:
         self.chr = random.randint(1, 10)
         self.dex = random.randint(1, 10)
         self.agi = random.randint(1, 10)
+        # Damage divisor in combat_damage; 1 = no reduction until gear exists.
+        self.armour = 1
         self.in_combat = False
         # Vision / fog-of-war (dungeon floors only; town and interiors are fully lit)
         self.sight_range = 8

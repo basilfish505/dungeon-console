@@ -2,23 +2,13 @@ from flask import session
 import random
 from player import Player
 from monster import Monster
+from combat_damage import damage_between
 import uuid
 
 TURN_TIMEOUT_SECONDS = 20
 MONSTER_TURN_DELAY_SECONDS = 1  # pause before monster acts after another turn
 KILLING_BLOW_PAUSE_SECONDS = 1  # pause so killer can read damage before combat closes
 
-
-def monster_hit_damage(monster, rng=None):
-    """Roll monster attack damage. High attack_power hits in the hundreds."""
-    rng = rng or random
-    try:
-        power = int(getattr(monster, 'attack_power', 0) or 0)
-    except (TypeError, ValueError):
-        power = 0
-    if power >= 20:
-        return rng.randint(max(1, power // 2), power)
-    return rng.randint(1, 6)
 
 class CombatSystem:
     def __init__(self, game_state, socketio):
@@ -410,8 +400,8 @@ class CombatSystem:
         damage = 0
         
         if not blocked:
-            # Apply damage to target
-            damage = random.randint(1, 8)
+            # Shared Gaussian strength/armour formula (see combat_damage.py)
+            damage = damage_between(attacker, target)
             target.hp -= damage
             
             # Hit feedback to everyone first (sound/shake), then game_state
@@ -650,8 +640,8 @@ class CombatSystem:
             target_id = random.choice(battle['participants'])
             target = self.game_state.players[target_id]
             
-            # Calculate monster damage
-            damage = monster_hit_damage(monster)
+            # Same formula as player attacks (see combat_damage.py)
+            damage = damage_between(monster, target)
             target.hp -= damage
             
             # Always send hit feedback first (including killing blows)
