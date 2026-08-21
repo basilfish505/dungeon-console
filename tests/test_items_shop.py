@@ -66,7 +66,7 @@ class TownShopStampTests(unittest.TestCase):
         self.assertEqual(road, (door[0] + dy, door[1] + dx))
         self.assertEqual(abs(door[0] - road[0]) + abs(door[1] - road[1]), 1)
 
-    def test_outdoor_shop_perimeter_boulders_inner_roof(self):
+    def test_outdoor_shop_perimeter_walls_inner_roof(self):
         origin = tuple(self.feat['origin'])
         door = tuple(self.feat['door'])
         bh, bw = self.feat['size']
@@ -78,14 +78,15 @@ class TownShopStampTests(unittest.TestCase):
                     self.assertEqual(self.game_map[gy][gx], '+')
                     self.assertTrue(is_terrain_passable(self.game_map, gy, gx))
                 elif on_edge:
-                    self.assertEqual(self.game_map[gy][gx], '#')
+                    self.assertEqual(self.game_map[gy][gx], 'W')
                     self.assertFalse(is_terrain_passable(self.game_map, gy, gx))
                 else:
                     self.assertEqual(self.game_map[gy][gx], 'R')
                     self.assertFalse(is_terrain_passable(self.game_map, gy, gx))
         interior, _npcs = build_items_shop(self.feat['facing'])
-        self.assertTrue(all(cell in ('#', '.', '=', '+') for row in interior for cell in row))
+        self.assertTrue(all(cell in ('W', '.', '=', '+') for row in interior for cell in row))
         self.assertFalse(any(cell == 'R' for row in interior for cell in row))
+        self.assertFalse(any(cell == '#' for row in interior for cell in row))
 
     def test_stair_does_not_overlap_shop(self):
         door = tuple(self.feat['door'])
@@ -188,20 +189,40 @@ class ItemsShopPlayTests(unittest.TestCase):
         self.assertEqual(ids, list(STARTER_ITEM_IDS))
         self.assertIn('Welcome', result['data']['greeting'])
 
-    def test_bump_npc_does_not_talk_or_combat(self):
+    def test_bump_npc_starts_combat(self):
         p = self.gs.players['hero']
         self.assertTrue(self.gs.enter_interior(p, ITEMS_SHOP_ID))
         npc_pos = next(iter(self.npcs))
+        npc = self.npcs[npc_pos]
         front, _away = _floor_neighbor(self.interior, npc_pos, exclude=())
         self.assertIsNotNone(front)
         p.pos = list(front)
         self.gs.pending_inspect = {}
         step = _cardinal_dir(front, npc_pos)
         with patch('dungeon_crawler.combat_system') as mock_combat:
-            self.assertFalse(self.gs.move_player('hero', step))
-            mock_combat.start_combat.assert_not_called()
+            mock_combat.start_combat.return_value = None
+            self.assertTrue(self.gs.move_player('hero', step))
+            mock_combat.start_combat.assert_called_once()
+            defender = mock_combat.start_combat.call_args[0][1]
         self.assertEqual(p.pos, list(front))
         self.assertNotIn('hero', self.gs.pending_inspect)
+        self.assertEqual(defender.attack_power, 300)
+        self.assertGreaterEqual(defender.mhp, 400)
+        self.assertEqual(npc.combat_type_id, 'shopkeeper')
+
+    def test_shopkeeper_hits_for_hundreds(self):
+        from combat import monster_hit_damage
+        from monster import Monster
+        from monster_types import get_monster_type
+
+        self.assertIsNotNone(get_monster_type('shopkeeper'))
+        mon = Monster.from_type('shopkeeper', [1, 1], monster_id='k')
+        rng = __import__('random').Random(1)
+        hits = [monster_hit_damage(mon, rng) for _ in range(20)]
+        self.assertTrue(all(150 <= d <= 300 for d in hits))
+        self.assertTrue(any(d >= 200 for d in hits))
+        troll_hits = [monster_hit_damage(Monster.from_type('troll', [0, 0], monster_id='t'), rng) for _ in range(30)]
+        self.assertTrue(all(1 <= d <= 6 for d in troll_hits))
 
     def test_player_bump_on_town_still_starts_combat(self):
         p = self.gs.players['hero']
@@ -220,9 +241,14 @@ class ItemsShopPlayTests(unittest.TestCase):
     def test_town_has_no_fog(self):
         state = self.gs.get_game_state('hero')
         self.assertEqual(state['map_size'], {'h': TOWN_MAP_SIZE, 'w': TOWN_MAP_SIZE})
-        for row in state['fog']:
-            for cell in row:
-                self.assertEqual(cell, 'visible')
+        cam_y = state['camera']['y']
+        cam_x = state['camera']['x']
+        mh, mw = TOWN_MAP_SIZE, TOWN_MAP_SIZE
+        for y, row in enumerate(state['fog']):
+            for x, cell in enumerate(row):
+                wy, wx = cam_y + y, cam_x + x
+                if 0 <= wy < mh and 0 <= wx < mw:
+                    self.assertEqual(cell, 'visible')
 
     def test_passable_glyphs(self):
         m = self.gs.levels[0][0]

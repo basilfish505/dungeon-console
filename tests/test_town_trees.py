@@ -8,7 +8,7 @@ from interiors.items_shop import ITEMS_SHOP_ID
 from map_generator import TREE_SPAWN_RATE, MapGenerator
 from monster_ai import is_terrain_passable
 from player import Player
-from visibility import GRASS, OPEN_GROUND, TREE
+from visibility import GRASS, MOUNTAIN, OPEN_GROUND, TREE, WALL
 
 
 class TownGrassTreeTests(unittest.TestCase):
@@ -25,9 +25,48 @@ class TownGrassTreeTests(unittest.TestCase):
         self.assertIn(GRASS, cells)
         self.assertNotIn('.', cells)
         self.assertTrue(all(
-            cell in OPEN_GROUND | {'#', 'R', '+', ',', '↓', TREE}
+            cell in OPEN_GROUND | {'#', MOUNTAIN, WALL, 'R', '+', ',', '↓', TREE}
             for cell in cells
         ))
+
+    def test_town_border_is_mountains(self):
+        _gen, game_map = self._generate(2)
+        n = len(game_map)
+        for i in range(n):
+            self.assertEqual(game_map[0][i], MOUNTAIN)
+            self.assertEqual(game_map[n - 1][i], MOUNTAIN)
+            self.assertEqual(game_map[i][0], MOUNTAIN)
+            self.assertEqual(game_map[i][n - 1], MOUNTAIN)
+        self.assertFalse(is_terrain_passable(game_map, 0, 5))
+        self.assertNotEqual(game_map[1][1], MOUNTAIN)
+
+    def test_nothing_drawn_beyond_town_border(self):
+        gs = GameState()
+        p = Player('hero', [2, 2])
+        p.dungeon_level = 0
+        gs.players['hero'] = p
+        gs.active_players['hero'] = p
+        gs.player_messages['hero'] = []
+        gs.cameras['hero'] = (-4, -3)
+        gs.viewports['hero'] = (20, 20)
+        state = gs.get_game_state('hero', follow_player=False)
+        map_h = state['map_size']['h']
+        map_w = state['map_size']['w']
+        cam_y = state['camera']['y']
+        cam_x = state['camera']['x']
+        oob_found = False
+        for y, row in enumerate(state['fog']):
+            for x, fog in enumerate(row):
+                wy = cam_y + y
+                wx = cam_x + x
+                if 0 <= wy < map_h and 0 <= wx < map_w:
+                    self.assertEqual(fog, 'visible')
+                    self.assertNotEqual(state['map'][y][x], ' ')
+                    continue
+                oob_found = True
+                self.assertEqual(fog, 'unexplored')
+                self.assertEqual(state['map'][y][x], ' ')
+        self.assertTrue(oob_found)
 
     def test_shop_interior_still_uses_floor(self):
         gs = GameState()

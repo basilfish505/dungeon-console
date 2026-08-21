@@ -4,7 +4,7 @@ from collections import deque
 from monster import Monster
 from monster_types.registry import pick_spawn_type_id
 from interiors.items_shop import ITEMS_SHOP_ID, stamp_items_shop
-from visibility import GRASS, IMPASSABLE_TERRAIN, OPEN_GROUND, TREE
+from visibility import GRASS, IMPASSABLE_TERRAIN, MOUNTAIN, OPEN_GROUND, TREE
 
 # Constants
 MAP_SIZE = 20  # Viewport / simple-dungeon footprint
@@ -56,10 +56,10 @@ class MapGenerator:
         size = TOWN_MAP_SIZE
         self.game_map = [[GRASS for _ in range(size)] for _ in range(size)]
         for i in range(size):
-            self.game_map[0][i] = '#'
-            self.game_map[size - 1][i] = '#'
-            self.game_map[i][0] = '#'
-            self.game_map[i][size - 1] = '#'
+            self.game_map[0][i] = MOUNTAIN
+            self.game_map[size - 1][i] = MOUNTAIN
+            self.game_map[i][0] = MOUNTAIN
+            self.game_map[i][size - 1] = MOUNTAIN
 
         self.monsters = {}
         self.town_features = {ITEMS_SHOP_ID: stamp_items_shop(self.game_map)}

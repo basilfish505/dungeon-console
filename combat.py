@@ -8,6 +8,18 @@ TURN_TIMEOUT_SECONDS = 20
 MONSTER_TURN_DELAY_SECONDS = 1  # pause before monster acts after another turn
 KILLING_BLOW_PAUSE_SECONDS = 1  # pause so killer can read damage before combat closes
 
+
+def monster_hit_damage(monster, rng=None):
+    """Roll monster attack damage. High attack_power hits in the hundreds."""
+    rng = rng or random
+    try:
+        power = int(getattr(monster, 'attack_power', 0) or 0)
+    except (TypeError, ValueError):
+        power = 0
+    if power >= 20:
+        return rng.randint(max(1, power // 2), power)
+    return rng.randint(1, 6)
+
 class CombatSystem:
     def __init__(self, game_state, socketio):
         self.game_state = game_state
@@ -639,7 +651,7 @@ class CombatSystem:
             target = self.game_state.players[target_id]
             
             # Calculate monster damage
-            damage = random.randint(1, 6)
+            damage = monster_hit_damage(monster)
             target.hp -= damage
             
             # Always send hit feedback first (including killing blows)

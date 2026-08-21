@@ -4,6 +4,8 @@ const TileAssets = (function () {
 
     const TERRAIN = {
         '#': { key: 'boulder', url: '/static/tiles/boulder.png' },
+        'W': { key: 'brickwall', url: '/static/tiles/brickwall.png' },
+        'M': { key: 'mountain', url: '/static/tiles/mountain.png' },
         '.': { key: 'floor', url: '/static/tiles/floor.png' },
         'g': { key: 'grass', url: '/static/tiles/grass.png' },
         'T': { key: 'tree', url: '/static/tiles/tree.png' },
@@ -15,9 +17,10 @@ const TileAssets = (function () {
         'R': { key: 'roof', url: '/static/tiles/roof.png' },
     };
 
-    /** Draw this terrain first (tree sprite sits on grass). */
+    /** Draw this terrain first (tree/mountain sprites sit on grass). */
     const UNDERLAY = {
         'T': 'grass',
+        'M': 'grass',
     };
 
     /** Cells that sit on walkable floor (draw floor under ASCII). */
@@ -136,7 +139,7 @@ const TileAssets = (function () {
     }
 
     /**
-     * @returns {'boulder'|'floor'|'grass'|'tree'|'stairsup'|'stairsdown'|'door'|'road'|'desk'|'roof'|null}
+     * @returns {'boulder'|'brickwall'|'mountain'|'floor'|'grass'|'tree'|'stairsup'|'stairsdown'|'door'|'road'|'desk'|'roof'|null}
      */
     function terrainKeyForCell(ch) {
         if (!ch) {
@@ -160,7 +163,7 @@ const TileAssets = (function () {
 
     /** Glyph fully replaced by a graphic (no ASCII overlay when PNG drew). */
     function isTerrainOnly(ch) {
-        return ch === '#' || ch === '.' || ch === 'g' || ch === 'T'
+        return ch === '#' || ch === 'W' || ch === 'M' || ch === '.' || ch === 'g' || ch === 'T'
             || ch === '\u2191' || ch === '\u2193'
             || ch === '+' || ch === ',' || ch === '=' || ch === 'R';
     }

@@ -12,11 +12,13 @@ VISIBILITY_SYSTEM_ENABLED = True
 # Permanent map features remembered in fog (monsters/players are not terrain)
 GRASS = 'g'
 TREE = 'T'
+MOUNTAIN = 'M'
+WALL = 'W'
 OPEN_GROUND = frozenset({'.', GRASS})
 
-PERMANENT_TERRAIN = frozenset({'#', '.', GRASS, TREE, '↓', '↑', '+', ',', '=', 'R'})
-BLOCKING_TERRAIN = frozenset({'#', 'R'})
-IMPASSABLE_TERRAIN = frozenset({'#', 'R', '=', TREE})
+PERMANENT_TERRAIN = frozenset({'#', '.', GRASS, TREE, MOUNTAIN, WALL, '↓', '↑', '+', ',', '=', 'R'})
+BLOCKING_TERRAIN = frozenset({'#', 'R', MOUNTAIN, WALL})
+IMPASSABLE_TERRAIN = frozenset({'#', 'R', '=', TREE, MOUNTAIN, WALL})
 
 # Octant multipliers [xx, xy, yx, yy] — roguebasin recursive shadowcasting
 _MULT = (

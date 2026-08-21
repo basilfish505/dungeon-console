@@ -70,3 +70,59 @@ class PlayerMoveTests(unittest.TestCase):
         self.assertFalse(self.gs.is_valid_move([2, 2], [1, 3], m))
         m[1][2] = 'g'
         self.assertTrue(self.gs.is_valid_move([2, 2], [1, 3], m))
+
+
+class CombatBumpTests(unittest.TestCase):
+    def setUp(self):
+        with patch.object(GameState, 'generate_top_level', lambda self: None):
+            self.gs = GameState.__new__(GameState)
+            self.gs.players = {}
+            self.gs.active_players = {}
+            self.gs.player_messages = {}
+            self.gs.active_combats = {}
+            self.gs.manual_pan = {}
+            self.gs.interiors = {}
+            self.gs.levels = {}
+            self.gs.cameras = {}
+            self.gs.viewports = {}
+
+    def _dungeon(self, game_map, monsters=None):
+        self.gs.levels[1] = (game_map, monsters if monsters is not None else {})
+
+    def test_move_onto_monster_starts_combat(self):
+        from monster import Monster
+        m = _blank_map()
+        m[2][3] = '&'
+        foe = Monster.from_type('troll', [2, 3], monster_id='troll-1')
+        self._dungeon(m, {(2, 3): foe})
+        p = Player('hero', [2, 2])
+        p.dungeon_level = 1
+        self.gs.players['hero'] = p
+        self.gs.active_players['hero'] = p
+        self.gs.player_messages['hero'] = []
+        with patch('dungeon_crawler.combat_system') as mock_combat:
+            mock_combat.start_combat.return_value = None
+            self.assertTrue(self.gs.move_player('hero', 'e'))
+            mock_combat.start_combat.assert_called_once_with(
+                'hero', foe, emit_game_state=False
+            )
+        self.assertEqual(p.pos, [2, 2])
+
+    def test_move_onto_player_starts_combat(self):
+        m = _blank_map()
+        self._dungeon(m, {})
+        p = Player('hero', [2, 2])
+        p.dungeon_level = 1
+        other = Player('other', [2, 3])
+        other.dungeon_level = 1
+        self.gs.players['hero'] = p
+        self.gs.players['other'] = other
+        self.gs.active_players['hero'] = p
+        self.gs.player_messages['hero'] = []
+        with patch('dungeon_crawler.combat_system') as mock_combat:
+            mock_combat.start_combat.return_value = None
+            self.assertTrue(self.gs.move_player('hero', 'e'))
+            mock_combat.start_combat.assert_called_once_with(
+                'hero', 'other', emit_game_state=False
+            )
+        self.assertEqual(p.pos, [2, 2])

@@ -3,7 +3,7 @@
 import random
 
 from interiors.npc import Npc
-from visibility import OPEN_GROUND
+from visibility import OPEN_GROUND, WALL
 
 ITEMS_SHOP_ID = 'items_shop'
 INTERIOR_W = 4
@@ -72,7 +72,7 @@ def interior_spawn(game_map):
 def _canonical_outdoor():
     h, w = INTERIOR_H, INTERIOR_W
     grid = [
-        ['#' if y == 0 or y == h - 1 or x == 0 or x == w - 1 else 'R'
+        [WALL if y == 0 or y == h - 1 or x == 0 or x == w - 1 else 'R'
          for x in range(w)]
         for y in range(h)
     ]
@@ -81,12 +81,13 @@ def _canonical_outdoor():
 
 
 def _canonical_interior():
+    w = WALL
     return [list(row) for row in (
-        '####',
-        '#..#',
-        '#.=#',
-        '#..#',
-        '##+#',
+        w * 4,
+        w + '..' + w,
+        w + '.=' + w,
+        w + '..' + w,
+        w * 2 + '+' + w,
     )]
 
 
@@ -102,6 +103,7 @@ def build_items_shop(facing='s'):
         greeting=WELCOME,
         sprite=SHOPKEEPER_SPRITE,
         shop_id=ITEMS_SHOP_ID,
+        combat_type_id='shopkeeper',
     )
     npcs = {(ny, nx): npc}
     return game_map, npcs

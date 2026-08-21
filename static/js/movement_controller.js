@@ -84,8 +84,10 @@ const MovementController = (function () {
         if (!map || !map.length) {
             return null;
         }
-        const vy = y - (st.cameraY | 0);
-        const vx = x - (st.cameraX | 0);
+        const originY = Number.isFinite(st.mapOriginY) ? (st.mapOriginY | 0) : (st.cameraY | 0);
+        const originX = Number.isFinite(st.mapOriginX) ? (st.mapOriginX | 0) : (st.cameraX | 0);
+        const vy = y - originY;
+        const vx = x - originX;
         if (vy < 0 || vx < 0 || vy >= map.length) {
             return null;
         }
@@ -96,9 +98,29 @@ const MovementController = (function () {
         return row[vx];
     }
 
+    function entityKindAt(worldY, worldX) {
+        if (typeof MapView === 'undefined' || !MapView.getState) {
+            return null;
+        }
+        const st = MapView.getState();
+        const ents = st.lastEntities || [];
+        const camY = Number.isFinite(st.mapOriginY) ? (st.mapOriginY | 0) : (st.cameraY | 0);
+        const camX = Number.isFinite(st.mapOriginX) ? (st.mapOriginX | 0) : (st.cameraX | 0);
+        for (let i = 0; i < ents.length; i++) {
+            const e = ents[i];
+            if (!e) {
+                continue;
+            }
+            if (camY + (e.vy | 0) === worldY && camX + (e.vx | 0) === worldX) {
+                return e.kind || null;
+            }
+        }
+        return null;
+    }
+
     function isSolidTerrain(ch) {
         // Match server IMPASSABLE_TERRAIN plus void.
-        return ch === '#' || ch === ' ' || ch === 'R' || ch === '=' || ch === 'T';
+        return ch === '#' || ch === ' ' || ch === 'R' || ch === '=' || ch === 'T' || ch === 'M' || ch === 'W';
     }
 
     function isOpenFloor(ch) {
@@ -110,7 +132,13 @@ const MovementController = (function () {
 
     function canAttemptStep(fromY, fromX, toY, toX) {
         const dest = viewportChar(toY, toX);
-        if (dest == null || isSolidTerrain(dest) || dest === '&' || dest === '@') {
+        const kind = entityKindAt(toY, toX);
+        // Bumps that must reach the server: desk talk, NPC/monster/player combat.
+        if (dest === '=' || dest === '&' || dest === '@'
+            || kind === 'npc' || kind === 'monster' || kind === 'player') {
+            return true;
+        }
+        if (dest == null || isSolidTerrain(dest)) {
             return false;
         }
         const dy = toY - fromY;
@@ -125,6 +153,10 @@ const MovementController = (function () {
     }
 
     function canPredictStep(fromY, fromX, toY, toX) {
+        const kind = entityKindAt(toY, toX);
+        if (kind === 'npc' || kind === 'monster' || kind === 'player') {
+            return false;
+        }
         if (!isOpenFloor(viewportChar(toY, toX))) {
             return false;
         }

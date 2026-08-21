@@ -16,6 +16,9 @@ from monster_types.sheet import load_default_monster_sheet
 
 load_default_monster_sheet()
 
+# After the sheet so a missing xlsx row cannot drop this unique NPC type.
+import monster_types.shopkeeper  # noqa: F401
+
 __all__ = [
     'MonsterTypeDef',
     'apply_level',

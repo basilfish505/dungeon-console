@@ -312,6 +312,10 @@ class GameState:
                 if game_map[y][x] == '&':
                     game_map[y][x] = '.'
                 return True
+        for _iid, (_game_map, npcs) in (getattr(self, 'interiors', None) or {}).items():
+            if position in npcs:
+                del npcs[position]
+                return True
         return False
 
     def move_monster(self, level_number, monster, dest):
@@ -417,9 +421,14 @@ class GameState:
         new_pos = player.move(direction)
         dest = (new_pos[0], new_pos[1])
 
-        # Shop talk only when bumping the desk. NPC tiles are occupied, not chat.
+        # Desk bump opens shop talk. NPC bump starts combat.
         if dest in npcs:
-            return False
+            npc = npcs[dest]
+            combatant = npc.as_combatant() if npc is not None else None
+            if combatant is None:
+                return False
+            combat_system.start_combat(player_id, combatant, emit_game_state=False)
+            return True
         if self._cell(game_map, dest) == '=':
             self._open_talk(player_id, next(iter(npcs.values()), None))
             return True
@@ -670,9 +679,9 @@ class GameState:
                     if 0 <= wy < map_h and 0 <= wx < map_w:
                         char = overlay.get((wy, wx), game_map[wy][wx])
                     else:
-                        char = '#'
+                        char = ' '
                     row_chars.append(char)
-                    row_fog.append('visible')
+                    row_fog.append('visible' if 0 <= wy < map_h and 0 <= wx < map_w else 'unexplored')
                 visible_map.append(row_chars)
                 fog.append(row_fog)
             for player in self.players.values():
