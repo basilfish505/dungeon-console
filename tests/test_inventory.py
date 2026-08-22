@@ -6,7 +6,13 @@ from unittest.mock import patch
 from item_types.base import ItemTypeDef
 from item_types.registry import ITEM_TYPES, register_item_type
 from items.inventory import Inventory
-from items.service import add_item_to_inventory, discard_item, grant_starter_kit, use_item
+from items.service import (
+    add_item_to_inventory,
+    discard_item,
+    grant_starter_kit,
+    purchase_item,
+    use_item,
+)
 from player import Player
 
 
@@ -16,6 +22,8 @@ class FakePlayer:
         self.in_combat = False
         self.hp = 10
         self.mhp = 10
+        self.pqg = 10
+        self.interior_id = None
 
 
 class InventoryServiceTests(unittest.TestCase):
@@ -185,6 +193,49 @@ class InventoryServiceTests(unittest.TestCase):
         player = FakePlayer()
         result = discard_item(player, 'missing')
         self.assertFalse(result['ok'])
+
+    def test_purchase_item_deducts_pqg_and_grants(self):
+        player = FakePlayer()
+        player.pqg = 10
+        result = purchase_item(player, 'torch')
+        self.assertTrue(result['ok'])
+        self.assertEqual(player.pqg, 5)
+        self.assertEqual(len(player.inventory), 1)
+        self.assertEqual(next(iter(player.inventory)).type_id, 'torch')
+        self.assertIn('buy', result['message'].lower())
+
+    def test_purchase_item_insufficient_pqg(self):
+        player = FakePlayer()
+        player.pqg = 10
+        result = purchase_item(player, 'healing_potion')
+        self.assertFalse(result['ok'])
+        self.assertEqual(player.pqg, 10)
+        self.assertEqual(len(player.inventory), 0)
+        self.assertIn('afford', result['message'].lower())
+
+    def test_purchase_item_full_pack_no_pqg_change(self):
+        player = FakePlayer()
+        player.pqg = 100
+        for _ in range(16):
+            add_item_to_inventory(player, 'torch')
+        result = purchase_item(player, 'torch')
+        self.assertFalse(result['ok'])
+        self.assertEqual(player.pqg, 100)
+        self.assertEqual(len(player.inventory), 16)
+        self.assertIn('full', result['message'].lower())
+
+    def test_purchase_item_not_in_catalog(self):
+        player = FakePlayer()
+        register_item_type(ItemTypeDef(item_id='secret_gem', name='Gem', price_pqg=1))
+        result = purchase_item(player, 'secret_gem')
+        self.assertFalse(result['ok'])
+        self.assertEqual(player.pqg, 10)
+        self.assertIn('not for sale', result['message'].lower())
+
+    def test_new_player_starts_with_pqg_and_empty_pack(self):
+        player = Player('buyer', [1, 1])
+        self.assertEqual(player.pqg, 10)
+        self.assertEqual(len(player.inventory), 0)
 
 
 if __name__ == '__main__':

@@ -214,6 +214,13 @@ const SocketHandler = (function () {
         socket.emit('inspect_map', { y: y | 0, x: x | 0 });
     }
 
+    function buyItem(itemId) {
+        if (!itemId) {
+            return;
+        }
+        socket.emit('buy_item', { item_id: itemId });
+    }
+
     return {
         socket,
         setupSocketEvents,
@@ -222,6 +229,7 @@ const SocketHandler = (function () {
         setViewport,
         panCamera,
         inspectMap,
+        buyItem,
         tryResumeSession,
         getJoinedPlayerId,
         clearJoinedSession,

@@ -483,6 +483,19 @@ body {
     padding: 4px 0;
 }
 
+.inspect-ware-buy {
+    cursor: pointer;
+    border-radius: 2px;
+    padding: 4px 6px;
+    margin: 0 -6px;
+}
+
+.inspect-ware-buy:hover,
+.inspect-ware-buy:focus {
+    outline: none;
+    background: rgba(0, 255, 0, 0.08);
+}
+
 .inspect-ware-icon {
     width: 28px;
     height: 28px;

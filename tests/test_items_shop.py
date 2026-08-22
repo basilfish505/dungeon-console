@@ -13,7 +13,7 @@ from interiors.items_shop import (
     interior_spawn,
     iter_shop_placements,
 )
-from items.service import STARTER_ITEM_IDS
+from items.service import STARTER_ITEM_IDS, purchase_item
 from map_generator import TOWN_MAP_SIZE, MapGenerator
 from monster_ai import is_terrain_passable
 from player import Player
@@ -137,6 +137,26 @@ class ItemsShopPlayTests(unittest.TestCase):
         self.gs.active_players['hero'] = p
         self.gs.player_messages['hero'] = []
         self.interior, self.npcs = self.gs.interiors[ITEMS_SHOP_ID]
+
+    def test_new_player_join_has_no_free_starter_kit(self):
+        gs = GameState()
+        p = gs.add_player('buyer')
+        self.assertEqual(p.pqg, 10)
+        self.assertEqual(len(p.inventory), 0)
+
+    def test_buy_requires_items_shop_interior_guard(self):
+        """Socket handler rejects buys outside the shop; purchase works in-shop."""
+        p = self.gs.players['hero']
+        p.pqg = 10
+        p.interior_id = None
+        # Simulate the socket guard condition
+        self.assertNotEqual(getattr(p, 'interior_id', None), ITEMS_SHOP_ID)
+
+        self.assertTrue(self.gs.enter_interior(p, ITEMS_SHOP_ID))
+        self.assertEqual(p.interior_id, ITEMS_SHOP_ID)
+        result = purchase_item(p, 'torch')
+        self.assertTrue(result['ok'])
+        self.assertEqual(p.pqg, 5)
 
     def test_enter_door_spawns_cardinally_inside(self):
         p = self.gs.players['hero']

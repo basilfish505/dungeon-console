@@ -148,6 +148,7 @@ const UI = (function() {
             document.getElementById('player-elo').textContent =
                 player.elo != null ? Math.round(Number(player.elo)) : 0;
             document.getElementById('player-xp').textContent = player.total_xp ?? player.xp ?? 0;
+            document.getElementById('player-pqg').textContent = player.pqg ?? 0;
             document.getElementById('player-str').textContent = player.str;
             document.getElementById('player-int').textContent = player.int;
             document.getElementById('player-wis').textContent = player.wis;

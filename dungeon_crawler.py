@@ -29,7 +29,11 @@ from monster_ai import is_terrain_passable
 from level_turns import register_player_turn_action
 from collections import deque
 import item_types  # noqa: F401 — load item_types.xlsx into registry
-from items.service import grant_starter_kit, use_item as use_item_service, discard_item
+from items.service import (
+    use_item as use_item_service,
+    discard_item,
+    purchase_item,
+)
 from interiors.items_shop import (
     ITEMS_SHOP_ID,
     build_items_shop,
@@ -367,7 +371,6 @@ class GameState:
             self.player_messages[player_id] = []
             # Add welcome message only to this player's messages
             self.add_player_message(player_id, f"Welcome, {player_id}, to the realm of PermaQuest. Thy quest begins, and glory or ruin lies ahead.")
-            grant_starter_kit(new_player)
             self.recompute_visibility(new_player)
 
         # Mark player as active
@@ -1105,6 +1108,39 @@ def handle_inventory_action(data):
         'message': result.get('message'),
         'consumed': bool(result.get('consumed')),
         'action': action,
+    })
+
+
+@socketio.on('buy_item')
+def handle_buy_item(data):
+    """Purchase a shop catalog item while inside the items shop."""
+    player_id = session.get('player_id')
+    if not player_id:
+        emit('buy_item_result', {'ok': False, 'message': 'Not logged in.'})
+        return
+    player = game_state.players.get(player_id)
+    if not player:
+        emit('buy_item_result', {'ok': False, 'message': 'Not logged in.'})
+        return
+    if getattr(player, 'interior_id', None) != ITEMS_SHOP_ID:
+        emit('buy_item_result', {
+            'ok': False,
+            'message': 'You must be in the Items Shop to buy.',
+            'pqg': int(getattr(player, 'pqg', 0) or 0),
+        })
+        return
+
+    data = data or {}
+    result = purchase_item(player, data.get('item_id'))
+    if result.get('message'):
+        game_state.add_player_message(player_id, result['message'])
+    emit('game_state', game_state.get_game_state(player_id), room=player_id)
+    emit('buy_item_result', {
+        'ok': bool(result.get('ok')),
+        'message': result.get('message'),
+        'item_id': result.get('item_id'),
+        'price_pqg': result.get('price_pqg', 0),
+        'pqg': result.get('pqg', int(getattr(player, 'pqg', 0) or 0)),
     })
 
 

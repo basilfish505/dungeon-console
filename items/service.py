@@ -40,13 +40,78 @@ def add_item_to_inventory(player, item_id, quantity=1):
 
 
 def shop_starter_wares():
-    """Catalog rows the items shop lists for sale (purchase comes later)."""
+    """Catalog rows the items shop lists for sale."""
     wares = []
     for item_id in STARTER_ITEM_IDS:
         type_def = get_item_type(item_id)
         if type_def is not None:
             wares.append(type_def.to_client_dict())
     return wares
+
+
+def purchase_item(player, item_id):
+    """
+    Buy one shop-catalog item for its price_pqg.
+
+    Returns dict: {ok, message, item_id, price_pqg, pqg}.
+    """
+    result = {
+        'ok': False,
+        'message': 'Cannot buy that item.',
+        'item_id': None,
+        'price_pqg': 0,
+        'pqg': int(getattr(player, 'pqg', 0) or 0) if player is not None else 0,
+    }
+    if player is None or getattr(player, 'inventory', None) is None:
+        return result
+
+    item_id = str(item_id or '').strip()
+    if not item_id or item_id not in STARTER_ITEM_IDS:
+        result['message'] = 'That item is not for sale.'
+        result['pqg'] = int(getattr(player, 'pqg', 0) or 0)
+        return result
+
+    type_def = get_item_type(item_id)
+    if type_def is None:
+        result['message'] = 'That item is unknown.'
+        result['pqg'] = int(getattr(player, 'pqg', 0) or 0)
+        return result
+
+    name = type_def.name or item_id
+    try:
+        price = max(0, int(type_def.price_pqg))
+    except (TypeError, ValueError):
+        price = 0
+
+    try:
+        purse = int(getattr(player, 'pqg', 0) or 0)
+    except (TypeError, ValueError):
+        purse = 0
+    result['pqg'] = purse
+    result['item_id'] = item_id
+    result['price_pqg'] = price
+
+    if purse < price:
+        result['message'] = f'You cannot afford the {name}.'
+        return result
+
+    if player.inventory._first_empty() is None:
+        result['message'] = 'Your pack is full.'
+        return result
+
+    player.pqg = purse - price
+    inst = add_item_to_inventory(player, item_id, quantity=1)
+    if inst is None:
+        # Should be rare (type vanished between checks); refund.
+        player.pqg = purse
+        result['message'] = 'Your pack is full.'
+        result['pqg'] = purse
+        return result
+
+    result['ok'] = True
+    result['pqg'] = int(player.pqg)
+    result['message'] = f'You buy the {name} for {price} PQG.'
+    return result
 
 
 def grant_starter_kit(player):
@@ -117,11 +182,11 @@ def _use_healing_potion(player, instance_id, type_def, result):
     result['effects'] = {'heal': gained, 'heal_roll': roll}
     if gained > 0:
         result['message'] = (
-            f'You drink the Healing Potion and recover {gained} HP.'
+            f'You quaffed a Healing Potion and recover {gained} HP.'
         )
     else:
         result['message'] = (
-            'You drink the Healing Potion, but you are already at full health.'
+            'You quaffed a Healing Potion, but you are already at full health.'
         )
     return result
 

@@ -103,6 +103,26 @@ const InspectUI = (function () {
         return html;
     }
 
+    function buyItem(itemId) {
+        if (!itemId || !window.socket) {
+            return;
+        }
+        window.socket.emit('buy_item', { item_id: itemId });
+    }
+
+    function bindShopBuyClicks(container) {
+        if (!container) {
+            return;
+        }
+        container.querySelectorAll('.inspect-ware-buy[data-item-id]').forEach(function (row) {
+            row.addEventListener('click', function (e) {
+                e.preventDefault();
+                e.stopPropagation();
+                buyItem(row.getAttribute('data-item-id'));
+            });
+        });
+    }
+
     function renderShop(data) {
         if (!data) {
             return '';
@@ -118,12 +138,15 @@ const InspectUI = (function () {
         const wares = data.wares || [];
         if (wares.length) {
             html += '<h4 class="inspect-section">For sale</h4>';
+            html += '<p class="inspect-desc">Click an item to buy it.</p>';
             html += '<div class="inspect-wares">';
             wares.forEach(function (item) {
                 const name = item.name || item.item_id || 'Item';
                 const price = item.price_pqg != null ? item.price_pqg : 0;
                 const img = item.image || '';
-                html += '<div class="inspect-ware">';
+                const itemId = item.item_id || '';
+                html += '<div class="inspect-ware inspect-ware-buy" role="button" tabindex="0" data-item-id="' +
+                    escapeHtml(itemId) + '">';
                 if (img) {
                     html += `<img class="inspect-ware-icon" src="${escapeHtml(img)}" alt="">`;
                 }
@@ -158,6 +181,9 @@ const InspectUI = (function () {
             titleEl.textContent = data.name || kind;
         }
         bodyEl.innerHTML = renderByKind(kind, data);
+        if (kind === 'shop' || kind === 'npc') {
+            bindShopBuyClicks(bodyEl);
+        }
         overlayEl.hidden = false;
         overlayEl.setAttribute('aria-hidden', 'false');
         open = true;
