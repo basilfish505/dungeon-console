@@ -1,6 +1,11 @@
 import random
 
 from items.inventory import Inventory
+from player_leveling import (
+    level_from_total_xp,
+    xp_progress,
+    xp_required_to_reach_level,
+)
 
 # Compass steps (dy, dx). Legacy WASD: w=n, a=west, s=s, d=e.
 # Token "w" stays north so cached clients do not strafe west on W.
@@ -30,7 +35,7 @@ class Player:
         self.dungeon_level = 0  # 0 is top level
         self.interior_id = None  # None = outdoors; e.g. 'items_shop'
         self.level = 1
-        self.xp = 0
+        self.total_xp = 0
         # HP/MP properties
         self.mhp = random.randint(10, 20)
         self.hp = self.mhp
@@ -70,11 +75,41 @@ class Player:
     def sprite_url(self):
         return '/static/player/sprites/player_walk1.png'
 
+    def level_up(self):
+        """Increase level by 1; preserve lifetime XP (rewards hook for later)."""
+        self.level += 1
+
+    def sync_level_from_xp(self):
+        """Reconcile stored level with total_xp (total_xp is source of truth)."""
+        self.level = level_from_total_xp(self.total_xp)
+
+    def award_xp(self, amount):
+        """Add lifetime XP, process level-ups, return count of levels gained."""
+        try:
+            gain = int(amount)
+        except (TypeError, ValueError):
+            gain = 0
+        if gain <= 0:
+            return 0
+
+        self.total_xp += gain
+        levels_gained = 0
+        while self.total_xp >= xp_required_to_reach_level(self.level + 1):
+            self.level_up()
+            levels_gained += 1
+        return levels_gained
+
+    def xp_progress_dict(self):
+        """UI-ready progress snapshot toward the next level."""
+        return xp_progress(self.total_xp, self.level)
+
     def to_dict(self):
         return {
             'id': self.id,
             'level': self.level,
-            'xp': self.xp,
+            'total_xp': self.total_xp,
+            'xp': self.total_xp,
+            'xp_progress': self.xp_progress_dict(),
             'hp': f"{self.hp}/{self.mhp}",
             'mp': f"{self.mp}/{self.mmp}",
             'str': self.str,

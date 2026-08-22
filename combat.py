@@ -886,11 +886,17 @@ class CombatSystem:
         )
 
         xp_gain = calculate_xp_from_elo(getattr(monster, 'elo', None))
-        killer.xp += xp_gain
+        level_before = killer.level
+        killer.award_xp(xp_gain)
         self.game_state.add_player_message(
             killer_id,
             f"You gain {xp_gain} experience.",
         )
+        for new_level in range(level_before + 1, killer.level + 1):
+            self.game_state.add_player_message(
+                killer_id,
+                f"You reached level {new_level}!",
+            )
         
         # Remove monster from battle
         battle['monsters'].remove(monster)
