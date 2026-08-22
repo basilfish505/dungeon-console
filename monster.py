@@ -57,6 +57,8 @@ class Monster:
         self.level_hp_bonus = int(hp_bonus)
         self.mhp = mhp
         self.hp = mhp
+        # Combat rating; dungeon spawn calibrates via monster_elo.calibrate_instance_elo.
+        self.elo = 1000
 
         self.ability_ids = list(type_def.ability_ids)
         # Damage divisor in combat_damage; species default from type sheet (min 1).
@@ -142,6 +144,7 @@ class Monster:
             'type_id': self.type_id,
             'description': description,
             'level': self.level,
+            'elo': round(float(getattr(self, 'elo', 1000)), 1),
             'hp': self.hp,
             'mhp': self.mhp,
             'attributes': attributes_for_inspect(self),
@@ -157,6 +160,7 @@ class Monster:
             'type': self.type,
             'name': self.name,
             'level': self.level,
+            'elo': round(float(getattr(self, 'elo', 1000)), 1),
             'hp': self.hp,
             'mhp': self.mhp,
             'pos': self.pos,

@@ -4,6 +4,7 @@ from collections import deque
 from monster import Monster
 from monster_types.registry import get_monster_type, pick_spawn_type_id
 from monster_types.leveling import assign_monster_level
+from monster_elo import calibrate_instance_elo
 from interiors.items_shop import ITEMS_SHOP_ID, stamp_items_shop
 from visibility import GRASS, IMPASSABLE_TERRAIN, MOUNTAIN, OPEN_GROUND, TREE
 
@@ -503,6 +504,7 @@ class MapGenerator:
                     monster = Monster.from_type(
                         type_id, [i, j], monster_id=monster_id, level=level,
                     )
+                    calibrate_instance_elo(monster)
                     self.monsters[(i, j)] = monster
                     self.game_map[i][j] = '&'
 

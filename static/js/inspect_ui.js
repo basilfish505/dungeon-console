@@ -47,6 +47,22 @@ const InspectUI = (function () {
         return d.innerHTML;
     }
 
+    function setMonsterHeading(data) {
+        const name = data.name || 'Monster';
+        const level = data.level != null ? data.level : '?';
+        const main = name + ' (Level ' + level + ')';
+        let eloHtml = '';
+        if (data.elo != null && data.elo !== '') {
+            const elo = Math.round(Number(data.elo));
+            if (!Number.isNaN(elo)) {
+                eloHtml = '<span class="inspect-elo">' + escapeHtml('ELO RATING: ' + elo) + '</span>';
+            }
+        }
+        titleEl.innerHTML =
+            '<span class="inspect-title-main">' + escapeHtml(main) + '</span>' +
+            eloHtml;
+    }
+
     function renderMonster(data) {
         if (!data) {
             return '';
@@ -58,8 +74,6 @@ const InspectUI = (function () {
         if (data.description) {
             html += `<p class="inspect-desc">${escapeHtml(data.description)}</p>`;
         }
-        html += `<div class="inspect-row"><span class="inspect-label">Level</span>` +
-            `<span class="inspect-value">${escapeHtml(data.level)}</span></div>`;
         html += `<div class="inspect-row"><span class="inspect-label">HP</span>` +
             `<span class="inspect-value">${escapeHtml(data.hp)} / ${escapeHtml(data.mhp)}</span></div>`;
 
@@ -131,7 +145,11 @@ const InspectUI = (function () {
         }
         const data = result.data || {};
         const kind = result.kind || data.kind || 'unknown';
-        titleEl.textContent = data.name || kind;
+        if (kind === 'monster') {
+            setMonsterHeading(data);
+        } else {
+            titleEl.textContent = data.name || kind;
+        }
         bodyEl.innerHTML = renderByKind(kind, data);
         overlayEl.hidden = false;
         overlayEl.setAttribute('aria-hidden', 'false');
@@ -146,6 +164,7 @@ const InspectUI = (function () {
         overlayEl.setAttribute('aria-hidden', 'true');
         bodyEl.innerHTML = '';
         titleEl.textContent = '';
+        titleEl.innerHTML = '';
         open = false;
     }
 

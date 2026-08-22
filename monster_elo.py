@@ -34,6 +34,204 @@ FIGHTS_PER_PAIRING = 20
 TOURNAMENT_PASSES = 3
 MAX_COMBAT_ROUNDS = 1000
 
+# Spawn-time instance rating (read-only ladder from JSON).
+SPAWN_ELO_FIGHTS = 100
+SPAWN_ELO_RANK_WINDOW = 5
+
+_ladder_cache = None
+_ladder_cache_path = None
+_ladder_load_warned = False
+
+
+@dataclass
+class LadderFighter:
+    """Frozen ladder opponent rebuilt from monster_elo_ratings.json."""
+
+    type_id: str
+    name: str
+    level: int
+    elo: float
+    str: int
+    armour: int
+    mhp: int
+    hp: int = 0
+    in_combat: bool = False
+
+    def __post_init__(self):
+        self.hp = self.mhp
+
+    def receive_attack(self, damage):
+        self.hp -= damage
+        return self.hp <= 0
+
+
+def _parse_ladder_from_payload(payload):
+    """Build ascending-Elo list of LadderFighter from saved ratings JSON."""
+    ratings = (payload or {}).get('ratings') or {}
+    fighters = []
+    for type_id, levels in ratings.items():
+        if not isinstance(levels, dict):
+            continue
+        for level_str, entry in levels.items():
+            if not isinstance(entry, dict):
+                continue
+            try:
+                level = int(level_str)
+            except (TypeError, ValueError):
+                continue
+            attrs = entry.get('attributes') or {}
+            try:
+                strength = int(attrs.get('str', 1))
+            except (TypeError, ValueError):
+                strength = 1
+            try:
+                armour = max(1, int(entry.get('armour', 1)))
+            except (TypeError, ValueError):
+                armour = 1
+            try:
+                mhp = max(1, int(entry.get('mhp', 1)))
+            except (TypeError, ValueError):
+                mhp = 1
+            try:
+                elo = float(entry.get('elo', INITIAL_ELO))
+            except (TypeError, ValueError):
+                elo = float(INITIAL_ELO)
+            fighters.append(LadderFighter(
+                type_id=str(type_id),
+                name=str(entry.get('name') or type_id),
+                level=level,
+                elo=elo,
+                str=strength,
+                armour=armour,
+                mhp=mhp,
+            ))
+    fighters.sort(key=lambda f: (f.elo, f.type_id, f.level))
+    return fighters
+
+
+def load_elo_ladder(path=None, force=False):
+    """
+    Load and cache the frozen Elo ladder from JSON.
+
+    Sorted ascending by Elo. Does not write the file.
+    """
+    global _ladder_cache, _ladder_cache_path, _ladder_load_warned
+    path = Path(path) if path else DEFAULT_OUTPUT_PATH
+    if (
+        not force
+        and _ladder_cache is not None
+        and _ladder_cache_path == path
+    ):
+        return _ladder_cache
+
+    if not path.is_file():
+        if not _ladder_load_warned:
+            print(f'[monster_elo] ratings file missing: {path}; spawn Elo stays at {INITIAL_ELO}')
+            _ladder_load_warned = True
+        _ladder_cache = []
+        _ladder_cache_path = path
+        return _ladder_cache
+
+    try:
+        payload = json.loads(path.read_text(encoding='utf-8'))
+        ladder = _parse_ladder_from_payload(payload)
+    except Exception as exc:
+        if not _ladder_load_warned:
+            print(f'[monster_elo] failed to load {path}: {exc}; spawn Elo stays at {INITIAL_ELO}')
+            _ladder_load_warned = True
+        ladder = []
+
+    _ladder_cache = ladder
+    _ladder_cache_path = path
+    return _ladder_cache
+
+
+def reload_elo_ladder(path=None):
+    """Clear cache and reload (for tests / after regenerating JSON)."""
+    global _ladder_cache, _ladder_cache_path, _ladder_load_warned
+    _ladder_cache = None
+    _ladder_cache_path = None
+    _ladder_load_warned = False
+    return load_elo_ladder(path=path, force=True)
+
+
+def closest_ladder_index(ladder, rating):
+    """Index of the ladder entry whose Elo is closest to rating."""
+    if not ladder:
+        return None
+    best_i = 0
+    best_dist = abs(ladder[0].elo - rating)
+    for i in range(1, len(ladder)):
+        dist = abs(ladder[i].elo - rating)
+        if dist < best_dist:
+            best_dist = dist
+            best_i = i
+    return best_i
+
+
+def pick_ladder_opponent(
+    ladder,
+    rating,
+    rng=None,
+    window=SPAWN_ELO_RANK_WINDOW,
+):
+    """
+    Find closest Elo on the ladder, then pick uniformly in ±window ranks.
+    """
+    rng = rng or random
+    if not ladder:
+        return None
+    center = closest_ladder_index(ladder, rating)
+    lo = max(0, center - window)
+    hi = min(len(ladder) - 1, center + window)
+    return ladder[rng.randint(lo, hi)]
+
+
+def calibrate_instance_elo(
+    monster,
+    fights=SPAWN_ELO_FIGHTS,
+    rng=None,
+    k_factor=K_FACTOR,
+    path=None,
+    ladder=None,
+    window=SPAWN_ELO_RANK_WINDOW,
+):
+    """
+    Rate a spawned monster with N headless fights against the frozen ladder.
+
+    Updates monster.elo only. Does not mutate the JSON or ladder entries' Elo.
+    Restores monster HP afterward. Returns the final elo.
+    """
+    rng = rng or random
+    if ladder is None:
+        ladder = load_elo_ladder(path=path)
+
+    rating = float(getattr(monster, 'elo', INITIAL_ELO) or INITIAL_ELO)
+    if not ladder or fights <= 0:
+        monster.elo = rating
+        reset_combat_state(monster)
+        return monster.elo
+
+    for fight_idx in range(int(fights)):
+        opponent = pick_ladder_opponent(ladder, rating, rng=rng, window=window)
+        if opponent is None:
+            break
+        # Fresh HP for ladder fighter each bout (shared cache instances).
+        opponent.hp = opponent.mhp
+        opponent.in_combat = False
+        first_is_a = (fight_idx % 2 == 0)
+        score_a, _rounds = simulate_monster_fight(
+            monster,
+            opponent,
+            first_is_a=first_is_a,
+            rng=rng,
+        )
+        rating, _ignored = update_elo(rating, opponent.elo, score_a, k=k_factor)
+
+    monster.elo = float(rating)
+    reset_combat_state(monster)
+    return monster.elo
+
 
 @dataclass
 class CombatantRecord:
@@ -93,10 +291,11 @@ def update_elo(rating_a: float, rating_b: float, score_a: float, k: float = K_FA
     return new_a, new_b
 
 
-def reset_combat_state(monster: Monster) -> None:
+def reset_combat_state(monster) -> None:
     """Restore temporary fight state; leave permanent attrs alone."""
     monster.hp = monster.mhp
-    monster.in_combat = False
+    if hasattr(monster, 'in_combat'):
+        monster.in_combat = False
 
 
 def iter_unique_pairings(n: int):
