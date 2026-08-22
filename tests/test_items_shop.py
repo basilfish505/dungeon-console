@@ -69,6 +69,7 @@ class TownShopStampTests(unittest.TestCase):
     def test_outdoor_shop_perimeter_walls_inner_roof(self):
         origin = tuple(self.feat['origin'])
         door = tuple(self.feat['door'])
+        sign = tuple(self.feat['sign']) if self.feat.get('sign') else None
         bh, bw = self.feat['size']
         for y in range(bh):
             for x in range(bw):
@@ -77,6 +78,9 @@ class TownShopStampTests(unittest.TestCase):
                 if (gy, gx) == door:
                     self.assertEqual(self.game_map[gy][gx], '+')
                     self.assertTrue(is_terrain_passable(self.game_map, gy, gx))
+                elif sign is not None and (gy, gx) == sign:
+                    self.assertEqual(self.game_map[gy][gx], 'i')
+                    self.assertFalse(is_terrain_passable(self.game_map, gy, gx))
                 elif on_edge:
                     self.assertEqual(self.game_map[gy][gx], 'W')
                     self.assertFalse(is_terrain_passable(self.game_map, gy, gx))
@@ -87,6 +91,22 @@ class TownShopStampTests(unittest.TestCase):
         self.assertTrue(all(cell in ('W', '.', '=', '+') for row in interior for cell in row))
         self.assertFalse(any(cell == 'R' for row in interior for cell in row))
         self.assertFalse(any(cell == '#' for row in interior for cell in row))
+
+    def test_shop_sign_is_adjacent_to_door(self):
+        from interiors.armour_shop import ARMOUR_SHOP_ID
+        from interiors.shop_common import SHOP_SIGN_GLYPHS
+        from interiors.weapon_shop import WEAPON_SHOP_ID
+
+        for shop_id, glyph in SHOP_SIGN_GLYPHS.items():
+            feat = self.gen.town_features[shop_id]
+            door = tuple(feat['door'])
+            sign = tuple(feat['sign'])
+            self.assertEqual(self.game_map[sign[0]][sign[1]], glyph)
+            self.assertEqual(abs(door[0] - sign[0]) + abs(door[1] - sign[1]), 1)
+            self.assertFalse(is_terrain_passable(self.game_map, sign[0], sign[1]))
+        self.assertEqual(self.gen.town_features[ITEMS_SHOP_ID]['sign_glyph'], 'i')
+        self.assertEqual(self.gen.town_features[WEAPON_SHOP_ID]['sign_glyph'], 'w')
+        self.assertEqual(self.gen.town_features[ARMOUR_SHOP_ID]['sign_glyph'], 'a')
 
     def test_stair_does_not_overlap_shop(self):
         door = tuple(self.feat['door'])
@@ -138,16 +158,21 @@ class ItemsShopPlayTests(unittest.TestCase):
         self.gs.player_messages['hero'] = []
         self.interior, self.npcs = self.gs.interiors[ITEMS_SHOP_ID]
 
-    def test_new_player_join_has_no_free_starter_kit(self):
+    def test_new_player_join_starts_with_two_torches_not_full_kit(self):
         gs = GameState()
         p = gs.add_player('buyer')
         self.assertEqual(p.pqg, 10)
-        self.assertEqual(len(p.inventory), 0)
+        self.assertEqual(len(p.inventory), 2)
+        self.assertEqual([i.type_id for i in p.inventory], ['torch', 'torch'])
+        self.assertNotEqual(
+            sorted(i.type_id for i in p.inventory),
+            sorted(STARTER_ITEM_IDS),
+        )
 
     def test_buy_requires_items_shop_interior_guard(self):
         """Socket handler rejects buys outside the shop; purchase works in-shop."""
         p = self.gs.players['hero']
-        p.pqg = 10
+        p.pqg = 20
         p.interior_id = None
         # Simulate the socket guard condition
         self.assertNotEqual(getattr(p, 'interior_id', None), ITEMS_SHOP_ID)

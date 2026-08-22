@@ -6,6 +6,8 @@ pass through them. Works for any entity with a position and sight_range.
 Toggle VISIBILITY_SYSTEM_ENABLED to False for developer full-map mode.
 """
 
+import math
+
 # Single config switch — when False, rendering shows the full map (no FOW).
 VISIBILITY_SYSTEM_ENABLED = True
 
@@ -16,9 +18,14 @@ MOUNTAIN = 'M'
 WALL = 'W'
 OPEN_GROUND = frozenset({'.', GRASS})
 
-PERMANENT_TERRAIN = frozenset({'#', '.', GRASS, TREE, MOUNTAIN, WALL, '↓', '↑', '+', ',', '=', 'R'})
-BLOCKING_TERRAIN = frozenset({'#', 'R', MOUNTAIN, WALL})
-IMPASSABLE_TERRAIN = frozenset({'#', 'R', '=', TREE, MOUNTAIN, WALL})
+# Shop outdoor signs (wall tile beside each store door)
+SHOP_SIGN_GLYPHS = frozenset({'i', 'w', 'a'})
+
+PERMANENT_TERRAIN = frozenset(
+    {'#', '.', GRASS, TREE, MOUNTAIN, WALL, '↓', '↑', '+', ',', '=', 'R'} | SHOP_SIGN_GLYPHS
+)
+BLOCKING_TERRAIN = frozenset({'#', 'R', MOUNTAIN, WALL} | SHOP_SIGN_GLYPHS)
+IMPASSABLE_TERRAIN = frozenset({'#', 'R', '=', TREE, MOUNTAIN, WALL} | SHOP_SIGN_GLYPHS)
 
 # Octant multipliers [xx, xy, yx, yy] — roguebasin recursive shadowcasting
 _MULT = (
@@ -80,11 +87,21 @@ def compute_fov(game_map, origin, sight_range):
     oy, ox = int(origin[0]), int(origin[1])
     h = len(game_map)
     w = len(game_map[0]) if h else 0
-    radius = int(sight_range)
+    try:
+        radius_f = float(sight_range)
+    except (TypeError, ValueError):
+        return set()
+    if radius_f < 0:
+        return set()
+    radius = int(math.ceil(radius_f))
+    radius_sq = radius_f * radius_f
     visible = set()
 
     if 0 <= oy < h and 0 <= ox < w:
         visible.add((oy, ox))
+
+    if radius <= 0:
+        return visible
 
     def cast_light(row, start, end, xx, xy, yx, yy):
         if start < end:
@@ -106,8 +123,8 @@ def compute_fov(game_map, origin, sight_range):
                 if end > l_slope:
                     break
 
-                # Circular radius (sight_range tiles in every direction)
-                if dx * dx + dy * dy <= radius * radius:
+                # Circular radius (float sight_range tiles in every direction)
+                if dx * dx + dy * dy <= radius_sq:
                     if 0 <= map_y < h and 0 <= map_x < w:
                         visible.add((map_y, map_x))
 

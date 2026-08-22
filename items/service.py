@@ -28,6 +28,9 @@ from item_types.registry import get_item_type
 # Starter kit / items-shop catalog (testing the inventory path).
 STARTER_ITEM_IDS = ITEMS_SHOP_IDS
 
+# Brand-new players (no save yet) receive these as separate instances.
+STARTING_TORCH_COUNT = 2
+
 
 def add_item_to_inventory(player, item_id, quantity=1, category=CATEGORY_ITEM):
     """
@@ -130,6 +133,16 @@ def grant_starter_kit(player):
     return granted
 
 
+def grant_starting_inventory(player):
+    """Default pack for a new player: two separate torches (each with own fuel)."""
+    granted = []
+    for _ in range(STARTING_TORCH_COUNT):
+        inst = add_item_to_inventory(player, 'torch', quantity=1, category=CATEGORY_ITEM)
+        if inst is not None:
+            granted.append(inst)
+    return granted
+
+
 def use_item(player, instance_id, context='exploration', game_state=None):
     """
     Attempt to use an owned item.
@@ -169,6 +182,10 @@ def use_item(player, instance_id, context='exploration', game_state=None):
 
     if inst.type_id == 'healing_potion':
         return _use_healing_potion(player, instance_id, type_def, result)
+
+    from items.light import is_light_source, light_item
+    if is_light_source(inst.type_id):
+        return light_item(player, instance_id, game_state=game_state)
 
     name = type_def.name or inst.type_id
     result['ok'] = True
@@ -223,6 +240,8 @@ def discard_item(player, instance_id):
     name = type_def.name if type_def else inst.type_id
     player.inventory.remove(instance_id)
     clear_equipped_if_removed(player, instance_id)
+    from items.light import clear_lit_if_removed
+    clear_lit_if_removed(player, instance_id)
     result['ok'] = True
     result['consumed'] = True
     result['message'] = f'You discard the {name}.'

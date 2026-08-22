@@ -1153,7 +1153,11 @@ def handle_inventory_action(data):
             if result.get('ok') and result.get('message'):
                 game_state.add_player_message(player_id, result['message'])
             emit('game_state', game_state.get_game_state(player_id), room=player_id)
-            persist = bool(result.get('ok') and result.get('consumed'))
+            effects = result.get('effects') or {}
+            persist = bool(
+                result.get('ok')
+                and (result.get('consumed') or effects.get('lit'))
+            )
     elif action == 'discard':
         result = discard_item(player, instance_id)
         if result.get('ok') and result.get('message'):

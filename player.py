@@ -62,13 +62,16 @@ class Player:
         self.armour = 1
         self.in_combat = False
         # Vision / fog-of-war (dungeon floors only; town and interiors are fully lit)
-        self.sight_range = 8
+        self.sight_range = 0
         self.explored = {}  # dungeon_level -> set of (y, x)
         self.visible = set()  # current LOS tiles (y, x)
         self.appearance_id = 'peasant'
         self.inventory = Inventory()
         self.equipped_weapon_instance_id = None
         self.equipped_armour_instance_id = None
+        self.lit_light_instance_id = None
+        from items.service import grant_starting_inventory
+        grant_starting_inventory(self)
 
     def explored_key(self):
         """Fog memory key: dungeon level int, or ('interior', id)."""
@@ -82,7 +85,10 @@ class Player:
             return INTERIOR_SIGHT_RANGE
         if self.dungeon_level <= 0:
             return TOP_LEVEL_SIGHT_RANGE
-        return max(0, int(self.sight_range))
+        try:
+            return max(0.0, float(self.sight_range))
+        except (TypeError, ValueError):
+            return 0.0
 
     def sprite_url(self):
         return '/static/player/sprites/player_walk1.png'
@@ -177,6 +183,7 @@ class Player:
             'inventory': self.inventory.to_client_list(
                 equipped_weapon_id=getattr(self, 'equipped_weapon_instance_id', None),
                 equipped_armour_id=getattr(self, 'equipped_armour_instance_id', None),
+                lit_light_id=getattr(self, 'lit_light_instance_id', None),
             ),
         }
 

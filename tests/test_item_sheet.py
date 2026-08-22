@@ -57,10 +57,19 @@ class XlsxLoadTests(unittest.TestCase):
             ids = [td.id for td in loaded]
             self.assertEqual(
                 ids,
-                ['healing_potion', 'torch', 'bread', 'rope', 'antidote'],
+                [
+                    'healing_potion',
+                    'candle',
+                    'torch',
+                    'bread',
+                    'rope',
+                    'antidote',
+                ],
             )
             self.assertEqual(ITEM_TYPES['healing_potion'].price_pqg, 25)
             self.assertEqual(ITEM_TYPES['torch'].name, 'Torch')
+            self.assertEqual(ITEM_TYPES['candle'].light_sight, 1.5)
+            self.assertEqual(ITEM_TYPES['torch'].light_ticks, 1000)
         finally:
             ITEM_TYPES.clear()
             ITEM_TYPES.update(previous)

@@ -20,6 +20,8 @@ COLUMNS = [
     'description',
     'price_pqg',
     'image',
+    'light_sight',
+    'light_ticks',
 ]
 
 HEADER_COMMENTS = {
@@ -28,6 +30,8 @@ HEADER_COMMENTS = {
     'description': 'Inspect / inventory flavor text.',
     'price_pqg': 'Price in PermaQuest Gold (integer). Default 0.',
     'image': 'Sprite path or filename. Blank = /static/items/sprites/{item_id}.png',
+    'light_sight': 'Dungeon FOV radius while lit (float). Blank = not a light source.',
+    'light_ticks': 'Fuel duration in player turn ticks while lit. Blank = not a light source.',
 }
 
 TEST_ITEMS = [
@@ -39,11 +43,28 @@ TEST_ITEMS = [
         'image': 'healing_potion.png',
     },
     {
+        'item_id': 'candle',
+        'name': 'Candle',
+        'description': (
+            'A short wax candle. Light it in the dungeon for a dim glow '
+            '(sight 1.5). Burns out after about 200 turns.'
+        ),
+        'price_pqg': 8,
+        'image': 'candle.png',
+        'light_sight': 1.5,
+        'light_ticks': 200,
+    },
+    {
         'item_id': 'torch',
         'name': 'Torch',
-        'description': 'A wooden torch. Useful in dark places.',
-        'price_pqg': 5,
+        'description': (
+            'A wooden torch. Light it in the dungeon for steady light '
+            '(sight 3). Burns for about 1000 turns.'
+        ),
+        'price_pqg': 15,
         'image': 'torch.png',
+        'light_sight': 3,
+        'light_ticks': 1000,
     },
     {
         'item_id': 'bread',
@@ -95,6 +116,18 @@ def _normalize_header(value):
     return str(value).strip()
 
 
+def _float_or_none(value):
+    if _blank(value):
+        return None
+    return float(value)
+
+
+def _int_or_none(value):
+    if _blank(value):
+        return None
+    return int(float(value))
+
+
 def row_to_typedef(row):
     """Build an ItemTypeDef from a column->value mapping. None if no item_id.
 
@@ -109,6 +142,8 @@ def row_to_typedef(row):
         description=_str_or_none(row.get('description')),
         price_pqg=_int(row.get('price_pqg'), 0),
         image=_str_or_none(row.get('image')),
+        light_sight=_float_or_none(row.get('light_sight')),
+        light_ticks=_int_or_none(row.get('light_ticks')),
     )
 
 
@@ -220,7 +255,7 @@ def write_item_xlsx(path=None, extra_rows=None):
             cell = ws.cell(row_idx, col_idx, row.get(header, ''))
             cell.border = thin
             cell.alignment = wrap
-            if row_idx <= 6:
+            if row_idx <= 7:
                 cell.fill = example_fill
 
     blank_count = max(0, 40 - len(data_rows))
@@ -233,9 +268,11 @@ def write_item_xlsx(path=None, extra_rows=None):
     widths = {
         'item_id': 18,
         'name': 18,
-        'description': 48,
+        'description': 56,
         'price_pqg': 12,
-        'image': 28,
+        'image': 22,
+        'light_sight': 12,
+        'light_ticks': 12,
     }
     for col_idx, header in enumerate(COLUMNS, 1):
         ws.column_dimensions[get_column_letter(col_idx)].width = widths.get(header, 12)
@@ -252,8 +289,9 @@ def write_item_xlsx(path=None, extra_rows=None):
         '1. Fill one row per item type on the Items sheet.',
         '2. Required: item_id. Also fill name, description, and price_pqg.',
         '3. Leave image blank to use /static/items/sprites/{item_id}.png',
-        '4. Extra columns may be added later; the loader ignores unknown headers.',
-        '5. Save this workbook, then restart the game to reload definitions.',
+        '4. Optional light_sight / light_ticks for dungeon light sources.',
+        '5. Extra columns may be added later; the loader ignores unknown headers.',
+        '6. Save this workbook, then restart the game to reload definitions.',
         '',
         'Art files',
         'Put PNG files at static/items/sprites/{item_id}.png',
@@ -278,6 +316,8 @@ def write_item_xlsx(path=None, extra_rows=None):
         ('description', 'no', 'string', 'Inventory text'),
         ('price_pqg', 'no', 'int', 'Price in PQG; default 0'),
         ('image', 'no', 'path/filename', 'Blank = default sprite path'),
+        ('light_sight', 'no', 'float', 'Dungeon FOV while lit'),
+        ('light_ticks', 'no', 'int', 'Fuel duration in turn ticks'),
     ]
     for row_idx, values in enumerate(fields, 2):
         for col_idx, value in enumerate(values, 1):

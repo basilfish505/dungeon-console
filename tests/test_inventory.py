@@ -10,6 +10,7 @@ from items.service import (
     add_item_to_inventory,
     discard_item,
     grant_starter_kit,
+    grant_starting_inventory,
     purchase_item,
     use_item,
 )
@@ -78,7 +79,12 @@ class InventoryServiceTests(unittest.TestCase):
 
     def test_use_item_v1_does_not_consume(self):
         player = FakePlayer()
-        inst = add_item_to_inventory(player, 'torch')
+        register_item_type(ItemTypeDef(
+            item_id='rope',
+            name='Rope',
+            price_pqg=15,
+        ))
+        inst = add_item_to_inventory(player, 'rope')
         result = use_item(player, inst.instance_id, context='exploration')
         self.assertTrue(result['ok'])
         self.assertFalse(result['consumed'])
@@ -232,10 +238,18 @@ class InventoryServiceTests(unittest.TestCase):
         self.assertEqual(player.pqg, 10)
         self.assertIn('not for sale', result['message'].lower())
 
-    def test_new_player_starts_with_pqg_and_empty_pack(self):
+    def test_new_player_starts_with_pqg_and_two_torches(self):
         player = Player('buyer', [1, 1])
         self.assertEqual(player.pqg, 10)
-        self.assertEqual(len(player.inventory), 0)
+        self.assertEqual(len(player.inventory), 2)
+        self.assertEqual([i.type_id for i in player.inventory], ['torch', 'torch'])
+
+    def test_grant_starting_inventory_adds_two_torch_instances(self):
+        player = FakePlayer()
+        granted = grant_starting_inventory(player)
+        self.assertEqual(len(granted), 2)
+        self.assertEqual([i.type_id for i in granted], ['torch', 'torch'])
+        self.assertNotEqual(granted[0].instance_id, granted[1].instance_id)
 
 
 if __name__ == '__main__':

@@ -78,7 +78,7 @@ class ShopCatalogTests(unittest.TestCase):
         self.assertFalse(bad['ok'])
         good = purchase_item(p, 'club', shop_id=WEAPON_SHOP_ID)
         self.assertTrue(good['ok'])
-        inst = next(iter(p.inventory))
+        inst = next(i for i in p.inventory if i.type_id == 'club')
         self.assertEqual(inst.category, 'weapon')
         self.assertEqual(inst.type_id, 'club')
 
@@ -123,7 +123,7 @@ class EquipTests(unittest.TestCase):
         r2 = equip_item(self.p, sword.instance_id)
         self.assertTrue(r2['ok'])
         self.assertEqual(self.p.equipped_weapon_instance_id, sword.instance_id)
-        self.assertEqual(len(self.p.inventory), 3)
+        self.assertEqual(len(self.p.inventory), 5)
 
         r3 = unequip_item(self.p, sword.instance_id)
         self.assertTrue(r3['ok'])
@@ -161,8 +161,8 @@ class CombatGearTests(unittest.TestCase):
         defender.pqg = 100
         purchase_item(attacker, 'short_sword', shop_id=WEAPON_SHOP_ID)
         purchase_item(defender, 'chain_mail', shop_id=ARMOUR_SHOP_ID)
-        w = next(iter(attacker.inventory))
-        a = next(iter(defender.inventory))
+        w = next(i for i in attacker.inventory if i.type_id == 'short_sword')
+        a = next(i for i in defender.inventory if i.type_id == 'chain_mail')
         equip_item(attacker, w.instance_id)
         equip_item(defender, a.instance_id)
         self.assertEqual(defender.armour, 3)
@@ -199,7 +199,7 @@ class PersistenceTests(unittest.TestCase):
             self.assertTrue(load_player(p2, save_dir=tmp))
             self.assertEqual(p2.pqg, 77)
             self.assertEqual(p2.elo, 1100.5)
-            self.assertEqual(len(p2.inventory), 2)
+            self.assertEqual(len(p2.inventory), 4)
             self.assertEqual(p2.equipped_weapon_instance_id, club.instance_id)
             self.assertEqual(p2.equipped_armour_instance_id, leather.instance_id)
             self.assertEqual(p2.armour, 2)

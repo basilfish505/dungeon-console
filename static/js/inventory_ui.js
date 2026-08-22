@@ -179,7 +179,7 @@ const InventoryUI = (function () {
     function render() {
         cacheDom();
         if (titleEl) {
-            titleEl.textContent = context === 'combat' ? 'Use Item' : 'Items';
+            titleEl.textContent = context === 'combat' ? 'Use Item' : 'Inventory';
         }
         renderGrid();
         renderDetail(viewingItem);
@@ -214,7 +214,27 @@ const InventoryUI = (function () {
                     eq.textContent = 'Equipped';
                     slot.appendChild(eq);
                 }
-                slot.setAttribute('aria-label', label.textContent + (item.equipped ? ' (Equipped)' : ''));
+                if (item.lit) {
+                    const lit = document.createElement('span');
+                    lit.className = 'inventory-slot-lit-label';
+                    lit.textContent = 'Lit';
+                    slot.appendChild(lit);
+                }
+                if (item.light_remaining != null) {
+                    const fuel = document.createElement('span');
+                    fuel.className = 'inventory-slot-fuel';
+                    const maxTicks = item.light_ticks != null ? item.light_ticks : item.light_remaining;
+                    fuel.textContent = item.light_remaining + '/' + maxTicks;
+                    slot.appendChild(fuel);
+                }
+                let aria = label.textContent;
+                if (item.equipped) {
+                    aria += ' (Equipped)';
+                }
+                if (item.lit) {
+                    aria += ' (Lit)';
+                }
+                slot.setAttribute('aria-label', aria);
                 slot.addEventListener('pointerdown', function (e) {
                     onSlotPointerDown(e, i, item, slot);
                 });
@@ -474,6 +494,19 @@ const InventoryUI = (function () {
         meta.appendChild(name);
         meta.appendChild(desc);
         meta.appendChild(price);
+        if (item.light_remaining != null) {
+            const fuel = document.createElement('p');
+            fuel.className = 'inventory-detail-fuel';
+            const maxTicks = item.light_ticks != null ? item.light_ticks : item.light_remaining;
+            fuel.textContent = 'Fuel ' + item.light_remaining + '/' + maxTicks;
+            meta.appendChild(fuel);
+        }
+        if (item.lit) {
+            const lit = document.createElement('p');
+            lit.className = 'inventory-detail-lit';
+            lit.textContent = 'Lit';
+            meta.appendChild(lit);
+        }
         if (item.equipped) {
             const eq = document.createElement('p');
             eq.className = 'inventory-detail-equipped';

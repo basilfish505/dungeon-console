@@ -98,6 +98,29 @@ const MovementController = (function () {
         return row[vx];
     }
 
+    function fogAt(y, x) {
+        if (typeof MapView === 'undefined' || !MapView.getState) {
+            return 'visible';
+        }
+        const st = MapView.getState();
+        const fog = st.lastFog;
+        if (!fog || !fog.length) {
+            return 'visible';
+        }
+        const originY = Number.isFinite(st.mapOriginY) ? (st.mapOriginY | 0) : (st.cameraY | 0);
+        const originX = Number.isFinite(st.mapOriginX) ? (st.mapOriginX | 0) : (st.cameraX | 0);
+        const vy = y - originY;
+        const vx = x - originX;
+        if (vy < 0 || vx < 0 || vy >= fog.length) {
+            return 'unexplored';
+        }
+        const row = fog[vy];
+        if (!row || vx >= row.length) {
+            return 'unexplored';
+        }
+        return row[vx] || 'unexplored';
+    }
+
     function entityKindAt(worldY, worldX) {
         if (typeof MapView === 'undefined' || !MapView.getState) {
             return null;
@@ -120,7 +143,8 @@ const MovementController = (function () {
 
     function isSolidTerrain(ch) {
         // Match server IMPASSABLE_TERRAIN plus void.
-        return ch === '#' || ch === ' ' || ch === 'R' || ch === '=' || ch === 'T' || ch === 'M' || ch === 'W';
+        return ch === '#' || ch === ' ' || ch === 'R' || ch === '=' || ch === 'T' || ch === 'M' || ch === 'W'
+            || ch === 'i' || ch === 'w' || ch === 'a';
     }
 
     function isOpenFloor(ch) {
@@ -133,9 +157,15 @@ const MovementController = (function () {
     function canAttemptStep(fromY, fromX, toY, toX) {
         const dest = viewportChar(toY, toX);
         const kind = entityKindAt(toY, toX);
+        const fog = fogAt(toY, toX);
         // Bumps that must reach the server: desk talk, NPC/monster/player combat.
         if (dest === '=' || dest === '&' || dest === '@'
             || kind === 'npc' || kind === 'monster' || kind === 'player') {
+            return true;
+        }
+        // Unexplored (e.g. sight 0 dungeon): still try the move; server validates.
+        // Do not treat blank ' ' fog void as permanently blocked.
+        if (fog === 'unexplored') {
             return true;
         }
         if (dest == null || isSolidTerrain(dest)) {
@@ -144,8 +174,13 @@ const MovementController = (function () {
         const dy = toY - fromY;
         const dx = toX - fromX;
         if (dy !== 0 && dx !== 0) {
-            if (isSolidTerrain(viewportChar(fromY + dy, fromX))
-                || isSolidTerrain(viewportChar(fromY, fromX + dx))) {
+            const sideFogA = fogAt(fromY + dy, fromX);
+            const sideFogB = fogAt(fromY, fromX + dx);
+            // Only apply corner-cut rules on known tiles.
+            if (sideFogA !== 'unexplored' && isSolidTerrain(viewportChar(fromY + dy, fromX))) {
+                return false;
+            }
+            if (sideFogB !== 'unexplored' && isSolidTerrain(viewportChar(fromY, fromX + dx))) {
                 return false;
             }
         }

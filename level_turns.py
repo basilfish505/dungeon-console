@@ -123,6 +123,11 @@ def register_player_turn_action(game_state, player_id, combat_system=None, socke
         f"Level {level_number} progress: {turn_state.turn_progress}/{required}"
     )
 
+    from items.light import tick_player_light
+    from player_persistence import save_player
+    if tick_player_light(player, game_state=game_state):
+        save_player(player)
+
     rounds_fired = 0
     while turn_state.turn_progress >= required:
         turn_state.turn_progress -= required

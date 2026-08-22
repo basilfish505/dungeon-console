@@ -15,12 +15,18 @@ const TileAssets = (function () {
         ',': { key: 'road', url: '/static/tiles/road.png' },
         '=': { key: 'desk', url: '/static/tiles/desk.png' },
         'R': { key: 'roof', url: '/static/tiles/roof.png' },
+        'i': { key: 'items_shop_sign', url: '/static/tiles/items_shop_sign.png' },
+        'w': { key: 'weapon_shop_sign', url: '/static/tiles/weapon_shop_sign.png' },
+        'a': { key: 'armour_shop_sign', url: '/static/tiles/armour_shop_sign.png' },
     };
 
-    /** Draw this terrain first (tree/mountain sprites sit on grass). */
+    /** Draw this terrain first (tree/mountain on grass; shop signs on brick). */
     const UNDERLAY = {
         'T': 'grass',
         'M': 'grass',
+        'i': 'brickwall',
+        'w': 'brickwall',
+        'a': 'brickwall',
     };
 
     /** Cells that sit on walkable floor (draw floor under ASCII). */
@@ -139,7 +145,7 @@ const TileAssets = (function () {
     }
 
     /**
-     * @returns {'boulder'|'brickwall'|'mountain'|'floor'|'grass'|'tree'|'stairsup'|'stairsdown'|'door'|'road'|'desk'|'roof'|null}
+     * @returns {'boulder'|'brickwall'|'mountain'|'floor'|'grass'|'tree'|'stairsup'|'stairsdown'|'door'|'road'|'desk'|'roof'|'items_shop_sign'|'weapon_shop_sign'|'armour_shop_sign'|null}
      */
     function terrainKeyForCell(ch) {
         if (!ch) {
@@ -165,7 +171,8 @@ const TileAssets = (function () {
     function isTerrainOnly(ch) {
         return ch === '#' || ch === 'W' || ch === 'M' || ch === '.' || ch === 'g' || ch === 'T'
             || ch === '\u2191' || ch === '\u2193'
-            || ch === '+' || ch === ',' || ch === '=' || ch === 'R';
+            || ch === '+' || ch === ',' || ch === '=' || ch === 'R'
+            || ch === 'i' || ch === 'w' || ch === 'a';
     }
 
     // Start fetch as soon as this script runs (before join / first map paint)

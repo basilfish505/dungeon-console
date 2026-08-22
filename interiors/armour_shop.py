@@ -17,4 +17,4 @@ def build_armour_shop(facing='s'):
 
 
 def stamp_armour_shop(game_map, rng=None):
-    return stamp_shop(game_map, rng=rng)
+    return stamp_shop(game_map, rng=rng, shop_id=ARMOUR_SHOP_ID)

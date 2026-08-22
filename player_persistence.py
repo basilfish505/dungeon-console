@@ -33,6 +33,8 @@ def player_to_save_dict(player):
         'equipped_armour_instance_id': getattr(
             player, 'equipped_armour_instance_id', None
         ),
+        'lit_light_instance_id': getattr(player, 'lit_light_instance_id', None),
+        'sight_range': float(getattr(player, 'sight_range', 0) or 0),
         'inventory': inv.to_save_list() if inv is not None else [],
         'str': int(getattr(player, 'str', 1) or 1),
         'int': int(getattr(player, 'int', 1) or 1),
@@ -69,7 +71,15 @@ def apply_save_dict(player, data):
         inv.load_from_save(data.get('inventory') or [])
     player.equipped_weapon_instance_id = data.get('equipped_weapon_instance_id')
     player.equipped_armour_instance_id = data.get('equipped_armour_instance_id')
+    player.lit_light_instance_id = data.get('lit_light_instance_id')
+    if 'sight_range' in data:
+        try:
+            player.sight_range = float(data['sight_range'])
+        except (TypeError, ValueError):
+            player.sight_range = 0
     sync_equipment(player)
+    from items.light import sync_light_sight
+    sync_light_sight(player)
     if hasattr(player, 'sync_level_from_xp'):
         player.sync_level_from_xp()
     return True

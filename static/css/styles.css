@@ -543,12 +543,45 @@ body {
     text-transform: uppercase;
 }
 
+.inventory-slot-lit-label {
+    display: block;
+    margin-top: 2px;
+    font-size: 0.7rem;
+    line-height: 1.1;
+    color: #fc6;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.inventory-slot-fuel {
+    display: block;
+    margin-top: 2px;
+    font-size: 0.65rem;
+    line-height: 1.1;
+    color: #8a8;
+    letter-spacing: 0.02em;
+}
+
 .inventory-detail-equipped {
     margin: 4px 0 0;
     font-size: 0.85rem;
     color: #9f9;
     letter-spacing: 0.04em;
     text-transform: uppercase;
+}
+
+.inventory-detail-lit {
+    margin: 4px 0 0;
+    font-size: 0.85rem;
+    color: #fc6;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.inventory-detail-fuel {
+    margin: 4px 0 0;
+    font-size: 0.8rem;
+    color: #8a8;
 }
 
 .inspect-ware-icon {

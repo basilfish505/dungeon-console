@@ -17,4 +17,4 @@ def build_weapon_shop(facing='s'):
 
 
 def stamp_weapon_shop(game_map, rng=None):
-    return stamp_shop(game_map, rng=rng)
+    return stamp_shop(game_map, rng=rng, shop_id=WEAPON_SHOP_ID)

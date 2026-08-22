@@ -80,7 +80,7 @@
         <div class="mobile-btn" data-direction="n" aria-label="North">↑</div>
         <div class="mobile-btn" data-direction="ne" aria-label="Northeast">↗</div>
         <div class="mobile-btn" data-direction="west" aria-label="West">←</div>
-        <button type="button" id="pad-center-btn" class="mobile-btn mobile-btn-center" aria-label="Items">Items</button>
+        <button type="button" id="pad-center-btn" class="mobile-btn mobile-btn-center" aria-label="Inventory">Inventory</button>
         <div class="mobile-btn" data-direction="e" aria-label="East">→</div>
         <div class="mobile-btn" data-direction="sw" aria-label="Southwest">↙</div>
         <div class="mobile-btn" data-direction="s" aria-label="South">↓</div>
@@ -110,7 +110,7 @@
     <div id="inventory-overlay" class="inspect-overlay inventory-overlay" hidden aria-hidden="true">
         <div id="inventory-panel" class="inspect-panel inventory-panel" role="dialog" aria-modal="true" aria-labelledby="inventory-title">
             <div class="inspect-header">
-                <h3 id="inventory-title" class="inspect-title">Items</h3>
+                <h3 id="inventory-title" class="inspect-title">Inventory</h3>
                 <button type="button" id="inventory-close" class="inspect-close" aria-label="Close">Close</button>
             </div>
             <div class="inventory-body">
@@ -156,6 +156,9 @@
     <link rel="preload" as="image" href="{{ url_for('static', filename='tiles/road.png') }}">
     <link rel="preload" as="image" href="{{ url_for('static', filename='tiles/desk.png') }}">
     <link rel="preload" as="image" href="{{ url_for('static', filename='tiles/roof.png') }}">
+    <link rel="preload" as="image" href="{{ url_for('static', filename='tiles/items_shop_sign.png') }}">
+    <link rel="preload" as="image" href="{{ url_for('static', filename='tiles/weapon_shop_sign.png') }}">
+    <link rel="preload" as="image" href="{{ url_for('static', filename='tiles/armour_shop_sign.png') }}">
     <link rel="preload" as="image" href="{{ url_for('static', filename='npcs/shopkeeper.png') }}">
     <link rel="preload" as="image" href="{{ url_for('static', filename='monsters/sprites/troll.png') }}">
     <link rel="preload" as="image" href="{{ url_for('static', filename='monsters/portraits/troll.png') }}">

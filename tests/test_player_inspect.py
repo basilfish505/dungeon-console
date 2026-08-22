@@ -29,7 +29,7 @@ class PlayerInspectDictTests(unittest.TestCase):
         p.str = 5
         p.pqg = 100
         purchase_item(p, 'club', shop_id=WEAPON_SHOP_ID)
-        club = next(iter(p.inventory))
+        club = next(i for i in p.inventory if i.type_id == 'club')
         equip_item(p, club.instance_id)
         club_base = get_weapon_type('club').base_damage
         data = p.to_inspect_dict()

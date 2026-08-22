@@ -23,6 +23,7 @@ SHOP_TO_CATEGORY = {
 # Saleable type ids per shop (starter catalogs).
 ITEMS_SHOP_IDS = (
     'healing_potion',
+    'candle',
     'torch',
     'bread',
     'rope',

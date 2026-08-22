@@ -21,6 +21,8 @@ NPC_POS = (1, 2)
 DESK_POS = (2, 2)
 TALK_POS = (3, 2)
 INTERIOR_DOOR = (4, 2)
+# Wall tile immediately left of the door (canonical south-facing); rotates with the building.
+INTERIOR_SIGN = (4, 1)
 INTERIOR_SPAWN = [3, 2]
 
 SHOPKEEPER_SPRITE = '/static/npcs/shopkeeper.png'
@@ -30,6 +32,14 @@ SHOP_DISPLAY_NAMES = {
     'weapon_shop': 'Weapon Shop',
     'armour_shop': 'Armour Shop',
 }
+
+# Outdoor sign glyphs (one per shop) — sprites in static/tiles/*_shop_sign.png
+SHOP_SIGN_GLYPHS = {
+    'items_shop': 'i',
+    'weapon_shop': 'w',
+    'armour_shop': 'a',
+}
+SHOP_SIGN_GLYPH_SET = frozenset(SHOP_SIGN_GLYPHS.values())
 
 
 def shop_display_name(shop_id):
@@ -75,7 +85,7 @@ def interior_spawn(game_map):
     return list(INTERIOR_SPAWN)
 
 
-def canonical_outdoor():
+def canonical_outdoor(sign_glyph=None):
     h, w = INTERIOR_H, INTERIOR_W
     grid = [
         [WALL if y == 0 or y == h - 1 or x == 0 or x == w - 1 else 'R'
@@ -83,6 +93,8 @@ def canonical_outdoor():
         for y in range(h)
     ]
     grid[INTERIOR_DOOR[0]][INTERIOR_DOOR[1]] = '+'
+    if sign_glyph:
+        grid[INTERIOR_SIGN[0]][INTERIOR_SIGN[1]] = sign_glyph
     return grid
 
 
@@ -158,16 +170,17 @@ def iter_shop_placements(game_map):
     return placements
 
 
-def stamp_shop(game_map, rng=None):
-    """Paint a random-facing shop, door, and road tile at the door."""
+def stamp_shop(game_map, rng=None, *, shop_id=None):
+    """Paint a random-facing shop, door, sign beside the door, and road tile."""
     rng = rng or random
+    sign_glyph = SHOP_SIGN_GLYPHS.get(shop_id) if shop_id else None
     placements = iter_shop_placements(game_map)
     if not placements:
         facing, oy, ox = 's', 2, 8
     else:
         facing, oy, ox = placements[rng.randrange(len(placements))]
 
-    building = rotate_grid_cw(canonical_outdoor(), ROTATIONS_FROM_SOUTH[facing])
+    building = rotate_grid_cw(canonical_outdoor(sign_glyph), ROTATIONS_FROM_SOUTH[facing])
     bh, bw = len(building), len(building[0])
     for y in range(bh):
         for x in range(bw):
@@ -177,10 +190,18 @@ def stamp_shop(game_map, rng=None):
     dy, dx = FACING_DELTA[facing]
     road_y, road_x = door_y + dy, door_x + dx
     game_map[road_y][road_x] = ','
+    sign_pos = None
+    if sign_glyph:
+        sign_local = find_glyph(building, sign_glyph)
+        if sign_local is not None:
+            sign_pos = [oy + sign_local[0], ox + sign_local[1]]
     return {
         'door': [door_y, door_x],
         'road': [road_y, road_x],
+        'sign': sign_pos,
+        'sign_glyph': sign_glyph,
         'origin': [oy, ox],
         'facing': facing,
         'size': [bh, bw],
+        'shop_id': shop_id,
     }

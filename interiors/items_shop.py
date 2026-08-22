@@ -35,7 +35,7 @@ def build_items_shop(facing='s'):
 
 
 def stamp_items_shop(game_map, rng=None):
-    return stamp_shop(game_map, rng=rng)
+    return stamp_shop(game_map, rng=rng, shop_id=ITEMS_SHOP_ID)
 
 
 # Re-exports used by tests / callers that imported helpers from this module.

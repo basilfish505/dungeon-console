@@ -19,11 +19,12 @@ PLACEHOLDER_BY_CATEGORY = {
 SLOT_COUNT = 16
 
 
-def _row_from_item(item, equipped_ids=None):
+def _row_from_item(item, equipped_ids=None, lit_light_id=None):
     equipped_ids = equipped_ids or set()
     cat = normalize_category(getattr(item, 'category', CATEGORY_ITEM))
     type_def = resolve_owned_type(cat, item.type_id)
     equipped = item.instance_id in equipped_ids
+    lit = bool(lit_light_id and item.instance_id == lit_light_id and item.extras.get('lit'))
     if type_def is None:
         row = {
             'instance_id': item.instance_id,
@@ -35,6 +36,7 @@ def _row_from_item(item, equipped_ids=None):
             'price_pqg': 0,
             'image': PLACEHOLDER_BY_CATEGORY.get(cat, PLACEHOLDER_BY_CATEGORY[CATEGORY_ITEM]),
             'equipped': equipped,
+            'lit': lit,
         }
         return row
     row = {
@@ -47,12 +49,23 @@ def _row_from_item(item, equipped_ids=None):
         'price_pqg': type_def.price_pqg,
         'image': type_def.image,
         'equipped': equipped,
+        'lit': lit,
     }
     if cat == CATEGORY_WEAPON:
         row['base_damage'] = getattr(type_def, 'base_damage', -2)
         row['consistency_factor'] = getattr(type_def, 'consistency_factor', 3)
     elif cat == CATEGORY_ARMOUR:
         row['armour_value'] = getattr(type_def, 'armour_value', 1)
+    light_ticks = getattr(type_def, 'light_ticks', None)
+    if light_ticks is not None:
+        row['light_ticks'] = int(light_ticks)
+        try:
+            remaining = int(item.extras.get('light_remaining', light_ticks))
+        except (TypeError, ValueError):
+            remaining = int(light_ticks)
+        row['light_remaining'] = max(0, remaining)
+        if getattr(type_def, 'light_sight', None) is not None:
+            row['light_sight'] = type_def.light_sight
     return row
 
 
@@ -96,6 +109,9 @@ class Inventory:
             category=cat,
             instance_id=instance_id,
         )
+        if cat == CATEGORY_ITEM:
+            from items.light import seed_light_extras
+            seed_light_extras(inst, type_def)
         self._slots[empty] = inst
         return inst
 
@@ -134,7 +150,12 @@ class Inventory:
                 return i
         return None
 
-    def to_client_list(self, equipped_weapon_id=None, equipped_armour_id=None):
+    def to_client_list(
+        self,
+        equipped_weapon_id=None,
+        equipped_armour_id=None,
+        lit_light_id=None,
+    ):
         """16 entries for the UI; empty slots are None."""
         equipped_ids = set()
         if equipped_weapon_id:
@@ -143,7 +164,13 @@ class Inventory:
             equipped_ids.add(equipped_armour_id)
         rows = []
         for item in self._slots:
-            rows.append(None if item is None else _row_from_item(item, equipped_ids))
+            rows.append(
+                None
+                if item is None
+                else _row_from_item(
+                    item, equipped_ids, lit_light_id=lit_light_id
+                )
+            )
         return rows
 
     def to_save_list(self):
@@ -169,5 +196,8 @@ class Inventory:
                     category=cat,
                     instance_id=row.get('instance_id'),
                 )
+                inst = self.get(row.get('instance_id'))
+                if inst is not None and isinstance(row.get('extras'), dict):
+                    inst.extras.update(row['extras'])
             except ValueError:
                 break
