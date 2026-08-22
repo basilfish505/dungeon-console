@@ -8,6 +8,7 @@ from pathlib import Path
 from openpyxl import load_workbook
 
 from monster_types.base import MonsterTypeDef
+from monster_types.leveling import DEFAULT_LEVEL_SCALING, DEFAULT_MAX_LEVEL
 from monster_types.registry import MONSTER_TYPES, pick_spawn_type_id, register_monster_type
 from monster_types.sheet import (
     COLUMNS,
@@ -55,6 +56,25 @@ class ParseRowTests(unittest.TestCase):
         self.assertEqual(td.ability_ids, ['stab', 'yell'])
         self.assertEqual(td.spawn_weight, 2.0)
         self.assertTrue(td.sprite.endswith('/goblin.png'))
+        self.assertEqual(td.level_scaling, DEFAULT_LEVEL_SCALING)
+        self.assertEqual(td.max_level, DEFAULT_MAX_LEVEL)
+
+    def test_parses_level_columns(self):
+        td = row_to_typedef({
+            'type_id': 'wisp',
+            'name': 'Wisp',
+            'max_level': 7,
+            'level_scaling': 3,
+            'str': 1,
+            'int': 8,
+            'wis': 8,
+            'chr': 4,
+            'dex': 5,
+            'agi': 5,
+            'base_mhp': 6,
+        })
+        self.assertEqual(td.max_level, 7)
+        self.assertEqual(td.level_scaling, 3)
 
     def test_ability_ids_blank(self):
         self.assertEqual(parse_ability_ids(''), [])

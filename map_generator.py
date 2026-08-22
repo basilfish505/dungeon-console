@@ -2,7 +2,8 @@ import math
 import random
 from collections import deque
 from monster import Monster
-from monster_types.registry import pick_spawn_type_id
+from monster_types.registry import get_monster_type, pick_spawn_type_id
+from monster_types.leveling import assign_monster_level
 from interiors.items_shop import ITEMS_SHOP_ID, stamp_items_shop
 from visibility import GRASS, IMPASSABLE_TERRAIN, MOUNTAIN, OPEN_GROUND, TREE
 
@@ -496,8 +497,12 @@ class MapGenerator:
             for j in range(w):
                 if self.game_map[i][j] == '.' and random.random() < MONSTER_PROBABILITY:
                     type_id = pick_spawn_type_id()
+                    type_def = get_monster_type(type_id)
+                    level = assign_monster_level(type_def) if type_def else 1
                     monster_id = f"{type_id}-{i},{j}"
-                    monster = Monster.from_type(type_id, [i, j], monster_id=monster_id)
+                    monster = Monster.from_type(
+                        type_id, [i, j], monster_id=monster_id, level=level,
+                    )
                     self.monsters[(i, j)] = monster
                     self.game_map[i][j] = '&'
 

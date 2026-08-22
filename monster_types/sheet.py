@@ -10,6 +10,7 @@ from pathlib import Path
 
 from character_stats import ATTRIBUTE_KEYS
 from monster_types.base import MonsterTypeDef
+from monster_types.leveling import DEFAULT_LEVEL_SCALING, DEFAULT_MAX_LEVEL
 from monster_types.registry import register_monster_type
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -20,6 +21,8 @@ COLUMNS = [
     'name',
     'description',
     'base_level',
+    'max_level',
+    'level_scaling',
     'str',
     'int',
     'wis',
@@ -43,7 +46,12 @@ HEADER_COMMENTS = {
     'type_id': 'Machine id, lowercase, unique (e.g. goblin). Required.',
     'name': 'Display name shown to players. Required.',
     'description': 'Inspect / flavor text.',
-    'base_level': 'Starting level (default 1). Level scaling is currently a stub.',
+    'base_level': 'Default level when construction omits level= (tests/NPCs). Default 1.',
+    'max_level': f'Highest random spawn level (inclusive). Default {DEFAULT_MAX_LEVEL}.',
+    'level_scaling': (
+        f'Bonus attribute points per level above 1. '
+        f'Default {DEFAULT_LEVEL_SCALING}.'
+    ),
     'str': 'Strength. Integer.',
     'int': 'Intelligence. Integer.',
     'wis': 'Wisdom. Integer.',
@@ -68,6 +76,8 @@ TROLL_EXAMPLE = {
     'name': 'Troll',
     'description': 'A large, brutish creature that relies on strength and durability.',
     'base_level': 1,
+    'max_level': DEFAULT_MAX_LEVEL,
+    'level_scaling': DEFAULT_LEVEL_SCALING,
     'str': 8,
     'int': 3,
     'wis': 3,
@@ -132,6 +142,8 @@ def row_to_typedef(row):
         name=name,
         description=_str_or_none(row.get('description')),
         base_level=_int(row.get('base_level'), 1),
+        max_level=_int(row.get('max_level'), DEFAULT_MAX_LEVEL),
+        level_scaling=_int(row.get('level_scaling'), DEFAULT_LEVEL_SCALING),
         base_attributes=attrs,
         base_mhp=_int(row.get('base_mhp'), 10),
         armour=_int(row.get('armour'), 1),
@@ -276,6 +288,8 @@ def write_monster_xlsx(path=None, extra_rows=None):
         'name': 16,
         'description': 42,
         'base_level': 12,
+        'max_level': 12,
+        'level_scaling': 14,
         'base_mhp': 12,
         'armour': 10,
         'ability_ids': 18,
@@ -307,8 +321,10 @@ def write_monster_xlsx(path=None, extra_rows=None):
         '4. Leave sprite/portrait blank to use default paths under static/monsters/.',
         '5. ability_ids: comma-separated list or blank. Abilities are data-only until combat hooks exist.',
         '6. spawn_weight: relative chance to appear. 0 means the species is registered but never random-spawned.',
-        '7. spawn_notes is for your own comments and is not loaded.',
-        '8. Save this workbook, then restart the game. All rows with a type_id are imported together.',
+        '7. max_level / level_scaling: dungeon spawns pick a random level 1..max_level; '
+        f'bonus attribute points = (level - 1) * level_scaling (defaults {DEFAULT_MAX_LEVEL} / {DEFAULT_LEVEL_SCALING}).',
+        '8. spawn_notes is for your own comments and is not loaded.',
+        '9. Save this workbook, then restart the game. All rows with a type_id are imported together.',
         '',
         'AI field quick guide',
         'aggression 0-10: low flees, ~5 wanders, high chases.',
@@ -339,7 +355,9 @@ def write_monster_xlsx(path=None, extra_rows=None):
         ('type_id', 'yes', 'string', 'Unique machine id'),
         ('name', 'yes', 'string', 'Display name'),
         ('description', 'no', 'string', 'Inspect text'),
-        ('base_level', 'no', 'int', 'Default 1'),
+        ('base_level', 'no', 'int', 'Default 1 (used when level= omitted)'),
+        ('max_level', 'no', 'int', f'Default {DEFAULT_MAX_LEVEL}. Random spawn upper bound'),
+        ('level_scaling', 'no', 'int', f'Default {DEFAULT_LEVEL_SCALING}. Points per level above 1'),
         ('str/int/wis/chr/dex/agi', 'yes', 'int', 'Base attributes (missing keys become 1)'),
         ('base_mhp', 'yes', 'int', 'Max HP'),
         ('armour', 'no', 'int', 'Damage divisor. Default 1 (min 1)'),

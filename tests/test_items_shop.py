@@ -216,7 +216,7 @@ class ItemsShopPlayTests(unittest.TestCase):
         from monster_types import get_monster_type
 
         self.assertIsNotNone(get_monster_type('shopkeeper'))
-        mon = Monster.from_type('shopkeeper', [1, 1], monster_id='k')
+        mon = Monster.from_type('shopkeeper', [1, 1], monster_id='k', level=1)
         self.assertEqual(mon.str, 20)
         self.assertEqual(mon.armour, 1)
         target = Player('hero', [0, 0])

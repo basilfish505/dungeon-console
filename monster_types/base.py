@@ -1,21 +1,30 @@
-"""Monster species definition and level stub (no scaling curve yet)."""
+"""Monster species definition and level-based attribute scaling."""
 
 from character_stats import attrs_from_mapping
+from monster_types.leveling import (
+    DEFAULT_LEVEL_SCALING,
+    DEFAULT_MAX_LEVEL,
+    generate_leveled_stats,
+)
 
 
-def apply_level(base_attributes, base_mhp, level):
+def apply_level(base_attributes, base_mhp, level, level_scaling=None, rng=None):
     """
-    Placeholder for future level-based scaling.
-    Currently returns copies of the base values unchanged.
+    Apply level bonuses to a copy of base attributes.
+
+    Returns (attrs_dict, mhp). Species base data is never mutated.
     """
-    attrs = attrs_from_mapping(base_attributes)
-    try:
-        mhp = int(base_mhp)
-    except (TypeError, ValueError):
-        mhp = 1
-    mhp = max(1, mhp)
-    # level reserved for future curves
-    _ = level
+    scaling = DEFAULT_LEVEL_SCALING if level_scaling is None else level_scaling
+    # Minimal stand-in so generate_leveled_stats can read fields uniformly.
+    type_stub = type('TypeStub', (), {
+        'base_attributes': attrs_from_mapping(base_attributes),
+        'base_mhp': base_mhp,
+        'level_scaling': scaling,
+        'max_level': DEFAULT_MAX_LEVEL,
+        'name': 'Monster',
+        'id': 'monster',
+    })()
+    attrs, mhp, _bonuses, _hp_bonus = generate_leveled_stats(type_stub, level, rng=rng)
     return attrs, mhp
 
 
@@ -39,6 +48,8 @@ class MonsterTypeDef:
         sight_range=20,
         armour=1,
         spawn_weight=1,
+        level_scaling=None,
+        max_level=None,
     ):
         self.id = str(type_id)
         self.name = str(name)
@@ -69,7 +80,27 @@ class MonsterTypeDef:
         if self.spawn_weight < 0:
             self.spawn_weight = 0.0
 
-    def stats_for_level(self, level=None):
-        """Return (attributes_dict, mhp) for the given level."""
+        if level_scaling is None:
+            self.level_scaling = DEFAULT_LEVEL_SCALING
+        else:
+            try:
+                self.level_scaling = int(level_scaling)
+            except (TypeError, ValueError):
+                self.level_scaling = DEFAULT_LEVEL_SCALING
+        if self.level_scaling < 0:
+            self.level_scaling = 0
+
+        if max_level is None:
+            self.max_level = DEFAULT_MAX_LEVEL
+        else:
+            try:
+                self.max_level = int(max_level)
+            except (TypeError, ValueError):
+                self.max_level = DEFAULT_MAX_LEVEL
+        if self.max_level < 1:
+            self.max_level = 1
+
+    def stats_for_level(self, level=None, rng=None):
+        """Return (attributes_dict, mhp, bonuses_dict, hp_bonus) for the given level."""
         lvl = self.base_level if level is None else max(1, int(level))
-        return apply_level(self.base_attributes, self.base_mhp, lvl)
+        return generate_leveled_stats(self, lvl, rng=rng)

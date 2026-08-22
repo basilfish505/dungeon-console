@@ -38,6 +38,8 @@ class Npc:
                 self.combat_type_id,
                 self.pos,
                 monster_id=self.id,
+                # Pin at level 1 so tuned NPC base stats are not level-scaled.
+                level=1,
             )
         self._combatant.pos = list(self.pos)
         return self._combatant

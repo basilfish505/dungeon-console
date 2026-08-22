@@ -1,6 +1,15 @@
 """Data-driven monster species definitions."""
 
 from monster_types.base import MonsterTypeDef, apply_level
+from monster_types.leveling import (
+    DEFAULT_LEVEL_SCALING,
+    DEFAULT_MAX_LEVEL,
+    assign_monster_level,
+    calculate_level_bonus_points,
+    distribute_level_points,
+    generate_leveled_stats,
+    roll_level_bonus_hp,
+)
 from monster_types.registry import (
     MONSTER_TYPES,
     get_monster_type,
@@ -22,6 +31,13 @@ import monster_types.shopkeeper  # noqa: F401
 __all__ = [
     'MonsterTypeDef',
     'apply_level',
+    'DEFAULT_LEVEL_SCALING',
+    'DEFAULT_MAX_LEVEL',
+    'assign_monster_level',
+    'calculate_level_bonus_points',
+    'distribute_level_points',
+    'generate_leveled_stats',
+    'roll_level_bonus_hp',
     'MONSTER_TYPES',
     'get_monster_type',
     'pick_spawn_type_id',

@@ -36,7 +36,7 @@ def _clamp_stat(value, lo=0.0, hi=10.0):
 class Monster:
     """Individual monster instance. Species-specific data comes from MonsterTypeDef."""
 
-    def __init__(self, monster_id, type_id, position, level=None, **runtime_overrides):
+    def __init__(self, monster_id, type_id, position, level=None, rng=None, **runtime_overrides):
         type_def = get_monster_type(type_id)
         if type_def is None:
             raise ValueError(f'Unknown monster type_id: {type_id!r}')
@@ -50,9 +50,11 @@ class Monster:
 
         lvl = type_def.base_level if level is None else max(1, int(level))
         self.level = lvl
-        attrs, mhp = type_def.stats_for_level(lvl)
+        attrs, mhp, bonuses, hp_bonus = type_def.stats_for_level(lvl, rng=rng)
         for key in ATTRIBUTE_KEYS:
             setattr(self, key, attrs[key])
+        self.level_bonuses = dict(bonuses)
+        self.level_hp_bonus = int(hp_bonus)
         self.mhp = mhp
         self.hp = mhp
 
@@ -87,13 +89,14 @@ class Monster:
         self.last_target_visible = False
 
     @classmethod
-    def from_type(cls, type_id, position, monster_id=None, level=None, **runtime_overrides):
+    def from_type(cls, type_id, position, monster_id=None, level=None, rng=None, **runtime_overrides):
         """Create a monster from a registered species id."""
         return cls(
             monster_id,
             type_id,
             position,
             level=level,
+            rng=rng,
             **runtime_overrides,
         )
 
