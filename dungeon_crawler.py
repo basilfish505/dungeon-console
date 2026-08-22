@@ -1132,8 +1132,6 @@ def handle_buy_item(data):
 
     data = data or {}
     result = purchase_item(player, data.get('item_id'))
-    if result.get('message'):
-        game_state.add_player_message(player_id, result['message'])
     emit('game_state', game_state.get_game_state(player_id), room=player_id)
     emit('buy_item_result', {
         'ok': bool(result.get('ok')),

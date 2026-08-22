@@ -151,6 +151,12 @@ const SocketHandler = (function () {
             }
         });
 
+        socket.on('buy_item_result', function (data) {
+            if (data && data.message && typeof InspectUI !== 'undefined' && InspectUI.showAlert) {
+                InspectUI.showAlert(data.message);
+            }
+        });
+
         socket.on('player_died', function () {
             clearJoinedSession();
             UI.handlePlayerDeath();

@@ -36,7 +36,7 @@
                     <span class="property-label">LVL:</span>
                     <span class="property-value" id="player-level">1</span>
                     <span class="property-label">ELO:</span>
-                    <span class="property-value" id="player-elo">0</span>
+                    <span class="property-value" id="player-elo">1000</span>
 
                     <span class="property-label">XP:</span>
                     <span class="property-value" id="player-xp">0</span>
@@ -94,6 +94,13 @@
                 <button type="button" id="inspect-close" class="inspect-close" aria-label="Close">Close</button>
             </div>
             <div id="inspect-body" class="inspect-body"></div>
+        </div>
+    </div>
+
+    <div id="shop-alert-overlay" class="inspect-overlay shop-alert-overlay" hidden aria-hidden="true">
+        <div id="shop-alert-panel" class="inspect-panel shop-alert-panel" role="alertdialog" aria-modal="true" aria-labelledby="shop-alert-message">
+            <p id="shop-alert-message" class="shop-alert-message"></p>
+            <button type="button" id="shop-alert-ok" class="inspect-close shop-alert-ok">OK</button>
         </div>
     </div>
 

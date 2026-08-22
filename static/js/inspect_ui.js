@@ -5,6 +5,7 @@ const InspectUI = (function () {
     let titleEl = null;
     let bodyEl = null;
     let open = false;
+    let alertOpen = false;
 
     function ensureEls() {
         if (overlayEl) {
@@ -38,7 +39,7 @@ const InspectUI = (function () {
     }
 
     function isOpen() {
-        return open;
+        return open || alertOpen;
     }
 
     function escapeHtml(text) {
@@ -201,5 +202,70 @@ const InspectUI = (function () {
         open = false;
     }
 
-    return { show, hide, isOpen };
+    let alertOverlayEl = null;
+    let alertMessageEl = null;
+    let alertOkBtn = null;
+
+    function ensureAlertEls() {
+        if (alertOverlayEl) {
+            return true;
+        }
+        alertOverlayEl = document.getElementById('shop-alert-overlay');
+        alertMessageEl = document.getElementById('shop-alert-message');
+        alertOkBtn = document.getElementById('shop-alert-ok');
+        if (!alertOverlayEl || !alertMessageEl || !alertOkBtn) {
+            return false;
+        }
+        function closeAlert(e) {
+            if (e) {
+                e.preventDefault();
+                e.stopPropagation();
+            }
+            hideAlert();
+        }
+        alertOkBtn.addEventListener('click', closeAlert);
+        alertOverlayEl.addEventListener('click', function (e) {
+            if (e.target === alertOverlayEl) {
+                closeAlert(e);
+            }
+        });
+        const panel = document.getElementById('shop-alert-panel');
+        if (panel) {
+            panel.addEventListener('pointerdown', function (e) {
+                e.stopPropagation();
+            });
+        }
+        return true;
+    }
+
+    function showAlert(message) {
+        if (!ensureAlertEls()) {
+            return;
+        }
+        const text = message == null ? '' : String(message);
+        if (!text) {
+            return;
+        }
+        alertMessageEl.textContent = text;
+        alertOverlayEl.hidden = false;
+        alertOverlayEl.setAttribute('aria-hidden', 'false');
+        alertOpen = true;
+        try {
+            alertOkBtn.focus();
+        } catch (err) {
+            /* ignore */
+        }
+    }
+
+    function hideAlert() {
+        if (!ensureAlertEls()) {
+            return;
+        }
+        alertOverlayEl.hidden = true;
+        alertOverlayEl.setAttribute('aria-hidden', 'true');
+        alertMessageEl.textContent = '';
+        alertOpen = false;
+    }
+
+    return { show, hide, isOpen, showAlert, hideAlert };
 })();

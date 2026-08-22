@@ -496,6 +496,31 @@ body {
     background: rgba(0, 255, 0, 0.08);
 }
 
+.shop-alert-overlay {
+    z-index: 1700;
+}
+
+.shop-alert-panel {
+    width: min(100%, 360px);
+    max-height: none;
+    padding: 18px 16px 16px;
+    gap: 16px;
+    align-items: stretch;
+}
+
+.shop-alert-message {
+    margin: 0;
+    color: #0f0;
+    font-size: 1.2rem;
+    line-height: 1.4;
+    text-align: center;
+}
+
+.shop-alert-ok {
+    align-self: center;
+    min-width: 6em;
+}
+
 .inspect-ware-icon {
     width: 28px;
     height: 28px;

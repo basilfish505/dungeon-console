@@ -9,10 +9,10 @@ from player import Player
 
 
 class CombatEloHelperTests(unittest.TestCase):
-    def test_players_start_at_zero(self):
+    def test_players_start_at_1000(self):
         player = Player('hero', [1, 1])
-        self.assertEqual(player.elo, 0)
-        self.assertEqual(rating_of(player), 0.0)
+        self.assertEqual(player.elo, 1000)
+        self.assertEqual(rating_of(player), 1000.0)
 
     def test_apply_elo_outcome_winner_gains_loser_loses(self):
         winner = Player('hero', [1, 1])
