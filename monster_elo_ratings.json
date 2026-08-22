@@ -1,0 +1,2640 @@
+{
+  "meta": {
+    "combatant_count": 130,
+    "fights_per_pairing": 20,
+    "generated_at": "2026-08-22T02:51:12.075473+00:00",
+    "initial_elo": 1000,
+    "k_factor": 32,
+    "max_combat_rounds": 1000,
+    "seed": null,
+    "tournament_passes": 3
+  },
+  "ratings": {
+    "caveBat": {
+      "1": {
+        "armour": 1,
+        "attributes": {
+          "agi": 4,
+          "chr": 2,
+          "dex": 4,
+          "int": 3,
+          "str": 9,
+          "wis": 3
+        },
+        "avg_rounds": 3.761,
+        "draws": 0,
+        "elo": 32.055,
+        "fights": 7740,
+        "losses": 6586,
+        "mhp": 20,
+        "name": "Cave Bat",
+        "win_pct": 14.91,
+        "wins": 1154
+      },
+      "10": {
+        "armour": 1,
+        "attributes": {
+          "agi": 12,
+          "chr": 7,
+          "dex": 12,
+          "int": 10,
+          "str": 30,
+          "wis": 8
+        },
+        "avg_rounds": 2.634,
+        "draws": 0,
+        "elo": 1518.336,
+        "fights": 7740,
+        "losses": 1791,
+        "mhp": 37,
+        "name": "Cave Bat",
+        "win_pct": 76.86,
+        "wins": 5949
+      },
+      "2": {
+        "armour": 1,
+        "attributes": {
+          "agi": 5,
+          "chr": 3,
+          "dex": 5,
+          "int": 4,
+          "str": 9,
+          "wis": 5
+        },
+        "avg_rounds": 3.866,
+        "draws": 0,
+        "elo": 164.752,
+        "fights": 7740,
+        "losses": 6493,
+        "mhp": 21,
+        "name": "Cave Bat",
+        "win_pct": 16.111,
+        "wins": 1247
+      },
+      "3": {
+        "armour": 1,
+        "attributes": {
+          "agi": 6,
+          "chr": 6,
+          "dex": 5,
+          "int": 4,
+          "str": 12,
+          "wis": 4
+        },
+        "avg_rounds": 3.677,
+        "draws": 0,
+        "elo": 513.56,
+        "fights": 7740,
+        "losses": 5443,
+        "mhp": 23,
+        "name": "Cave Bat",
+        "win_pct": 29.677,
+        "wins": 2297
+      },
+      "4": {
+        "armour": 1,
+        "attributes": {
+          "agi": 10,
+          "chr": 3,
+          "dex": 5,
+          "int": 6,
+          "str": 14,
+          "wis": 5
+        },
+        "avg_rounds": 3.599,
+        "draws": 0,
+        "elo": 683.038,
+        "fights": 7740,
+        "losses": 4749,
+        "mhp": 25,
+        "name": "Cave Bat",
+        "win_pct": 38.643,
+        "wins": 2991
+      },
+      "5": {
+        "armour": 1,
+        "attributes": {
+          "agi": 8,
+          "chr": 5,
+          "dex": 10,
+          "int": 5,
+          "str": 17,
+          "wis": 4
+        },
+        "avg_rounds": 3.273,
+        "draws": 0,
+        "elo": 910.584,
+        "fights": 7740,
+        "losses": 4110,
+        "mhp": 25,
+        "name": "Cave Bat",
+        "win_pct": 46.899,
+        "wins": 3630
+      },
+      "6": {
+        "armour": 1,
+        "attributes": {
+          "agi": 10,
+          "chr": 8,
+          "dex": 7,
+          "int": 10,
+          "str": 15,
+          "wis": 5
+        },
+        "avg_rounds": 3.607,
+        "draws": 0,
+        "elo": 895.31,
+        "fights": 7740,
+        "losses": 4273,
+        "mhp": 27,
+        "name": "Cave Bat",
+        "win_pct": 44.793,
+        "wins": 3467
+      },
+      "7": {
+        "armour": 1,
+        "attributes": {
+          "agi": 12,
+          "chr": 7,
+          "dex": 8,
+          "int": 7,
+          "str": 20,
+          "wis": 7
+        },
+        "avg_rounds": 3.237,
+        "draws": 0,
+        "elo": 1302.955,
+        "fights": 7740,
+        "losses": 3109,
+        "mhp": 30,
+        "name": "Cave Bat",
+        "win_pct": 59.832,
+        "wins": 4631
+      },
+      "8": {
+        "armour": 1,
+        "attributes": {
+          "agi": 9,
+          "chr": 5,
+          "dex": 13,
+          "int": 5,
+          "str": 25,
+          "wis": 10
+        },
+        "avg_rounds": 2.886,
+        "draws": 0,
+        "elo": 1365.227,
+        "fights": 7740,
+        "losses": 2379,
+        "mhp": 33,
+        "name": "Cave Bat",
+        "win_pct": 69.264,
+        "wins": 5361
+      },
+      "9": {
+        "armour": 1,
+        "attributes": {
+          "agi": 7,
+          "chr": 7,
+          "dex": 8,
+          "int": 12,
+          "str": 29,
+          "wis": 10
+        },
+        "avg_rounds": 2.728,
+        "draws": 0,
+        "elo": 1665.486,
+        "fights": 7740,
+        "losses": 1750,
+        "mhp": 39,
+        "name": "Cave Bat",
+        "win_pct": 77.39,
+        "wins": 5990
+      }
+    },
+    "ghost": {
+      "1": {
+        "armour": 1,
+        "attributes": {
+          "agi": 4,
+          "chr": 2,
+          "dex": 4,
+          "int": 3,
+          "str": 8,
+          "wis": 3
+        },
+        "avg_rounds": 3.862,
+        "draws": 0,
+        "elo": -41.6,
+        "fights": 7740,
+        "losses": 6857,
+        "mhp": 20,
+        "name": "Ghost",
+        "win_pct": 11.408,
+        "wins": 883
+      },
+      "10": {
+        "armour": 1,
+        "attributes": {
+          "agi": 10,
+          "chr": 5,
+          "dex": 12,
+          "int": 8,
+          "str": 31,
+          "wis": 12
+        },
+        "avg_rounds": 2.678,
+        "draws": 0,
+        "elo": 1647.771,
+        "fights": 7740,
+        "losses": 1460,
+        "mhp": 44,
+        "name": "Ghost",
+        "win_pct": 81.137,
+        "wins": 6280
+      },
+      "2": {
+        "armour": 1,
+        "attributes": {
+          "agi": 5,
+          "chr": 2,
+          "dex": 4,
+          "int": 7,
+          "str": 9,
+          "wis": 3
+        },
+        "avg_rounds": 3.878,
+        "draws": 0,
+        "elo": 130.033,
+        "fights": 7740,
+        "losses": 6488,
+        "mhp": 21,
+        "name": "Ghost",
+        "win_pct": 16.176,
+        "wins": 1252
+      },
+      "3": {
+        "armour": 1,
+        "attributes": {
+          "agi": 5,
+          "chr": 3,
+          "dex": 6,
+          "int": 6,
+          "str": 11,
+          "wis": 5
+        },
+        "avg_rounds": 3.833,
+        "draws": 0,
+        "elo": 384.281,
+        "fights": 7740,
+        "losses": 5692,
+        "mhp": 23,
+        "name": "Ghost",
+        "win_pct": 26.46,
+        "wins": 2048
+      },
+      "4": {
+        "armour": 1,
+        "attributes": {
+          "agi": 8,
+          "chr": 4,
+          "dex": 6,
+          "int": 6,
+          "str": 14,
+          "wis": 4
+        },
+        "avg_rounds": 3.677,
+        "draws": 0,
+        "elo": 775.415,
+        "fights": 7740,
+        "losses": 4670,
+        "mhp": 26,
+        "name": "Ghost",
+        "win_pct": 39.664,
+        "wins": 3070
+      },
+      "5": {
+        "armour": 1,
+        "attributes": {
+          "agi": 9,
+          "chr": 5,
+          "dex": 8,
+          "int": 11,
+          "str": 11,
+          "wis": 4
+        },
+        "avg_rounds": 4.323,
+        "draws": 0,
+        "elo": 710.251,
+        "fights": 7740,
+        "losses": 5101,
+        "mhp": 29,
+        "name": "Ghost",
+        "win_pct": 34.096,
+        "wins": 2639
+      },
+      "6": {
+        "armour": 1,
+        "attributes": {
+          "agi": 13,
+          "chr": 5,
+          "dex": 7,
+          "int": 5,
+          "str": 19,
+          "wis": 5
+        },
+        "avg_rounds": 3.212,
+        "draws": 0,
+        "elo": 1024.165,
+        "fights": 7740,
+        "losses": 3593,
+        "mhp": 27,
+        "name": "Ghost",
+        "win_pct": 53.579,
+        "wins": 4147
+      },
+      "7": {
+        "armour": 1,
+        "attributes": {
+          "agi": 12,
+          "chr": 3,
+          "dex": 10,
+          "int": 9,
+          "str": 18,
+          "wis": 8
+        },
+        "avg_rounds": 3.526,
+        "draws": 0,
+        "elo": 1086.423,
+        "fights": 7740,
+        "losses": 3306,
+        "mhp": 32,
+        "name": "Ghost",
+        "win_pct": 57.287,
+        "wins": 4434
+      },
+      "8": {
+        "armour": 1,
+        "attributes": {
+          "agi": 12,
+          "chr": 7,
+          "dex": 14,
+          "int": 6,
+          "str": 22,
+          "wis": 5
+        },
+        "avg_rounds": 3.169,
+        "draws": 0,
+        "elo": 1218.198,
+        "fights": 7740,
+        "losses": 2673,
+        "mhp": 33,
+        "name": "Ghost",
+        "win_pct": 65.465,
+        "wins": 5067
+      },
+      "9": {
+        "armour": 1,
+        "attributes": {
+          "agi": 13,
+          "chr": 6,
+          "dex": 14,
+          "int": 8,
+          "str": 20,
+          "wis": 11
+        },
+        "avg_rounds": 3.587,
+        "draws": 0,
+        "elo": 1325.553,
+        "fights": 7740,
+        "losses": 2344,
+        "mhp": 41,
+        "name": "Ghost",
+        "win_pct": 69.716,
+        "wins": 5396
+      }
+    },
+    "giantBeetle": {
+      "1": {
+        "armour": 6,
+        "attributes": {
+          "agi": 4,
+          "chr": 2,
+          "dex": 4,
+          "int": 3,
+          "str": 6,
+          "wis": 3
+        },
+        "avg_rounds": 11.818,
+        "draws": 0,
+        "elo": 1014.766,
+        "fights": 7740,
+        "losses": 3557,
+        "mhp": 20,
+        "name": "Giant Beetle",
+        "win_pct": 54.044,
+        "wins": 4183
+      },
+      "10": {
+        "armour": 6,
+        "attributes": {
+          "agi": 13,
+          "chr": 4,
+          "dex": 17,
+          "int": 12,
+          "str": 20,
+          "wis": 10
+        },
+        "avg_rounds": 4.504,
+        "draws": 0,
+        "elo": 2482.419,
+        "fights": 7740,
+        "losses": 658,
+        "mhp": 36,
+        "name": "Giant Beetle",
+        "win_pct": 91.499,
+        "wins": 7082
+      },
+      "2": {
+        "armour": 6,
+        "attributes": {
+          "agi": 5,
+          "chr": 3,
+          "dex": 4,
+          "int": 4,
+          "str": 8,
+          "wis": 4
+        },
+        "avg_rounds": 9.514,
+        "draws": 0,
+        "elo": 1376.141,
+        "fights": 7740,
+        "losses": 2154,
+        "mhp": 21,
+        "name": "Giant Beetle",
+        "win_pct": 72.171,
+        "wins": 5586
+      },
+      "3": {
+        "armour": 6,
+        "attributes": {
+          "agi": 6,
+          "chr": 3,
+          "dex": 7,
+          "int": 4,
+          "str": 10,
+          "wis": 4
+        },
+        "avg_rounds": 7.998,
+        "draws": 0,
+        "elo": 1661.361,
+        "fights": 7740,
+        "losses": 1344,
+        "mhp": 24,
+        "name": "Giant Beetle",
+        "win_pct": 82.636,
+        "wins": 6396
+      },
+      "4": {
+        "armour": 6,
+        "attributes": {
+          "agi": 7,
+          "chr": 8,
+          "dex": 8,
+          "int": 4,
+          "str": 7,
+          "wis": 6
+        },
+        "avg_rounds": 11.264,
+        "draws": 0,
+        "elo": 1431.892,
+        "fights": 7740,
+        "losses": 2048,
+        "mhp": 26,
+        "name": "Giant Beetle",
+        "win_pct": 73.54,
+        "wins": 5692
+      },
+      "5": {
+        "armour": 6,
+        "attributes": {
+          "agi": 10,
+          "chr": 5,
+          "dex": 7,
+          "int": 10,
+          "str": 10,
+          "wis": 4
+        },
+        "avg_rounds": 8.282,
+        "draws": 0,
+        "elo": 1890.39,
+        "fights": 7740,
+        "losses": 1105,
+        "mhp": 30,
+        "name": "Giant Beetle",
+        "win_pct": 85.724,
+        "wins": 6635
+      },
+      "6": {
+        "armour": 6,
+        "attributes": {
+          "agi": 13,
+          "chr": 3,
+          "dex": 6,
+          "int": 5,
+          "str": 13,
+          "wis": 12
+        },
+        "avg_rounds": 6.5,
+        "draws": 0,
+        "elo": 2093.995,
+        "fights": 7740,
+        "losses": 884,
+        "mhp": 31,
+        "name": "Giant Beetle",
+        "win_pct": 88.579,
+        "wins": 6856
+      },
+      "7": {
+        "armour": 6,
+        "attributes": {
+          "agi": 10,
+          "chr": 6,
+          "dex": 10,
+          "int": 7,
+          "str": 18,
+          "wis": 7
+        },
+        "avg_rounds": 4.9,
+        "draws": 0,
+        "elo": 2181.318,
+        "fights": 7740,
+        "losses": 771,
+        "mhp": 32,
+        "name": "Giant Beetle",
+        "win_pct": 90.039,
+        "wins": 6969
+      },
+      "8": {
+        "armour": 6,
+        "attributes": {
+          "agi": 10,
+          "chr": 4,
+          "dex": 12,
+          "int": 11,
+          "str": 20,
+          "wis": 7
+        },
+        "avg_rounds": 4.493,
+        "draws": 0,
+        "elo": 2383.279,
+        "fights": 7740,
+        "losses": 643,
+        "mhp": 37,
+        "name": "Giant Beetle",
+        "win_pct": 91.693,
+        "wins": 7097
+      },
+      "9": {
+        "armour": 6,
+        "attributes": {
+          "agi": 11,
+          "chr": 11,
+          "dex": 9,
+          "int": 11,
+          "str": 21,
+          "wis": 7
+        },
+        "avg_rounds": 4.286,
+        "draws": 0,
+        "elo": 2352.079,
+        "fights": 7740,
+        "losses": 693,
+        "mhp": 32,
+        "name": "Giant Beetle",
+        "win_pct": 91.047,
+        "wins": 7047
+      }
+    },
+    "giantRat": {
+      "1": {
+        "armour": 1,
+        "attributes": {
+          "agi": 4,
+          "chr": 2,
+          "dex": 4,
+          "int": 3,
+          "str": 5,
+          "wis": 3
+        },
+        "avg_rounds": 4.205,
+        "draws": 0,
+        "elo": -738.409,
+        "fights": 7740,
+        "losses": 7546,
+        "mhp": 20,
+        "name": "Giant Rat",
+        "win_pct": 2.506,
+        "wins": 194
+      },
+      "10": {
+        "armour": 1,
+        "attributes": {
+          "agi": 16,
+          "chr": 8,
+          "dex": 17,
+          "int": 5,
+          "str": 17,
+          "wis": 12
+        },
+        "avg_rounds": 3.87,
+        "draws": 0,
+        "elo": 1036.776,
+        "fights": 7740,
+        "losses": 2998,
+        "mhp": 38,
+        "name": "Giant Rat",
+        "win_pct": 61.266,
+        "wins": 4742
+      },
+      "2": {
+        "armour": 1,
+        "attributes": {
+          "agi": 5,
+          "chr": 3,
+          "dex": 5,
+          "int": 4,
+          "str": 6,
+          "wis": 4
+        },
+        "avg_rounds": 4.413,
+        "draws": 0,
+        "elo": -435.607,
+        "fights": 7740,
+        "losses": 7280,
+        "mhp": 22,
+        "name": "Giant Rat",
+        "win_pct": 5.943,
+        "wins": 460
+      },
+      "3": {
+        "armour": 1,
+        "attributes": {
+          "agi": 4,
+          "chr": 4,
+          "dex": 8,
+          "int": 5,
+          "str": 9,
+          "wis": 3
+        },
+        "avg_rounds": 4.424,
+        "draws": 0,
+        "elo": 369.66,
+        "fights": 7740,
+        "losses": 6037,
+        "mhp": 26,
+        "name": "Giant Rat",
+        "win_pct": 22.003,
+        "wins": 1703
+      },
+      "4": {
+        "armour": 1,
+        "attributes": {
+          "agi": 8,
+          "chr": 4,
+          "dex": 6,
+          "int": 5,
+          "str": 11,
+          "wis": 5
+        },
+        "avg_rounds": 4.025,
+        "draws": 0,
+        "elo": 516.055,
+        "fights": 7740,
+        "losses": 5521,
+        "mhp": 25,
+        "name": "Giant Rat",
+        "win_pct": 28.669,
+        "wins": 2219
+      },
+      "5": {
+        "armour": 1,
+        "attributes": {
+          "agi": 6,
+          "chr": 3,
+          "dex": 9,
+          "int": 9,
+          "str": 10,
+          "wis": 8
+        },
+        "avg_rounds": 4.266,
+        "draws": 0,
+        "elo": 486.751,
+        "fights": 7740,
+        "losses": 5720,
+        "mhp": 26,
+        "name": "Giant Rat",
+        "win_pct": 26.098,
+        "wins": 2020
+      },
+      "6": {
+        "armour": 1,
+        "attributes": {
+          "agi": 5,
+          "chr": 4,
+          "dex": 11,
+          "int": 13,
+          "str": 11,
+          "wis": 7
+        },
+        "avg_rounds": 4.254,
+        "draws": 0,
+        "elo": 565.964,
+        "fights": 7740,
+        "losses": 5207,
+        "mhp": 28,
+        "name": "Giant Rat",
+        "win_pct": 32.726,
+        "wins": 2533
+      },
+      "7": {
+        "armour": 1,
+        "attributes": {
+          "agi": 12,
+          "chr": 4,
+          "dex": 11,
+          "int": 7,
+          "str": 15,
+          "wis": 8
+        },
+        "avg_rounds": 3.831,
+        "draws": 0,
+        "elo": 967.187,
+        "fights": 7740,
+        "losses": 3904,
+        "mhp": 31,
+        "name": "Giant Rat",
+        "win_pct": 49.561,
+        "wins": 3836
+      },
+      "8": {
+        "armour": 1,
+        "attributes": {
+          "agi": 17,
+          "chr": 6,
+          "dex": 9,
+          "int": 9,
+          "str": 13,
+          "wis": 9
+        },
+        "avg_rounds": 3.995,
+        "draws": 0,
+        "elo": 831.142,
+        "fights": 7740,
+        "losses": 4590,
+        "mhp": 29,
+        "name": "Giant Rat",
+        "win_pct": 40.698,
+        "wins": 3150
+      },
+      "9": {
+        "armour": 1,
+        "attributes": {
+          "agi": 14,
+          "chr": 10,
+          "dex": 10,
+          "int": 8,
+          "str": 17,
+          "wis": 10
+        },
+        "avg_rounds": 3.672,
+        "draws": 0,
+        "elo": 1100.977,
+        "fights": 7740,
+        "losses": 3383,
+        "mhp": 33,
+        "name": "Giant Rat",
+        "win_pct": 56.292,
+        "wins": 4357
+      }
+    },
+    "giantSnake": {
+      "1": {
+        "armour": 1,
+        "attributes": {
+          "agi": 4,
+          "chr": 2,
+          "dex": 4,
+          "int": 3,
+          "str": 7,
+          "wis": 3
+        },
+        "avg_rounds": 4.002,
+        "draws": 0,
+        "elo": -128.829,
+        "fights": 7740,
+        "losses": 7136,
+        "mhp": 20,
+        "name": "Giant Snake",
+        "win_pct": 7.804,
+        "wins": 604
+      },
+      "10": {
+        "armour": 1,
+        "attributes": {
+          "agi": 18,
+          "chr": 8,
+          "dex": 14,
+          "int": 11,
+          "str": 21,
+          "wis": 5
+        },
+        "avg_rounds": 3.424,
+        "draws": 0,
+        "elo": 1308.057,
+        "fights": 7740,
+        "losses": 2360,
+        "mhp": 39,
+        "name": "Giant Snake",
+        "win_pct": 69.509,
+        "wins": 5380
+      },
+      "2": {
+        "armour": 1,
+        "attributes": {
+          "agi": 5,
+          "chr": 2,
+          "dex": 5,
+          "int": 5,
+          "str": 8,
+          "wis": 4
+        },
+        "avg_rounds": 4.153,
+        "draws": 0,
+        "elo": -66.32,
+        "fights": 7740,
+        "losses": 6721,
+        "mhp": 22,
+        "name": "Giant Snake",
+        "win_pct": 13.165,
+        "wins": 1019
+      },
+      "3": {
+        "armour": 1,
+        "attributes": {
+          "agi": 5,
+          "chr": 3,
+          "dex": 5,
+          "int": 6,
+          "str": 13,
+          "wis": 3
+        },
+        "avg_rounds": 3.736,
+        "draws": 0,
+        "elo": 626.849,
+        "fights": 7740,
+        "losses": 5006,
+        "mhp": 25,
+        "name": "Giant Snake",
+        "win_pct": 35.323,
+        "wins": 2734
+      },
+      "4": {
+        "armour": 1,
+        "attributes": {
+          "agi": 6,
+          "chr": 4,
+          "dex": 4,
+          "int": 4,
+          "str": 19,
+          "wis": 4
+        },
+        "avg_rounds": 3.204,
+        "draws": 0,
+        "elo": 985.805,
+        "fights": 7740,
+        "losses": 3546,
+        "mhp": 27,
+        "name": "Giant Snake",
+        "win_pct": 54.186,
+        "wins": 4194
+      },
+      "5": {
+        "armour": 1,
+        "attributes": {
+          "agi": 6,
+          "chr": 3,
+          "dex": 10,
+          "int": 8,
+          "str": 13,
+          "wis": 7
+        },
+        "avg_rounds": 3.733,
+        "draws": 0,
+        "elo": 606.207,
+        "fights": 7740,
+        "losses": 4969,
+        "mhp": 25,
+        "name": "Giant Snake",
+        "win_pct": 35.801,
+        "wins": 2771
+      },
+      "6": {
+        "armour": 1,
+        "attributes": {
+          "agi": 9,
+          "chr": 4,
+          "dex": 11,
+          "int": 7,
+          "str": 13,
+          "wis": 9
+        },
+        "avg_rounds": 4.009,
+        "draws": 0,
+        "elo": 762.73,
+        "fights": 7740,
+        "losses": 4553,
+        "mhp": 29,
+        "name": "Giant Snake",
+        "win_pct": 41.176,
+        "wins": 3187
+      },
+      "7": {
+        "armour": 1,
+        "attributes": {
+          "agi": 7,
+          "chr": 7,
+          "dex": 11,
+          "int": 7,
+          "str": 20,
+          "wis": 7
+        },
+        "avg_rounds": 3.28,
+        "draws": 0,
+        "elo": 1137.614,
+        "fights": 7740,
+        "losses": 3054,
+        "mhp": 31,
+        "name": "Giant Snake",
+        "win_pct": 60.543,
+        "wins": 4686
+      },
+      "8": {
+        "armour": 1,
+        "attributes": {
+          "agi": 6,
+          "chr": 7,
+          "dex": 14,
+          "int": 10,
+          "str": 23,
+          "wis": 5
+        },
+        "avg_rounds": 3.098,
+        "draws": 0,
+        "elo": 1382.709,
+        "fights": 7740,
+        "losses": 2505,
+        "mhp": 34,
+        "name": "Giant Snake",
+        "win_pct": 67.636,
+        "wins": 5235
+      },
+      "9": {
+        "armour": 1,
+        "attributes": {
+          "agi": 12,
+          "chr": 9,
+          "dex": 19,
+          "int": 6,
+          "str": 20,
+          "wis": 5
+        },
+        "avg_rounds": 3.478,
+        "draws": 0,
+        "elo": 1397.679,
+        "fights": 7740,
+        "losses": 2616,
+        "mhp": 37,
+        "name": "Giant Snake",
+        "win_pct": 66.202,
+        "wins": 5124
+      }
+    },
+    "goblin": {
+      "1": {
+        "armour": 1,
+        "attributes": {
+          "agi": 4,
+          "chr": 2,
+          "dex": 4,
+          "int": 3,
+          "str": 7,
+          "wis": 3
+        },
+        "avg_rounds": 3.999,
+        "draws": 0,
+        "elo": -292.535,
+        "fights": 7740,
+        "losses": 7129,
+        "mhp": 20,
+        "name": "Goblin",
+        "win_pct": 7.894,
+        "wins": 611
+      },
+      "10": {
+        "armour": 1,
+        "attributes": {
+          "agi": 11,
+          "chr": 8,
+          "dex": 8,
+          "int": 11,
+          "str": 30,
+          "wis": 9
+        },
+        "avg_rounds": 2.619,
+        "draws": 0,
+        "elo": 1617.892,
+        "fights": 7740,
+        "losses": 1825,
+        "mhp": 36,
+        "name": "Goblin",
+        "win_pct": 76.421,
+        "wins": 5915
+      },
+      "2": {
+        "armour": 1,
+        "attributes": {
+          "agi": 5,
+          "chr": 3,
+          "dex": 4,
+          "int": 3,
+          "str": 10,
+          "wis": 4
+        },
+        "avg_rounds": 3.88,
+        "draws": 0,
+        "elo": 389.457,
+        "fights": 7740,
+        "losses": 6102,
+        "mhp": 22,
+        "name": "Goblin",
+        "win_pct": 21.163,
+        "wins": 1638
+      },
+      "3": {
+        "armour": 1,
+        "attributes": {
+          "agi": 7,
+          "chr": 2,
+          "dex": 6,
+          "int": 3,
+          "str": 13,
+          "wis": 4
+        },
+        "avg_rounds": 3.645,
+        "draws": 0,
+        "elo": 715.229,
+        "fights": 7740,
+        "losses": 5077,
+        "mhp": 24,
+        "name": "Goblin",
+        "win_pct": 34.406,
+        "wins": 2663
+      },
+      "4": {
+        "armour": 1,
+        "attributes": {
+          "agi": 11,
+          "chr": 3,
+          "dex": 6,
+          "int": 6,
+          "str": 9,
+          "wis": 6
+        },
+        "avg_rounds": 4.341,
+        "draws": 0,
+        "elo": 281.985,
+        "fights": 7740,
+        "losses": 6124,
+        "mhp": 25,
+        "name": "Goblin",
+        "win_pct": 20.879,
+        "wins": 1616
+      },
+      "5": {
+        "armour": 1,
+        "attributes": {
+          "agi": 8,
+          "chr": 3,
+          "dex": 8,
+          "int": 7,
+          "str": 14,
+          "wis": 7
+        },
+        "avg_rounds": 3.809,
+        "draws": 0,
+        "elo": 848.386,
+        "fights": 7740,
+        "losses": 4409,
+        "mhp": 28,
+        "name": "Goblin",
+        "win_pct": 43.036,
+        "wins": 3331
+      },
+      "6": {
+        "armour": 1,
+        "attributes": {
+          "agi": 9,
+          "chr": 7,
+          "dex": 8,
+          "int": 4,
+          "str": 19,
+          "wis": 6
+        },
+        "avg_rounds": 3.283,
+        "draws": 0,
+        "elo": 1183.706,
+        "fights": 7740,
+        "losses": 3403,
+        "mhp": 29,
+        "name": "Goblin",
+        "win_pct": 56.034,
+        "wins": 4337
+      },
+      "7": {
+        "armour": 1,
+        "attributes": {
+          "agi": 12,
+          "chr": 5,
+          "dex": 8,
+          "int": 7,
+          "str": 18,
+          "wis": 9
+        },
+        "avg_rounds": 3.439,
+        "draws": 0,
+        "elo": 1181.587,
+        "fights": 7740,
+        "losses": 3425,
+        "mhp": 30,
+        "name": "Goblin",
+        "win_pct": 55.749,
+        "wins": 4315
+      },
+      "8": {
+        "armour": 1,
+        "attributes": {
+          "agi": 12,
+          "chr": 4,
+          "dex": 16,
+          "int": 6,
+          "str": 16,
+          "wis": 11
+        },
+        "avg_rounds": 3.765,
+        "draws": 0,
+        "elo": 1128.675,
+        "fights": 7740,
+        "losses": 3626,
+        "mhp": 32,
+        "name": "Goblin",
+        "win_pct": 53.152,
+        "wins": 4114
+      },
+      "9": {
+        "armour": 1,
+        "attributes": {
+          "agi": 14,
+          "chr": 3,
+          "dex": 12,
+          "int": 14,
+          "str": 19,
+          "wis": 9
+        },
+        "avg_rounds": 3.676,
+        "draws": 0,
+        "elo": 1265.56,
+        "fights": 7740,
+        "losses": 2530,
+        "mhp": 40,
+        "name": "Goblin",
+        "win_pct": 67.313,
+        "wins": 5210
+      }
+    },
+    "imp": {
+      "1": {
+        "armour": 1,
+        "attributes": {
+          "agi": 4,
+          "chr": 2,
+          "dex": 4,
+          "int": 3,
+          "str": 8,
+          "wis": 3
+        },
+        "avg_rounds": 3.869,
+        "draws": 0,
+        "elo": -3.893,
+        "fights": 7740,
+        "losses": 6855,
+        "mhp": 20,
+        "name": "Imp",
+        "win_pct": 11.434,
+        "wins": 885
+      },
+      "10": {
+        "armour": 1,
+        "attributes": {
+          "agi": 12,
+          "chr": 4,
+          "dex": 11,
+          "int": 15,
+          "str": 28,
+          "wis": 8
+        },
+        "avg_rounds": 2.752,
+        "draws": 0,
+        "elo": 1498.446,
+        "fights": 7740,
+        "losses": 1918,
+        "mhp": 37,
+        "name": "Imp",
+        "win_pct": 75.22,
+        "wins": 5822
+      },
+      "2": {
+        "armour": 1,
+        "attributes": {
+          "agi": 6,
+          "chr": 3,
+          "dex": 4,
+          "int": 3,
+          "str": 10,
+          "wis": 4
+        },
+        "avg_rounds": 3.761,
+        "draws": 0,
+        "elo": 169.925,
+        "fights": 7740,
+        "losses": 6188,
+        "mhp": 21,
+        "name": "Imp",
+        "win_pct": 20.052,
+        "wins": 1552
+      },
+      "3": {
+        "armour": 1,
+        "attributes": {
+          "agi": 4,
+          "chr": 3,
+          "dex": 6,
+          "int": 7,
+          "str": 12,
+          "wis": 4
+        },
+        "avg_rounds": 3.62,
+        "draws": 0,
+        "elo": 603.151,
+        "fights": 7740,
+        "losses": 5534,
+        "mhp": 22,
+        "name": "Imp",
+        "win_pct": 28.501,
+        "wins": 2206
+      },
+      "4": {
+        "armour": 1,
+        "attributes": {
+          "agi": 5,
+          "chr": 2,
+          "dex": 11,
+          "int": 3,
+          "str": 14,
+          "wis": 7
+        },
+        "avg_rounds": 3.666,
+        "draws": 0,
+        "elo": 763.135,
+        "fights": 7740,
+        "losses": 4593,
+        "mhp": 26,
+        "name": "Imp",
+        "win_pct": 40.659,
+        "wins": 3147
+      },
+      "5": {
+        "armour": 1,
+        "attributes": {
+          "agi": 7,
+          "chr": 4,
+          "dex": 11,
+          "int": 6,
+          "str": 15,
+          "wis": 5
+        },
+        "avg_rounds": 3.55,
+        "draws": 0,
+        "elo": 833.763,
+        "fights": 7740,
+        "losses": 4411,
+        "mhp": 26,
+        "name": "Imp",
+        "win_pct": 43.01,
+        "wins": 3329
+      },
+      "6": {
+        "armour": 1,
+        "attributes": {
+          "agi": 10,
+          "chr": 7,
+          "dex": 9,
+          "int": 5,
+          "str": 17,
+          "wis": 6
+        },
+        "avg_rounds": 3.505,
+        "draws": 0,
+        "elo": 1107.819,
+        "fights": 7740,
+        "losses": 3699,
+        "mhp": 29,
+        "name": "Imp",
+        "win_pct": 52.209,
+        "wins": 4041
+      },
+      "7": {
+        "armour": 1,
+        "attributes": {
+          "agi": 8,
+          "chr": 7,
+          "dex": 12,
+          "int": 6,
+          "str": 21,
+          "wis": 6
+        },
+        "avg_rounds": 3.209,
+        "draws": 0,
+        "elo": 1321.97,
+        "fights": 7740,
+        "losses": 2889,
+        "mhp": 32,
+        "name": "Imp",
+        "win_pct": 62.674,
+        "wins": 4851
+      },
+      "8": {
+        "armour": 1,
+        "attributes": {
+          "agi": 11,
+          "chr": 7,
+          "dex": 11,
+          "int": 10,
+          "str": 24,
+          "wis": 3
+        },
+        "avg_rounds": 2.98,
+        "draws": 0,
+        "elo": 1335.851,
+        "fights": 7740,
+        "losses": 2501,
+        "mhp": 33,
+        "name": "Imp",
+        "win_pct": 67.687,
+        "wins": 5239
+      },
+      "9": {
+        "armour": 1,
+        "attributes": {
+          "agi": 10,
+          "chr": 9,
+          "dex": 13,
+          "int": 6,
+          "str": 20,
+          "wis": 14
+        },
+        "avg_rounds": 3.326,
+        "draws": 0,
+        "elo": 1220.741,
+        "fights": 7740,
+        "losses": 2899,
+        "mhp": 33,
+        "name": "Imp",
+        "win_pct": 62.545,
+        "wins": 4841
+      }
+    },
+    "mummy": {
+      "1": {
+        "armour": 1,
+        "attributes": {
+          "agi": 4,
+          "chr": 2,
+          "dex": 4,
+          "int": 3,
+          "str": 6,
+          "wis": 3
+        },
+        "avg_rounds": 4.103,
+        "draws": 0,
+        "elo": -452.246,
+        "fights": 7740,
+        "losses": 7366,
+        "mhp": 20,
+        "name": "Mummy",
+        "win_pct": 4.832,
+        "wins": 374
+      },
+      "10": {
+        "armour": 1,
+        "attributes": {
+          "agi": 14,
+          "chr": 6,
+          "dex": 18,
+          "int": 8,
+          "str": 15,
+          "wis": 15
+        },
+        "avg_rounds": 3.99,
+        "draws": 0,
+        "elo": 990.59,
+        "fights": 7740,
+        "losses": 3687,
+        "mhp": 34,
+        "name": "Mummy",
+        "win_pct": 52.364,
+        "wins": 4053
+      },
+      "2": {
+        "armour": 1,
+        "attributes": {
+          "agi": 5,
+          "chr": 3,
+          "dex": 7,
+          "int": 3,
+          "str": 6,
+          "wis": 4
+        },
+        "avg_rounds": 4.436,
+        "draws": 0,
+        "elo": -419.583,
+        "fights": 7740,
+        "losses": 7291,
+        "mhp": 22,
+        "name": "Mummy",
+        "win_pct": 5.801,
+        "wins": 449
+      },
+      "3": {
+        "armour": 1,
+        "attributes": {
+          "agi": 5,
+          "chr": 3,
+          "dex": 8,
+          "int": 4,
+          "str": 9,
+          "wis": 5
+        },
+        "avg_rounds": 4.329,
+        "draws": 0,
+        "elo": 269.161,
+        "fights": 7740,
+        "losses": 6102,
+        "mhp": 25,
+        "name": "Mummy",
+        "win_pct": 21.163,
+        "wins": 1638
+      },
+      "4": {
+        "armour": 1,
+        "attributes": {
+          "agi": 6,
+          "chr": 5,
+          "dex": 8,
+          "int": 5,
+          "str": 10,
+          "wis": 6
+        },
+        "avg_rounds": 4.081,
+        "draws": 0,
+        "elo": 443.969,
+        "fights": 7740,
+        "losses": 5898,
+        "mhp": 24,
+        "name": "Mummy",
+        "win_pct": 23.798,
+        "wins": 1842
+      },
+      "5": {
+        "armour": 1,
+        "attributes": {
+          "agi": 11,
+          "chr": 4,
+          "dex": 8,
+          "int": 6,
+          "str": 9,
+          "wis": 8
+        },
+        "avg_rounds": 4.745,
+        "draws": 0,
+        "elo": 491.062,
+        "fights": 7740,
+        "losses": 5820,
+        "mhp": 29,
+        "name": "Mummy",
+        "win_pct": 24.806,
+        "wins": 1920
+      },
+      "6": {
+        "armour": 1,
+        "attributes": {
+          "agi": 9,
+          "chr": 5,
+          "dex": 10,
+          "int": 8,
+          "str": 12,
+          "wis": 8
+        },
+        "avg_rounds": 4.274,
+        "draws": 0,
+        "elo": 883.034,
+        "fights": 7740,
+        "losses": 4670,
+        "mhp": 31,
+        "name": "Mummy",
+        "win_pct": 39.664,
+        "wins": 3070
+      },
+      "7": {
+        "armour": 1,
+        "attributes": {
+          "agi": 12,
+          "chr": 6,
+          "dex": 7,
+          "int": 9,
+          "str": 19,
+          "wis": 5
+        },
+        "avg_rounds": 3.225,
+        "draws": 0,
+        "elo": 1061.269,
+        "fights": 7740,
+        "losses": 3500,
+        "mhp": 28,
+        "name": "Mummy",
+        "win_pct": 54.78,
+        "wins": 4240
+      },
+      "8": {
+        "armour": 1,
+        "attributes": {
+          "agi": 17,
+          "chr": 6,
+          "dex": 8,
+          "int": 8,
+          "str": 18,
+          "wis": 7
+        },
+        "avg_rounds": 3.754,
+        "draws": 0,
+        "elo": 1200.44,
+        "fights": 7740,
+        "losses": 2843,
+        "mhp": 38,
+        "name": "Mummy",
+        "win_pct": 63.269,
+        "wins": 4897
+      },
+      "9": {
+        "armour": 1,
+        "attributes": {
+          "agi": 13,
+          "chr": 5,
+          "dex": 11,
+          "int": 11,
+          "str": 22,
+          "wis": 8
+        },
+        "avg_rounds": 3.33,
+        "draws": 0,
+        "elo": 1337.813,
+        "fights": 7740,
+        "losses": 2286,
+        "mhp": 39,
+        "name": "Mummy",
+        "win_pct": 70.465,
+        "wins": 5454
+      }
+    },
+    "ogre": {
+      "1": {
+        "armour": 1,
+        "attributes": {
+          "agi": 4,
+          "chr": 2,
+          "dex": 4,
+          "int": 3,
+          "str": 20,
+          "wis": 3
+        },
+        "avg_rounds": 2.729,
+        "draws": 0,
+        "elo": 833.736,
+        "fights": 7740,
+        "losses": 4229,
+        "mhp": 20,
+        "name": "Ogre",
+        "win_pct": 45.362,
+        "wins": 3511
+      },
+      "10": {
+        "armour": 1,
+        "attributes": {
+          "agi": 11,
+          "chr": 5,
+          "dex": 11,
+          "int": 9,
+          "str": 47,
+          "wis": 7
+        },
+        "avg_rounds": 2.039,
+        "draws": 0,
+        "elo": 1744.477,
+        "fights": 7740,
+        "losses": 1208,
+        "mhp": 38,
+        "name": "Ogre",
+        "win_pct": 84.393,
+        "wins": 6532
+      },
+      "2": {
+        "armour": 1,
+        "attributes": {
+          "agi": 5,
+          "chr": 2,
+          "dex": 6,
+          "int": 3,
+          "str": 23,
+          "wis": 3
+        },
+        "avg_rounds": 2.685,
+        "draws": 0,
+        "elo": 1086.429,
+        "fights": 7740,
+        "losses": 3508,
+        "mhp": 23,
+        "name": "Ogre",
+        "win_pct": 54.677,
+        "wins": 4232
+      },
+      "3": {
+        "armour": 1,
+        "attributes": {
+          "agi": 5,
+          "chr": 3,
+          "dex": 4,
+          "int": 4,
+          "str": 27,
+          "wis": 5
+        },
+        "avg_rounds": 2.526,
+        "draws": 0,
+        "elo": 1200.445,
+        "fights": 7740,
+        "losses": 2892,
+        "mhp": 25,
+        "name": "Ogre",
+        "win_pct": 62.636,
+        "wins": 4848
+      },
+      "4": {
+        "armour": 1,
+        "attributes": {
+          "agi": 8,
+          "chr": 5,
+          "dex": 5,
+          "int": 4,
+          "str": 26,
+          "wis": 6
+        },
+        "avg_rounds": 2.68,
+        "draws": 0,
+        "elo": 1269.358,
+        "fights": 7740,
+        "losses": 2683,
+        "mhp": 28,
+        "name": "Ogre",
+        "win_pct": 65.336,
+        "wins": 5057
+      },
+      "5": {
+        "armour": 1,
+        "attributes": {
+          "agi": 10,
+          "chr": 3,
+          "dex": 5,
+          "int": 6,
+          "str": 31,
+          "wis": 5
+        },
+        "avg_rounds": 2.414,
+        "draws": 0,
+        "elo": 1303.627,
+        "fights": 7740,
+        "losses": 2255,
+        "mhp": 28,
+        "name": "Ogre",
+        "win_pct": 70.866,
+        "wins": 5485
+      },
+      "6": {
+        "armour": 1,
+        "attributes": {
+          "agi": 7,
+          "chr": 4,
+          "dex": 11,
+          "int": 4,
+          "str": 34,
+          "wis": 6
+        },
+        "avg_rounds": 2.324,
+        "draws": 0,
+        "elo": 1485.454,
+        "fights": 7740,
+        "losses": 1914,
+        "mhp": 31,
+        "name": "Ogre",
+        "win_pct": 75.271,
+        "wins": 5826
+      },
+      "7": {
+        "armour": 1,
+        "attributes": {
+          "agi": 7,
+          "chr": 3,
+          "dex": 9,
+          "int": 7,
+          "str": 41,
+          "wis": 5
+        },
+        "avg_rounds": 2.156,
+        "draws": 0,
+        "elo": 1661.224,
+        "fights": 7740,
+        "losses": 1416,
+        "mhp": 36,
+        "name": "Ogre",
+        "win_pct": 81.705,
+        "wins": 6324
+      },
+      "8": {
+        "armour": 1,
+        "attributes": {
+          "agi": 11,
+          "chr": 6,
+          "dex": 9,
+          "int": 5,
+          "str": 43,
+          "wis": 4
+        },
+        "avg_rounds": 2.07,
+        "draws": 0,
+        "elo": 1823.517,
+        "fights": 7740,
+        "losses": 1468,
+        "mhp": 33,
+        "name": "Ogre",
+        "win_pct": 81.034,
+        "wins": 6272
+      },
+      "9": {
+        "armour": 1,
+        "attributes": {
+          "agi": 8,
+          "chr": 4,
+          "dex": 10,
+          "int": 8,
+          "str": 47,
+          "wis": 7
+        },
+        "avg_rounds": 2.018,
+        "draws": 0,
+        "elo": 1667.22,
+        "fights": 7740,
+        "losses": 1257,
+        "mhp": 36,
+        "name": "Ogre",
+        "win_pct": 83.76,
+        "wins": 6483
+      }
+    },
+    "poisonMushroom": {
+      "1": {
+        "armour": 1,
+        "attributes": {
+          "agi": 4,
+          "chr": 2,
+          "dex": 4,
+          "int": 3,
+          "str": 3,
+          "wis": 3
+        },
+        "avg_rounds": 4.317,
+        "draws": 0,
+        "elo": -1386.865,
+        "fights": 7740,
+        "losses": 7740,
+        "mhp": 20,
+        "name": "Poison Mushroom",
+        "win_pct": 0.0,
+        "wins": 0
+      },
+      "10": {
+        "armour": 1,
+        "attributes": {
+          "agi": 17,
+          "chr": 8,
+          "dex": 20,
+          "int": 8,
+          "str": 9,
+          "wis": 11
+        },
+        "avg_rounds": 5.262,
+        "draws": 0,
+        "elo": 629.624,
+        "fights": 7740,
+        "losses": 5329,
+        "mhp": 35,
+        "name": "Poison Mushroom",
+        "win_pct": 31.15,
+        "wins": 2411
+      },
+      "2": {
+        "armour": 1,
+        "attributes": {
+          "agi": 4,
+          "chr": 3,
+          "dex": 8,
+          "int": 3,
+          "str": 4,
+          "wis": 3
+        },
+        "avg_rounds": 4.658,
+        "draws": 0,
+        "elo": -1048.023,
+        "fights": 7740,
+        "losses": 7657,
+        "mhp": 22,
+        "name": "Poison Mushroom",
+        "win_pct": 1.072,
+        "wins": 83
+      },
+      "3": {
+        "armour": 1,
+        "attributes": {
+          "agi": 7,
+          "chr": 3,
+          "dex": 7,
+          "int": 6,
+          "str": 4,
+          "wis": 4
+        },
+        "avg_rounds": 4.979,
+        "draws": 0,
+        "elo": -916.639,
+        "fights": 7740,
+        "losses": 7623,
+        "mhp": 24,
+        "name": "Poison Mushroom",
+        "win_pct": 1.512,
+        "wins": 117
+      },
+      "4": {
+        "armour": 1,
+        "attributes": {
+          "agi": 10,
+          "chr": 2,
+          "dex": 8,
+          "int": 5,
+          "str": 7,
+          "wis": 5
+        },
+        "avg_rounds": 4.822,
+        "draws": 0,
+        "elo": 71.058,
+        "fights": 7740,
+        "losses": 6768,
+        "mhp": 26,
+        "name": "Poison Mushroom",
+        "win_pct": 12.558,
+        "wins": 972
+      },
+      "5": {
+        "armour": 1,
+        "attributes": {
+          "agi": 8,
+          "chr": 5,
+          "dex": 10,
+          "int": 9,
+          "str": 6,
+          "wis": 5
+        },
+        "avg_rounds": 5.559,
+        "draws": 0,
+        "elo": -124.501,
+        "fights": 7740,
+        "losses": 6922,
+        "mhp": 30,
+        "name": "Poison Mushroom",
+        "win_pct": 10.568,
+        "wins": 818
+      },
+      "6": {
+        "armour": 1,
+        "attributes": {
+          "agi": 11,
+          "chr": 5,
+          "dex": 8,
+          "int": 8,
+          "str": 8,
+          "wis": 9
+        },
+        "avg_rounds": 4.823,
+        "draws": 0,
+        "elo": 243.103,
+        "fights": 7740,
+        "losses": 6248,
+        "mhp": 28,
+        "name": "Poison Mushroom",
+        "win_pct": 19.276,
+        "wins": 1492
+      },
+      "7": {
+        "armour": 1,
+        "attributes": {
+          "agi": 12,
+          "chr": 7,
+          "dex": 10,
+          "int": 11,
+          "str": 7,
+          "wis": 8
+        },
+        "avg_rounds": 5.618,
+        "draws": 0,
+        "elo": 247.001,
+        "fights": 7740,
+        "losses": 6290,
+        "mhp": 33,
+        "name": "Poison Mushroom",
+        "win_pct": 18.734,
+        "wins": 1450
+      },
+      "8": {
+        "armour": 1,
+        "attributes": {
+          "agi": 14,
+          "chr": 6,
+          "dex": 13,
+          "int": 10,
+          "str": 9,
+          "wis": 9
+        },
+        "avg_rounds": 5.185,
+        "draws": 0,
+        "elo": 558.824,
+        "fights": 7740,
+        "losses": 5394,
+        "mhp": 34,
+        "name": "Poison Mushroom",
+        "win_pct": 30.31,
+        "wins": 2346
+      },
+      "9": {
+        "armour": 1,
+        "attributes": {
+          "agi": 12,
+          "chr": 14,
+          "dex": 15,
+          "int": 8,
+          "str": 9,
+          "wis": 9
+        },
+        "avg_rounds": 5.492,
+        "draws": 0,
+        "elo": 669.741,
+        "fights": 7740,
+        "losses": 5124,
+        "mhp": 38,
+        "name": "Poison Mushroom",
+        "win_pct": 33.798,
+        "wins": 2616
+      }
+    },
+    "skeleton": {
+      "1": {
+        "armour": 1,
+        "attributes": {
+          "agi": 4,
+          "chr": 2,
+          "dex": 4,
+          "int": 3,
+          "str": 10,
+          "wis": 3
+        },
+        "avg_rounds": 2.38,
+        "draws": 0,
+        "elo": -362.583,
+        "fights": 7740,
+        "losses": 7288,
+        "mhp": 10,
+        "name": "Skeleton",
+        "win_pct": 5.84,
+        "wins": 452
+      },
+      "10": {
+        "armour": 1,
+        "attributes": {
+          "agi": 13,
+          "chr": 9,
+          "dex": 13,
+          "int": 9,
+          "str": 27,
+          "wis": 9
+        },
+        "avg_rounds": 2.585,
+        "draws": 0,
+        "elo": 1175.462,
+        "fights": 7740,
+        "losses": 2679,
+        "mhp": 27,
+        "name": "Skeleton",
+        "win_pct": 65.388,
+        "wins": 5061
+      },
+      "2": {
+        "armour": 1,
+        "attributes": {
+          "agi": 4,
+          "chr": 2,
+          "dex": 6,
+          "int": 7,
+          "str": 10,
+          "wis": 3
+        },
+        "avg_rounds": 2.633,
+        "draws": 0,
+        "elo": -214.467,
+        "fights": 7740,
+        "losses": 7068,
+        "mhp": 12,
+        "name": "Skeleton",
+        "win_pct": 8.682,
+        "wins": 672
+      },
+      "3": {
+        "armour": 1,
+        "attributes": {
+          "agi": 5,
+          "chr": 2,
+          "dex": 7,
+          "int": 5,
+          "str": 16,
+          "wis": 3
+        },
+        "avg_rounds": 2.535,
+        "draws": 0,
+        "elo": 448.3,
+        "fights": 7740,
+        "losses": 5742,
+        "mhp": 14,
+        "name": "Skeleton",
+        "win_pct": 25.814,
+        "wins": 1998
+      },
+      "4": {
+        "armour": 1,
+        "attributes": {
+          "agi": 6,
+          "chr": 2,
+          "dex": 5,
+          "int": 5,
+          "str": 19,
+          "wis": 7
+        },
+        "avg_rounds": 2.439,
+        "draws": 0,
+        "elo": 594.099,
+        "fights": 7740,
+        "losses": 5151,
+        "mhp": 15,
+        "name": "Skeleton",
+        "win_pct": 33.45,
+        "wins": 2589
+      },
+      "5": {
+        "armour": 1,
+        "attributes": {
+          "agi": 10,
+          "chr": 4,
+          "dex": 8,
+          "int": 7,
+          "str": 16,
+          "wis": 5
+        },
+        "avg_rounds": 2.701,
+        "draws": 0,
+        "elo": 554.004,
+        "fights": 7740,
+        "losses": 5453,
+        "mhp": 16,
+        "name": "Skeleton",
+        "win_pct": 29.548,
+        "wins": 2287
+      },
+      "6": {
+        "armour": 1,
+        "attributes": {
+          "agi": 9,
+          "chr": 3,
+          "dex": 8,
+          "int": 7,
+          "str": 22,
+          "wis": 7
+        },
+        "avg_rounds": 2.551,
+        "draws": 0,
+        "elo": 967.64,
+        "fights": 7740,
+        "losses": 4120,
+        "mhp": 19,
+        "name": "Skeleton",
+        "win_pct": 46.77,
+        "wins": 3620
+      },
+      "7": {
+        "armour": 1,
+        "attributes": {
+          "agi": 10,
+          "chr": 5,
+          "dex": 7,
+          "int": 6,
+          "str": 28,
+          "wis": 6
+        },
+        "avg_rounds": 2.353,
+        "draws": 0,
+        "elo": 1249.473,
+        "fights": 7740,
+        "losses": 3064,
+        "mhp": 22,
+        "name": "Skeleton",
+        "win_pct": 60.413,
+        "wins": 4676
+      },
+      "8": {
+        "armour": 1,
+        "attributes": {
+          "agi": 12,
+          "chr": 6,
+          "dex": 8,
+          "int": 10,
+          "str": 22,
+          "wis": 10
+        },
+        "avg_rounds": 2.543,
+        "draws": 0,
+        "elo": 1001.038,
+        "fights": 7740,
+        "losses": 4106,
+        "mhp": 19,
+        "name": "Skeleton",
+        "win_pct": 46.951,
+        "wins": 3634
+      },
+      "9": {
+        "armour": 1,
+        "attributes": {
+          "agi": 16,
+          "chr": 2,
+          "dex": 13,
+          "int": 8,
+          "str": 28,
+          "wis": 7
+        },
+        "avg_rounds": 2.504,
+        "draws": 0,
+        "elo": 1285.986,
+        "fights": 7740,
+        "losses": 2668,
+        "mhp": 26,
+        "name": "Skeleton",
+        "win_pct": 65.53,
+        "wins": 5072
+      }
+    },
+    "slime": {
+      "1": {
+        "armour": 1,
+        "attributes": {
+          "agi": 4,
+          "chr": 2,
+          "dex": 4,
+          "int": 3,
+          "str": 1000,
+          "wis": 3
+        },
+        "avg_rounds": 1.52,
+        "draws": 0,
+        "elo": 2929.782,
+        "fights": 7740,
+        "losses": 276,
+        "mhp": 1000,
+        "name": "Slime",
+        "win_pct": 96.434,
+        "wins": 7464
+      },
+      "10": {
+        "armour": 1,
+        "attributes": {
+          "agi": 5,
+          "chr": 2,
+          "dex": 4,
+          "int": 3,
+          "str": 1052,
+          "wis": 4
+        },
+        "avg_rounds": 1.518,
+        "draws": 0,
+        "elo": 2891.884,
+        "fights": 7740,
+        "losses": 273,
+        "mhp": 1018,
+        "name": "Slime",
+        "win_pct": 96.473,
+        "wins": 7467
+      },
+      "2": {
+        "armour": 1,
+        "attributes": {
+          "agi": 4,
+          "chr": 2,
+          "dex": 4,
+          "int": 3,
+          "str": 1006,
+          "wis": 3
+        },
+        "avg_rounds": 1.523,
+        "draws": 0,
+        "elo": 2925.515,
+        "fights": 7740,
+        "losses": 280,
+        "mhp": 1002,
+        "name": "Slime",
+        "win_pct": 96.382,
+        "wins": 7460
+      },
+      "3": {
+        "armour": 1,
+        "attributes": {
+          "agi": 4,
+          "chr": 2,
+          "dex": 4,
+          "int": 3,
+          "str": 1012,
+          "wis": 3
+        },
+        "avg_rounds": 1.518,
+        "draws": 0,
+        "elo": 2871.571,
+        "fights": 7740,
+        "losses": 284,
+        "mhp": 1003,
+        "name": "Slime",
+        "win_pct": 96.331,
+        "wins": 7456
+      },
+      "4": {
+        "armour": 1,
+        "attributes": {
+          "agi": 4,
+          "chr": 2,
+          "dex": 4,
+          "int": 3,
+          "str": 1018,
+          "wis": 3
+        },
+        "avg_rounds": 1.52,
+        "draws": 0,
+        "elo": 2888.573,
+        "fights": 7740,
+        "losses": 283,
+        "mhp": 1003,
+        "name": "Slime",
+        "win_pct": 96.344,
+        "wins": 7457
+      },
+      "5": {
+        "armour": 1,
+        "attributes": {
+          "agi": 4,
+          "chr": 2,
+          "dex": 4,
+          "int": 3,
+          "str": 1024,
+          "wis": 3
+        },
+        "avg_rounds": 1.525,
+        "draws": 0,
+        "elo": 2938.862,
+        "fights": 7740,
+        "losses": 284,
+        "mhp": 1008,
+        "name": "Slime",
+        "win_pct": 96.331,
+        "wins": 7456
+      },
+      "6": {
+        "armour": 1,
+        "attributes": {
+          "agi": 4,
+          "chr": 2,
+          "dex": 4,
+          "int": 3,
+          "str": 1029,
+          "wis": 4
+        },
+        "avg_rounds": 1.518,
+        "draws": 0,
+        "elo": 2886.961,
+        "fights": 7740,
+        "losses": 260,
+        "mhp": 1012,
+        "name": "Slime",
+        "win_pct": 96.641,
+        "wins": 7480
+      },
+      "7": {
+        "armour": 1,
+        "attributes": {
+          "agi": 4,
+          "chr": 2,
+          "dex": 4,
+          "int": 3,
+          "str": 1036,
+          "wis": 3
+        },
+        "avg_rounds": 1.519,
+        "draws": 0,
+        "elo": 2940.846,
+        "fights": 7740,
+        "losses": 254,
+        "mhp": 1012,
+        "name": "Slime",
+        "win_pct": 96.718,
+        "wins": 7486
+      },
+      "8": {
+        "armour": 1,
+        "attributes": {
+          "agi": 4,
+          "chr": 2,
+          "dex": 5,
+          "int": 3,
+          "str": 1041,
+          "wis": 3
+        },
+        "avg_rounds": 1.518,
+        "draws": 0,
+        "elo": 2880.214,
+        "fights": 7740,
+        "losses": 268,
+        "mhp": 1011,
+        "name": "Slime",
+        "win_pct": 96.537,
+        "wins": 7472
+      },
+      "9": {
+        "armour": 1,
+        "attributes": {
+          "agi": 4,
+          "chr": 2,
+          "dex": 4,
+          "int": 3,
+          "str": 1048,
+          "wis": 3
+        },
+        "avg_rounds": 1.518,
+        "draws": 0,
+        "elo": 2938.475,
+        "fights": 7740,
+        "losses": 238,
+        "mhp": 1015,
+        "name": "Slime",
+        "win_pct": 96.925,
+        "wins": 7502
+      }
+    },
+    "troll": {
+      "1": {
+        "armour": 1,
+        "attributes": {
+          "agi": 4,
+          "chr": 2,
+          "dex": 4,
+          "int": 3,
+          "str": 10,
+          "wis": 3
+        },
+        "avg_rounds": 3.166,
+        "draws": 0,
+        "elo": -55.927,
+        "fights": 7740,
+        "losses": 6734,
+        "mhp": 16,
+        "name": "Troll",
+        "win_pct": 12.997,
+        "wins": 1006
+      },
+      "10": {
+        "armour": 1,
+        "attributes": {
+          "agi": 11,
+          "chr": 5,
+          "dex": 13,
+          "int": 12,
+          "str": 32,
+          "wis": 7
+        },
+        "avg_rounds": 2.504,
+        "draws": 0,
+        "elo": 1505.292,
+        "fights": 7740,
+        "losses": 1724,
+        "mhp": 36,
+        "name": "Troll",
+        "win_pct": 77.726,
+        "wins": 6016
+      },
+      "2": {
+        "armour": 1,
+        "attributes": {
+          "agi": 6,
+          "chr": 2,
+          "dex": 5,
+          "int": 5,
+          "str": 11,
+          "wis": 3
+        },
+        "avg_rounds": 3.188,
+        "draws": 0,
+        "elo": 271.782,
+        "fights": 7740,
+        "losses": 6381,
+        "mhp": 17,
+        "name": "Troll",
+        "win_pct": 17.558,
+        "wins": 1359
+      },
+      "3": {
+        "armour": 1,
+        "attributes": {
+          "agi": 5,
+          "chr": 5,
+          "dex": 4,
+          "int": 6,
+          "str": 15,
+          "wis": 3
+        },
+        "avg_rounds": 3.032,
+        "draws": 0,
+        "elo": 554.952,
+        "fights": 7740,
+        "losses": 5217,
+        "mhp": 19,
+        "name": "Troll",
+        "win_pct": 32.597,
+        "wins": 2523
+      },
+      "4": {
+        "armour": 1,
+        "attributes": {
+          "agi": 8,
+          "chr": 2,
+          "dex": 7,
+          "int": 6,
+          "str": 17,
+          "wis": 4
+        },
+        "avg_rounds": 3.08,
+        "draws": 0,
+        "elo": 904.403,
+        "fights": 7740,
+        "losses": 4424,
+        "mhp": 22,
+        "name": "Troll",
+        "win_pct": 42.842,
+        "wins": 3316
+      },
+      "5": {
+        "armour": 1,
+        "attributes": {
+          "agi": 7,
+          "chr": 4,
+          "dex": 8,
+          "int": 8,
+          "str": 18,
+          "wis": 5
+        },
+        "avg_rounds": 3.227,
+        "draws": 0,
+        "elo": 1044.939,
+        "fights": 7740,
+        "losses": 3800,
+        "mhp": 26,
+        "name": "Troll",
+        "win_pct": 50.904,
+        "wins": 3940
+      },
+      "6": {
+        "armour": 1,
+        "attributes": {
+          "agi": 8,
+          "chr": 3,
+          "dex": 6,
+          "int": 9,
+          "str": 24,
+          "wis": 6
+        },
+        "avg_rounds": 2.68,
+        "draws": 0,
+        "elo": 1110.777,
+        "fights": 7740,
+        "losses": 3268,
+        "mhp": 24,
+        "name": "Troll",
+        "win_pct": 57.778,
+        "wins": 4472
+      },
+      "7": {
+        "armour": 1,
+        "attributes": {
+          "agi": 5,
+          "chr": 6,
+          "dex": 12,
+          "int": 9,
+          "str": 23,
+          "wis": 7
+        },
+        "avg_rounds": 2.96,
+        "draws": 0,
+        "elo": 1241.482,
+        "fights": 7740,
+        "losses": 2887,
+        "mhp": 29,
+        "name": "Troll",
+        "win_pct": 62.7,
+        "wins": 4853
+      },
+      "8": {
+        "armour": 1,
+        "attributes": {
+          "agi": 10,
+          "chr": 3,
+          "dex": 10,
+          "int": 8,
+          "str": 27,
+          "wis": 10
+        },
+        "avg_rounds": 2.562,
+        "draws": 0,
+        "elo": 1268.926,
+        "fights": 7740,
+        "losses": 2790,
+        "mhp": 26,
+        "name": "Troll",
+        "win_pct": 63.953,
+        "wins": 4950
+      },
+      "9": {
+        "armour": 1,
+        "attributes": {
+          "agi": 10,
+          "chr": 3,
+          "dex": 14,
+          "int": 9,
+          "str": 31,
+          "wis": 7
+        },
+        "avg_rounds": 2.499,
+        "draws": 0,
+        "elo": 1474.137,
+        "fights": 7740,
+        "losses": 1935,
+        "mhp": 33,
+        "name": "Troll",
+        "win_pct": 75.0,
+        "wins": 5805
+      }
+    }
+  }
+}
