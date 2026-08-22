@@ -48,6 +48,7 @@ class Player:
         self.chr = random.randint(1, 10)
         self.dex = random.randint(1, 10)
         self.agi = random.randint(1, 10)
+        self.acc = random.randint(1, 10)
         # Damage divisor in combat_damage; 1 = no reduction until gear exists.
         self.armour = 1
         self.in_combat = False
@@ -118,6 +119,7 @@ class Player:
             'chr': self.chr,
             'dex': self.dex,
             'agi': self.agi,
+            'acc': self.acc,
             'sight_range': self.sight_range,
             'pos': list(self.pos),
             'dungeon_level': self.dungeon_level,

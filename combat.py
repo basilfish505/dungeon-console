@@ -2,7 +2,7 @@ from flask import session
 import random
 from player import Player
 from monster import Monster
-from combat_damage import damage_between
+from combat_damage import resolve_attack
 from player_xp import calculate_xp_from_elo
 import uuid
 
@@ -398,16 +398,18 @@ class CombatSystem:
         
         # Check for blocking
         blocked = self._check_block(attacker_id, target_id, target_display, battle)
-        damage = 0
-        
+        attack_result = {'hit': False, 'damage': 0, 'hit_chance': 0.0}
+
         if not blocked:
-            # Shared Gaussian strength/armour formula (see combat_damage.py)
-            damage = damage_between(attacker, target)
-            target.hp -= damage
-            
-            # Hit feedback to everyone first (sound/shake), then game_state
-            self._broadcast_attack_feedback(battle, attacker_id, target_id, damage, False)
-            
+            attack_result = resolve_attack(attacker, target)
+            if attack_result['hit']:
+                target.hp -= attack_result['damage']
+
+            self._broadcast_attack_feedback(
+                battle, attacker_id, target_id, attack_result, blocked,
+            )
+
+            damage = attack_result['damage']
             # Check for death
             if target.hp <= 0:
                 if target_is_monster:
@@ -418,7 +420,9 @@ class CombatSystem:
                     return
         else:
             # Blocked — still notify participants
-            self._broadcast_attack_feedback(battle, attacker_id, target_id, 0, True)
+            self._broadcast_attack_feedback(
+                battle, attacker_id, target_id, attack_result, True,
+            )
     
     def _check_block(self, attacker_id, defender_id, defender_display, battle):
         """Check if attack is blocked"""
@@ -641,12 +645,11 @@ class CombatSystem:
             target_id = random.choice(battle['participants'])
             target = self.game_state.players[target_id]
             
-            # Same formula as player attacks (see combat_damage.py)
-            damage = damage_between(monster, target)
-            target.hp -= damage
-            
-            # Always send hit feedback first (including killing blows)
-            self._broadcast_monster_hit(battle, monster, target_id, damage)
+            attack_result = resolve_attack(monster, target)
+            if attack_result['hit']:
+                target.hp -= attack_result['damage']
+
+            self._broadcast_monster_hit(battle, monster, target_id, attack_result)
             
             # Check for player death
             if target.hp <= 0:
@@ -715,22 +718,30 @@ class CombatSystem:
             return self.game_state.players[target_id], False
         return None, False
 
-    def _attack_message(self, viewer_id, attacker_id, target, is_monster, damage, blocked):
+    def _attack_message(self, viewer_id, attacker_id, target, is_monster, attack_result, blocked):
         target_name = target.type if is_monster else target.id
         attacker_name = self.game_state.players[attacker_id].id
+        damage = attack_result['damage']
+        hit = attack_result.get('hit', damage > 0)
         if blocked:
             if viewer_id == attacker_id:
                 return f".... Your blow was thwarted by {target_name}'s skillful guard!"
             if viewer_id == (target.id if not is_monster else None):
                 return f".... You blocked {attacker_name}'s attack with your skillful guard!"
             return f".... {attacker_name}'s blow was thwarted by {target_name}'s skillful guard!"
+        if not hit:
+            if viewer_id == attacker_id:
+                return f".... You miss {target_name}."
+            if not is_monster and viewer_id == target.id:
+                return f".... {attacker_name} misses you."
+            return f".... {attacker_name} misses {target_name}."
         if viewer_id == attacker_id:
             return f".... You dealt {damage} damage to {target_name}."
         if not is_monster and viewer_id == target.id:
             return f".... You took {damage} damage from {attacker_name}."
         return f".... {attacker_name} dealt {damage} damage to {target_name}."
 
-    def _broadcast_attack_feedback(self, battle, attacker_id, target_id, damage, blocked):
+    def _broadcast_attack_feedback(self, battle, attacker_id, target_id, attack_result, blocked):
         """Emit the same hit FX to attacker+defender first, then refresh game_state."""
         target, is_monster = self._resolve_target(battle, target_id)
         if not target:
@@ -741,6 +752,8 @@ class CombatSystem:
         attacker_name = self.game_state.players[attacker_id].id
         participants = list(battle['participants'])
         combatants = self._get_combatants_status(battle)
+        damage = attack_result['damage']
+        hit = attack_result.get('hit', False) and not blocked
 
         # Pass 1: combat_action only (keeps hit sounds in sync)
         for p_id in participants:
@@ -751,15 +764,18 @@ class CombatSystem:
                 'battle_id': battle['battle_id'],
                 'action': 'attack',
                 'blocked': blocked,
-                'message': self._attack_message(p_id, attacker_id, target, is_monster, damage, blocked),
+                'hit': hit,
+                'message': self._attack_message(
+                    p_id, attacker_id, target, is_monster, attack_result, blocked,
+                ),
                 'attacker_id': attacker_name,
                 'target_id': target_name,
                 'combatants': combatants,
                 'your_turn': False,
-                'play_hit_sound': (not blocked and damage > 0 and (is_attacker or is_target)),
-                'shake_combat': (not blocked and damage > 0 and is_target),
+                'play_hit_sound': (hit and damage > 0 and (is_attacker or is_target)),
+                'shake_combat': (hit and damage > 0 and is_target),
             }
-            if not blocked and damage > 0:
+            if hit and damage > 0:
                 if is_attacker:
                     update['damage_dealt'] = damage
                 if is_target:
@@ -771,7 +787,7 @@ class CombatSystem:
         for p_id in participants:
             self._emit('game_state', self.game_state.get_game_state(p_id), room=p_id)
 
-    def _broadcast_monster_hit(self, battle, monster, target_id, damage):
+    def _broadcast_monster_hit(self, battle, monster, target_id, attack_result):
         """Emit monster hit FX to all participants, then game_state."""
         participants = list(battle['participants'])
         combatants = self._get_combatants_status(battle)
@@ -779,25 +795,35 @@ class CombatSystem:
         if not target:
             return
 
+        damage = attack_result['damage']
+        hit = attack_result.get('hit', False)
+
         for p_id in participants:
             is_target = p_id == target_id
+            if not hit:
+                message = (
+                    f".... The {monster.type} misses you."
+                    if is_target else
+                    f".... The {monster.type} misses {target.id}."
+                )
+            elif is_target:
+                message = f".... The {monster.type} attacks you for {damage} damage!"
+            else:
+                message = f".... The {monster.type} attacks {target.id} for {damage} damage!"
             update = {
                 'type': 'combat_action',
                 'battle_id': battle['battle_id'],
                 'action': 'monster_attack',
-                'message': (
-                    f".... The {monster.type} attacks you for {damage} damage!"
-                    if is_target else
-                    f".... The {monster.type} attacks {target.id} for {damage} damage!"
-                ),
+                'hit': hit,
+                'message': message,
                 'attacker_id': monster.type,
                 'target_id': target.id,
                 'combatants': combatants,
                 'your_turn': False,
-                'play_hit_sound': is_target,
-                'shake_combat': is_target,
+                'play_hit_sound': (hit and damage > 0 and is_target),
+                'shake_combat': (hit and damage > 0 and is_target),
             }
-            if is_target:
+            if hit and damage > 0 and is_target:
                 update['damage_taken'] = damage
                 update['your_hp'] = f"{target.hp}/{target.mhp}"
             self._emit('combat_update', update, room=p_id)

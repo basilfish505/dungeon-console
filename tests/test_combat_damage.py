@@ -103,7 +103,7 @@ class DamageBetweenTests(unittest.TestCase):
 
 
 class CombatWiringTests(unittest.TestCase):
-    def test_player_and_monster_paths_call_damage_between(self):
+    def test_player_and_monster_paths_call_resolve_attack(self):
         from combat import CombatSystem
 
         gs = type('GS', (), {
@@ -123,30 +123,21 @@ class CombatWiringTests(unittest.TestCase):
         target.hp = 100
         gs.players = {'hero': attacker, 'foe': target}
 
-        battle = {
-            'battle_id': 'b1',
-            'participants': ['hero', 'foe'],
-            'monsters': [],
-            'turn_order': ['hero', 'foe'],
-            'current_turn_index': 0,
-            'status': 'active',
-            'defend_status': {},
-        }
-        with patch('combat.damage_between', return_value=4) as dmg:
+        hit_result = {'hit': True, 'damage': 4, 'hit_chance': 0.75}
+        with patch('combat.resolve_attack', return_value=hit_result) as resolve:
             with patch.object(cs, '_broadcast_attack_feedback'):
-                with patch.object(cs, '_check_block', return_value=False):
-                    # Exercise the damage line via a minimal private call pattern:
-                    # set up as if process_attack already resolved target
-                    damage = dmg(attacker, target)
-                    target.hp -= damage
-        self.assertEqual(dmg.call_count, 1)
+                resolve(attacker, target)
+                target.hp -= hit_result['damage']
+        self.assertEqual(resolve.call_count, 1)
         self.assertEqual(target.hp, 96)
 
         mon = Monster.from_type('troll', [2, 2], monster_id='m1')
-        with patch('combat.damage_between', return_value=7) as dmg2:
-            hit = dmg2(mon, target)
-            target.hp -= hit
-        self.assertEqual(hit, 7)
+        mon_result = {'hit': True, 'damage': 7, 'hit_chance': 0.75}
+        with patch('combat.resolve_attack', return_value=mon_result) as resolve2:
+            hit = resolve2(mon, target)
+            if hit['hit']:
+                target.hp -= hit['damage']
+        self.assertEqual(hit['damage'], 7)
         self.assertEqual(target.hp, 89)
 
 

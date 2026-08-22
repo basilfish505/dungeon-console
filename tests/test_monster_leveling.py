@@ -72,7 +72,7 @@ class DistributePointsTests(unittest.TestCase):
         self.assertEqual(base, snapshot)
 
     def test_zero_weight_attribute_gets_nothing(self):
-        base = {'str': 10, 'int': 0, 'wis': 0, 'chr': 0, 'dex': 0, 'agi': 0}
+        base = {'str': 10, 'int': 0, 'wis': 0, 'chr': 0, 'dex': 0, 'agi': 0, 'acc': 0}
         bonuses = distribute_level_points(base, 20, rng=random.Random(7))
         self.assertEqual(bonuses['int'], 0)
         self.assertEqual(bonuses['str'], 20)

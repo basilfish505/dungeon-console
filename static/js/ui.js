@@ -154,6 +154,7 @@ const UI = (function() {
             document.getElementById('player-hp').textContent = player.hp;
             document.getElementById('player-mp').textContent = player.mp;
             document.getElementById('player-agi').textContent = player.agi;
+            document.getElementById('player-acc').textContent = player.acc ?? player.accuracy ?? '-';
         }
     }
 

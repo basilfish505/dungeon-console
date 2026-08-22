@@ -1,6 +1,6 @@
 """Shared character attribute keys used by players and monsters."""
 
-ATTRIBUTE_KEYS = ('str', 'int', 'wis', 'chr', 'dex', 'agi')
+ATTRIBUTE_KEYS = ('str', 'int', 'wis', 'chr', 'dex', 'agi', 'acc')
 
 ATTRIBUTE_LABELS = {
     'str': 'Strength',
@@ -9,6 +9,7 @@ ATTRIBUTE_LABELS = {
     'chr': 'Charisma',
     'dex': 'Dexterity',
     'agi': 'Agility',
+    'acc': 'ACC',
 }
 
 

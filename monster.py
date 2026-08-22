@@ -175,6 +175,7 @@ class Monster:
             'chr': self.chr,
             'dex': self.dex,
             'agi': self.agi,
+            'acc': self.acc,
             'ability_ids': list(self.ability_ids),
         }
 

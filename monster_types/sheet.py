@@ -29,6 +29,7 @@ COLUMNS = [
     'chr',
     'dex',
     'agi',
+    'acc',
     'base_mhp',
     'armour',
     'aggression',
@@ -58,6 +59,7 @@ HEADER_COMMENTS = {
     'chr': 'Charisma. Integer.',
     'dex': 'Dexterity. Integer.',
     'agi': 'Agility. Integer.',
+    'acc': 'ACC. Integer. Attacker hit chance vs defender Dexterity.',
     'base_mhp': 'Max HP at base level. Required.',
     'armour': 'Damage divisor in combat. 1 = full damage, 2 = half, etc. Default 1.',
     'aggression': '0-10. Low flees, ~5 wanders, high chases. Default 0.',
@@ -84,6 +86,7 @@ TROLL_EXAMPLE = {
     'chr': 2,
     'dex': 4,
     'agi': 4,
+    'acc': 4,
     'base_mhp': 16,
     'armour': 1,
     'aggression': 0,
@@ -137,6 +140,8 @@ def row_to_typedef(row):
         return None
     name = _str_or_none(row.get('name')) or type_id
     attrs = {key: _int(row.get(key), 1) for key in ATTRIBUTE_KEYS}
+    if not _blank(row.get('accuracy')) and _blank(row.get('acc')):
+        attrs['acc'] = _int(row.get('accuracy'), 1)
     return MonsterTypeDef(
         type_id=type_id,
         name=name,

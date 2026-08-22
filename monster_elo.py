@@ -21,7 +21,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from character_stats import ATTRIBUTE_KEYS
-from combat_damage import damage_between
+from combat_damage import resolve_attack
 from monster import Monster
 from monster_types.registry import MONSTER_TYPES
 
@@ -52,6 +52,8 @@ class LadderFighter:
     level: int
     elo: float
     str: int
+    dex: int
+    acc: int
     armour: int
     mhp: int
     hp: int = 0
@@ -85,6 +87,14 @@ def _parse_ladder_from_payload(payload):
             except (TypeError, ValueError):
                 strength = 1
             try:
+                dexterity = int(attrs.get('dex', 1))
+            except (TypeError, ValueError):
+                dexterity = 1
+            try:
+                acc_val = int(attrs.get('acc', attrs.get('accuracy', 1)))
+            except (TypeError, ValueError):
+                acc_val = 1
+            try:
                 armour = max(1, int(entry.get('armour', 1)))
             except (TypeError, ValueError):
                 armour = 1
@@ -102,6 +112,8 @@ def _parse_ladder_from_payload(payload):
                 level=level,
                 elo=elo,
                 str=strength,
+                dex=dexterity,
+                acc=acc_val,
                 armour=armour,
                 mhp=mhp,
             ))
@@ -387,7 +399,7 @@ def simulate_monster_fight(
     max_rounds: int = MAX_COMBAT_ROUNDS,
 ):
     """
-    Headless attack-only duel using damage_between.
+    Headless attack-only duel using resolve_attack (hit check + damage).
 
     Returns (score_a, rounds) where score_a is 1.0 / 0.5 / 0.0.
     """
@@ -401,8 +413,8 @@ def simulate_monster_fight(
 
     while rounds < max_rounds:
         rounds += 1
-        damage = damage_between(attacker, defender, rng=rng)
-        died = defender.receive_attack(damage)
+        attack_result = resolve_attack(attacker, defender, rng=rng)
+        died = defender.receive_attack(attack_result['damage'])
         if died:
             score_a = 0.0 if defender is monster_a else 1.0
             reset_combat_state(monster_a)

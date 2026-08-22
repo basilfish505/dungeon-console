@@ -23,13 +23,15 @@ from monster_types.registry import MONSTER_TYPES, register_monster_type
 import monster_elo as monster_elo_mod
 
 
-def _fighter(elo, type_id='x', level=1, strength=5):
+def _fighter(elo, type_id='x', level=1, strength=5, dexterity=1, acc=1):
     return LadderFighter(
         type_id=type_id,
         name=type_id,
         level=level,
         elo=float(elo),
         str=strength,
+        dex=dexterity,
+        acc=acc,
         armour=1,
         mhp=20,
     )

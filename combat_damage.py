@@ -18,6 +18,63 @@ DEFAULT_CONSISTENCY_FACTOR = 3
 # TEMP: boosted for player XP/level testing — revert when done.
 DEFAULT_PLAYER_WEAPON_BASE_DAMAGE = 30
 
+ZERO_BOTH_HIT_CHANCE = 0.75
+
+
+def _non_negative_stat(value, default=1):
+    try:
+        stat = int(value)
+    except (TypeError, ValueError):
+        stat = int(default)
+    return max(0, stat)
+
+
+def calculate_hit_chance(attacker_accuracy, defender_dexterity):
+    """
+    hit_chance = (3 * accuracy) / ((3 * accuracy) + dexterity)
+
+    Equal accuracy and dexterity → 75%. No min/max cap.
+    """
+    acc = _non_negative_stat(attacker_accuracy, 0)
+    dex = _non_negative_stat(defender_dexterity, 0)
+    if acc == 0 and dex == 0:
+        return ZERO_BOTH_HIT_CHANCE
+    denom = (3 * acc) + dex
+    if denom <= 0:
+        return ZERO_BOTH_HIT_CHANCE
+    return (3 * acc) / denom
+
+
+def roll_to_hit(attacker, defender, rng=None):
+    rng = rng or random
+    chance = calculate_hit_chance(
+        getattr(attacker, 'acc', 1),
+        getattr(defender, 'dex', 1),
+    )
+    return rng.random() < chance
+
+
+def resolve_attack(attacker, defender, weapon=None, rng=None):
+    """
+    Shared attack resolution: hit check, then existing damage formula.
+
+    Returns dict with hit (bool), damage (int, 0 on miss), hit_chance (float).
+    """
+    hit_chance = calculate_hit_chance(
+        getattr(attacker, 'acc', 1),
+        getattr(defender, 'dex', 1),
+    )
+    hit = roll_to_hit(attacker, defender, rng=rng)
+    damage = (
+        damage_between(attacker, defender, weapon=weapon, rng=rng)
+        if hit else 0
+    )
+    return {
+        'hit': hit,
+        'damage': damage,
+        'hit_chance': hit_chance,
+    }
+
 
 def _weapon_base_for(attacker):
     if isinstance(attacker, Player):
