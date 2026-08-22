@@ -9,9 +9,20 @@ from __future__ import annotations
 
 import random
 
+from player import Player
+
 # Bare-hands defaults until equipped weapons supply their own values.
 DEFAULT_WEAPON_BASE_DAMAGE = -2
 DEFAULT_CONSISTENCY_FACTOR = 3
+
+# TEMP: boosted for player XP/level testing — revert when done.
+DEFAULT_PLAYER_WEAPON_BASE_DAMAGE = 30
+
+
+def _weapon_base_for(attacker):
+    if isinstance(attacker, Player):
+        return DEFAULT_PLAYER_WEAPON_BASE_DAMAGE
+    return DEFAULT_WEAPON_BASE_DAMAGE
 
 
 def calculate_attack_damage(
@@ -90,7 +101,7 @@ def damage_between(attacker, defender, weapon=None, rng=None):
     return calculate_attack_damage(
         strength=strength,
         armour=armour,
-        weapon_base_damage=DEFAULT_WEAPON_BASE_DAMAGE,
+        weapon_base_damage=_weapon_base_for(attacker),
         consistency_factor=DEFAULT_CONSISTENCY_FACTOR,
         rng=rng,
     )

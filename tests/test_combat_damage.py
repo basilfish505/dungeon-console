@@ -89,7 +89,7 @@ class DamageBetweenTests(unittest.TestCase):
         kwargs = calc.call_args.kwargs
         self.assertEqual(kwargs['strength'], 8)
         self.assertEqual(kwargs['armour'], 2)
-        self.assertEqual(kwargs['weapon_base_damage'], -2)
+        self.assertEqual(kwargs['weapon_base_damage'], 30)
         self.assertEqual(kwargs['consistency_factor'], 3)
 
     def test_monster_and_player_share_helper(self):

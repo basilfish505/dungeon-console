@@ -3,6 +3,7 @@ import random
 from player import Player
 from monster import Monster
 from combat_damage import damage_between
+from player_xp import calculate_xp_from_elo
 import uuid
 
 TURN_TIMEOUT_SECONDS = 20
@@ -883,6 +884,13 @@ class CombatSystem:
             killer_id,
             f"{killer.id} slayed a {monster.type}"
         )
+
+        xp_gain = calculate_xp_from_elo(getattr(monster, 'elo', None))
+        killer.xp += xp_gain
+        self.game_state.add_player_message(
+            killer_id,
+            f"You gain {xp_gain} experience.",
+        )
         
         # Remove monster from battle
         battle['monsters'].remove(monster)
@@ -916,6 +924,7 @@ class CombatSystem:
                     'battle_id': battle_id,
                     'monster_id': monster_type,
                     'killer_id': killer_name,
+                    'xp_gain': xp_gain,
                     'message': f".... The {monster_type} has been defeated by {killer_name}!"
                 }, room=p_id)
 

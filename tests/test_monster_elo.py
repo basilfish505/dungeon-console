@@ -16,6 +16,7 @@ from monster_elo import (
     run_elo_tournament,
     run_pairing,
     save_elo_results,
+    shift_ratings_floor_to_zero,
     simulate_monster_fight,
     update_elo,
 )
@@ -37,6 +38,18 @@ class EloMathTests(unittest.TestCase):
         new_a, new_b = update_elo(1000, 1000, 1.0, k=32)
         self.assertAlmostEqual(new_a, 1016.0)
         self.assertAlmostEqual(new_b, 984.0)
+
+    def test_shift_floor_to_zero(self):
+        class Rec:
+            def __init__(self, elo):
+                self.elo = elo
+
+        records = [Rec(-200.0), Rec(100.0), Rec(500.0)]
+        shift = shift_ratings_floor_to_zero(records)
+        self.assertEqual(shift, 200.0)
+        self.assertEqual(records[0].elo, 0.0)
+        self.assertEqual(records[1].elo, 300.0)
+        self.assertEqual(records[2].elo, 700.0)
 
 
 class PoolTests(unittest.TestCase):
@@ -257,10 +270,13 @@ class TournamentTests(unittest.TestCase):
                 data = json.loads(path.read_text(encoding='utf-8'))
             self.assertIn('meta', data)
             self.assertIn('ratings', data)
+            self.assertIn('elo_shift', data['meta'])
             self.assertIn('alpha', data['ratings'])
             self.assertIn('1', data['ratings']['alpha'])
             self.assertIn('elo', data['ratings']['alpha']['1'])
             self.assertEqual(len(records), 4)
+            min_elo = min(r.elo for r in records)
+            self.assertAlmostEqual(min_elo, 0.0, places=6)
         finally:
             MONSTER_TYPES.clear()
             MONSTER_TYPES.update(previous)

@@ -13,6 +13,7 @@ from monster_elo import (
     LadderFighter,
     calibrate_instance_elo,
     closest_ladder_index,
+    ladder_midpoint_elo,
     load_elo_ladder,
     pick_ladder_opponent,
     reload_elo_ladder,
@@ -40,6 +41,11 @@ class OpponentPickTests(unittest.TestCase):
         self.assertEqual(closest_ladder_index(ladder, 880), 2)
         self.assertEqual(closest_ladder_index(ladder, 100), 0)
         self.assertEqual(closest_ladder_index(ladder, 2000), 3)
+
+    def test_midpoint_elo(self):
+        ladder = [_fighter(100), _fighter(500), _fighter(900), _fighter(1500), _fighter(2000)]
+        self.assertEqual(ladder_midpoint_elo(ladder), 900.0)
+        self.assertEqual(ladder_midpoint_elo([]), float(INITIAL_ELO))
 
     def test_window_clamped_at_edges(self):
         ladder = [_fighter(i * 100) for i in range(10)]
@@ -99,13 +105,14 @@ class CalibrateTests(unittest.TestCase):
         mon_a = Monster.from_type('elo_spawn_rat', [0, 0], monster_id='a', level=2, rng=random.Random(1))
         mon_b = Monster.from_type('elo_spawn_rat', [0, 0], monster_id='b', level=2, rng=random.Random(1))
         str_a, mhp_a = mon_a.str, mon_a.mhp
+        mid = ladder_midpoint_elo(ladder)
         elo_a = calibrate_instance_elo(mon_a, fights=40, rng=random.Random(99), ladder=ladder)
         elo_b = calibrate_instance_elo(mon_b, fights=40, rng=random.Random(99), ladder=ladder)
         self.assertEqual(elo_a, elo_b)
         self.assertEqual(mon_a.str, str_a)
         self.assertEqual(mon_a.mhp, mhp_a)
         self.assertEqual(mon_a.hp, mon_a.mhp)
-        self.assertNotEqual(mon_a.elo, INITIAL_ELO)
+        self.assertNotEqual(mon_a.elo, mid)
 
     def test_missing_json_leaves_initial_elo(self):
         with tempfile.TemporaryDirectory() as tmp:

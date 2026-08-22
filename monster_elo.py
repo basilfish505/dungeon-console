@@ -28,7 +28,7 @@ from monster_types.registry import MONSTER_TYPES
 PROJECT_ROOT = Path(__file__).resolve().parent
 DEFAULT_OUTPUT_PATH = PROJECT_ROOT / 'monster_elo_ratings.json'
 
-INITIAL_ELO = 1000
+INITIAL_ELO = 3000
 K_FACTOR = 32
 FIGHTS_PER_PAIRING = 20
 TOURNAMENT_PASSES = 3
@@ -187,6 +187,34 @@ def pick_ladder_opponent(
     return ladder[rng.randint(lo, hi)]
 
 
+def ladder_midpoint_elo(ladder, fallback=INITIAL_ELO):
+    """
+    Elo of the middle-ranked ladder entry (ascending ladder).
+
+    Used as the starting rating for spawn-time calibration.
+    """
+    if not ladder:
+        return float(fallback)
+    return float(ladder[len(ladder) // 2].elo)
+
+
+def shift_ratings_floor_to_zero(records):
+    """
+    Translate all ratings so the lowest is 0. Gaps and order are unchanged.
+
+    Returns the shift applied (amount added to each rating).
+    """
+    if not records:
+        return 0.0
+    min_elo = min(float(rec.elo) for rec in records)
+    shift = -min_elo
+    if shift == 0.0:
+        return 0.0
+    for rec in records:
+        rec.elo = float(rec.elo) + shift
+    return shift
+
+
 def calibrate_instance_elo(
     monster,
     fights=SPAWN_ELO_FIGHTS,
@@ -199,18 +227,21 @@ def calibrate_instance_elo(
     """
     Rate a spawned monster with N headless fights against the frozen ladder.
 
-    Updates monster.elo only. Does not mutate the JSON or ladder entries' Elo.
+    Starts at the ladder midpoint Elo (middle rank), then updates with
+    standard Elo math. Does not mutate the JSON or ladder entries' Elo.
     Restores monster HP afterward. Returns the final elo.
     """
     rng = rng or random
     if ladder is None:
         ladder = load_elo_ladder(path=path)
 
-    rating = float(getattr(monster, 'elo', INITIAL_ELO) or INITIAL_ELO)
     if not ladder or fights <= 0:
+        rating = ladder_midpoint_elo(ladder, fallback=INITIAL_ELO)
         monster.elo = rating
         reset_combat_state(monster)
         return monster.elo
+
+    rating = ladder_midpoint_elo(ladder, fallback=INITIAL_ELO)
 
     for fight_idx in range(int(fights)):
         opponent = pick_ladder_opponent(ladder, rating, rng=rng, window=window)
@@ -446,6 +477,7 @@ def save_elo_results(
     fights_per_pairing=FIGHTS_PER_PAIRING,
     tournament_passes=TOURNAMENT_PASSES,
     max_combat_rounds=MAX_COMBAT_ROUNDS,
+    elo_shift=0.0,
 ):
     """Write nested type → level → stats JSON for later game consumption."""
     path = Path(path) if path else DEFAULT_OUTPUT_PATH
@@ -470,6 +502,7 @@ def save_elo_results(
             'generated_at': datetime.now(timezone.utc).isoformat(),
             'seed': seed,
             'initial_elo': initial_elo,
+            'elo_shift': round(float(elo_shift), 3),
             'k_factor': k_factor,
             'fights_per_pairing': fights_per_pairing,
             'tournament_passes': tournament_passes,
@@ -541,6 +574,11 @@ def run_elo_tournament(
         if not quiet:
             print()
 
+    elo_shift = shift_ratings_floor_to_zero(records)
+    if not quiet and elo_shift:
+        print(f'Shifted all ratings by {elo_shift:+.1f} so minimum Elo is 0.')
+        print()
+
     ranked = print_elo_rankings(records) if not quiet else sorted(
         records, key=lambda r: (-r.elo, r.type_id, r.level),
     )
@@ -553,9 +591,13 @@ def run_elo_tournament(
         fights_per_pairing=fights_per_pairing,
         tournament_passes=tournament_passes,
         max_combat_rounds=max_combat_rounds,
+        elo_shift=elo_shift,
     )
     if not quiet:
         print(f'\nSaved results to {out}')
+    # Refresh in-process ladder cache so spawn calibration sees the new file.
+    if out is not None:
+        reload_elo_ladder(out)
     return records, ranked, out
 
 
