@@ -22,7 +22,6 @@ SHOPKEEPER = MonsterTypeDef(
     speed=10,
     activeness=10,
     sight_range=8,
-    attack_power=300,
     spawn_weight=0,
     sprite='/static/npcs/shopkeeper.png',
     portrait='/static/npcs/shopkeeper.png',

@@ -23,7 +23,6 @@ TROLL = MonsterTypeDef(
     speed=10,
     activeness=5,
     sight_range=20,
-    attack_power=5,
 )
 
 register_monster_type(TROLL)

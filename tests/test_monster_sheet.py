@@ -36,7 +36,6 @@ class ParseRowTests(unittest.TestCase):
             'dex': 6,
             'agi': 7,
             'base_mhp': 8,
-            'attack_power': 3,
             'aggression': 8,
             'speed': 10,
             'activeness': 7,
@@ -49,7 +48,6 @@ class ParseRowTests(unittest.TestCase):
         self.assertEqual(td.base_attributes['str'], 4)
         self.assertEqual(td.base_attributes['agi'], 7)
         self.assertEqual(td.base_mhp, 8)
-        self.assertEqual(td.attack_power, 3)
         self.assertEqual(td.armour, 1)
         self.assertEqual(td.aggression, 8)
         self.assertEqual(td.activeness, 7)
@@ -78,7 +76,6 @@ class XlsxLoadTests(unittest.TestCase):
             'dex': 6,
             'agi': 6,
             'base_mhp': 8,
-            'attack_power': 3,
             'armour': 2,
             'aggression': 8,
             'speed': 10,
@@ -133,10 +130,10 @@ class SpawnPickTests(unittest.TestCase):
         try:
             MONSTER_TYPES.clear()
             register_monster_type(MonsterTypeDef(
-                type_id='a', name='A', spawn_weight=0, base_mhp=1, attack_power=1,
+                type_id='a', name='A', spawn_weight=0, base_mhp=1,
             ))
             register_monster_type(MonsterTypeDef(
-                type_id='b', name='B', spawn_weight=5, base_mhp=1, attack_power=1,
+                type_id='b', name='B', spawn_weight=5, base_mhp=1,
             ))
             rng = random.Random(0)
             picks = {pick_spawn_type_id(rng) for _ in range(20)}

@@ -206,7 +206,7 @@ class ItemsShopPlayTests(unittest.TestCase):
             defender = mock_combat.start_combat.call_args[0][1]
         self.assertEqual(p.pos, list(front))
         self.assertNotIn('hero', self.gs.pending_inspect)
-        self.assertEqual(defender.attack_power, 300)
+        self.assertEqual(defender.str, 20)
         self.assertGreaterEqual(defender.mhp, 400)
         self.assertEqual(npc.combat_type_id, 'shopkeeper')
 
@@ -224,7 +224,7 @@ class ItemsShopPlayTests(unittest.TestCase):
         rng = __import__('random').Random(1)
         hits = [damage_between(mon, target, rng=rng) for _ in range(20)]
         self.assertTrue(all(isinstance(d, int) and d >= 1 for d in hits))
-        # Unarmed: mean ~= 18, sd ~= 6 — not the old hundreds from attack_power
+        # Unarmed: mean ~= 18, sd ~= 6 — driven by strength, not a flat attack stat
         self.assertTrue(all(d < 80 for d in hits))
         avg = sum(hits) / len(hits)
         self.assertGreater(avg, 5.0)

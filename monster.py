@@ -57,9 +57,6 @@ class Monster:
         self.hp = mhp
 
         self.ability_ids = list(type_def.ability_ids)
-        self.attack_power = int(runtime_overrides.pop(
-            'attack_power', type_def.attack_power
-        ))
         # Damage divisor in combat_damage; species default from type sheet (min 1).
         self.armour = int(runtime_overrides.pop('armour', type_def.armour))
         if self.armour < 1:
@@ -160,7 +157,6 @@ class Monster:
             'hp': self.hp,
             'mhp': self.mhp,
             'pos': self.pos,
-            'attack_power': self.attack_power,
             'aggression': self.aggression,
             'speed': self.speed,
             'activeness': self.activeness,
@@ -181,6 +177,6 @@ class Monster:
     def __str__(self):
         return (
             f"Monster: {self.name} ({self.type_id}), HP: {self.hp}/{self.mhp}, "
-            f"Attack: {self.attack_power}, Position: {self.pos}, "
+            f"Str: {self.str}, Armour: {self.armour}, Position: {self.pos}, "
             f"Agg: {self.aggression}, Spd: {self.speed}"
         )

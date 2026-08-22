@@ -37,7 +37,6 @@ class MonsterTypeDef:
         speed=10,
         activeness=5,
         sight_range=20,
-        attack_power=5,
         armour=1,
         spawn_weight=1,
     ):
@@ -57,7 +56,6 @@ class MonsterTypeDef:
         self.speed = speed
         self.activeness = activeness
         self.sight_range = sight_range
-        self.attack_power = attack_power
         try:
             self.armour = int(armour)
         except (TypeError, ValueError):
