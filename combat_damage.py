@@ -9,9 +9,9 @@ from __future__ import annotations
 
 import random
 
-# Defaults until equipped weapons supply their own values.
-DEFAULT_WEAPON_BASE_DAMAGE = 0
-DEFAULT_CONSISTENCY_FACTOR = 2
+# Bare-hands defaults until equipped weapons supply their own values.
+DEFAULT_WEAPON_BASE_DAMAGE = -2
+DEFAULT_CONSISTENCY_FACTOR = 3
 
 
 def calculate_attack_damage(
@@ -22,12 +22,12 @@ def calculate_attack_damage(
     rng=None,
 ):
     """
-    Roll one attack's final HP damage (non-negative int).
+    Roll one attack's final HP damage (int, never less than 1).
 
     meanDamage = weaponBaseDamage + strength
-    standardDeviation = meanDamage / consistencyFactor
-    rawDamage = max(0, Gaussian(mean, sd))
-    finalDamage = round(rawDamage / max(1, armour))
+    standardDeviation = abs(meanDamage) / consistencyFactor
+    rawDamage = Gaussian(mean, sd)   # may be negative
+    finalDamage = max(1, round(rawDamage / max(1, armour)))
 
     Future hooks (do not invent behaviour here yet):
     - real weapons: pass weapon base damage + consistency
@@ -55,12 +55,12 @@ def calculate_attack_damage(
     if consistency_factor <= 0:
         consistency_factor = float(DEFAULT_CONSISTENCY_FACTOR)
 
-    # standardDeviation = meanDamage / consistencyFactor
-    standard_deviation = mean_damage / consistency_factor
+    # standardDeviation = abs(meanDamage) / consistencyFactor (sd must be >= 0)
+    standard_deviation = abs(mean_damage) / consistency_factor
 
     # Normal/Gaussian roll centered on meanDamage (not a uniform dN).
-    generated = rng.gauss(mean_damage, standard_deviation)
-    raw_damage = max(0.0, generated)
+    # The curve may extend below zero; the floor is applied after armour.
+    raw_damage = rng.gauss(mean_damage, standard_deviation)
 
     # Armour is a divisor: 1 = full damage, 2 = half, etc. Never below 1.
     try:
@@ -70,7 +70,7 @@ def calculate_attack_damage(
     if armour_eff < 1.0:
         armour_eff = 1.0
 
-    return int(round(raw_damage / armour_eff))
+    return max(1, int(round(raw_damage / armour_eff)))
 
 
 def damage_between(attacker, defender, weapon=None, rng=None):
@@ -78,7 +78,7 @@ def damage_between(attacker, defender, weapon=None, rng=None):
     Resolve damage between two combatants using the shared formula.
 
     `weapon` is reserved for later (base damage + consistency). Until then
-    the DEFAULT_* unarmed values are used.
+    the DEFAULT_* bare-hands values are used.
     """
     # Future: read weapon.base_damage / weapon.consistency_factor when present.
     _ = weapon

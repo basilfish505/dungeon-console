@@ -21,16 +21,16 @@ class CalculateAttackDamageTests(unittest.TestCase):
         b = calculate_attack_damage(8, 2, rng=rng)
         self.assertEqual(a, b)
         self.assertIsInstance(a, int)
-        self.assertGreaterEqual(a, 0)
+        self.assertGreaterEqual(a, 1)
 
     def test_example_shape_strength_8_armour_2(self):
-        # mean=8, sd=4; armour halves then rounds — always a non-negative int
+        # unarmed: mean=6, sd=2; armour halves then rounds — always >= 1
         hits = [
             calculate_attack_damage(8, 2, rng=random.Random(seed))
             for seed in range(50)
         ]
-        self.assertTrue(all(isinstance(h, int) and h >= 0 for h in hits))
-        # With mean 8 / armour 2, typical results cluster near 4
+        self.assertTrue(all(isinstance(h, int) and h >= 1 for h in hits))
+        # With mean 6 / armour 2, typical results cluster near 3
         avg = sum(hits) / len(hits)
         self.assertGreater(avg, 1.0)
         self.assertLess(avg, 8.0)
@@ -45,16 +45,16 @@ class CalculateAttackDamageTests(unittest.TestCase):
         with_none = calculate_attack_damage(10, None, rng=rng_c)
         self.assertEqual(with_none, with_one)
 
-    def test_raw_damage_clamped_at_zero(self):
+    def test_final_damage_minimum_is_one(self):
         class LowGauss:
             def gauss(self, mean, sd):
                 return -100.0
 
-        self.assertEqual(calculate_attack_damage(5, 1, rng=LowGauss()), 0)
+        self.assertEqual(calculate_attack_damage(5, 1, rng=LowGauss()), 1)
 
     def test_defaults_match_unarmed_constants(self):
-        self.assertEqual(DEFAULT_WEAPON_BASE_DAMAGE, 0)
-        self.assertEqual(DEFAULT_CONSISTENCY_FACTOR, 2)
+        self.assertEqual(DEFAULT_WEAPON_BASE_DAMAGE, -2)
+        self.assertEqual(DEFAULT_CONSISTENCY_FACTOR, 3)
         # Explicit defaults equal omitting them
         rng = random.Random(3)
         a = calculate_attack_damage(6, 1, rng=rng)
@@ -89,8 +89,8 @@ class DamageBetweenTests(unittest.TestCase):
         kwargs = calc.call_args.kwargs
         self.assertEqual(kwargs['strength'], 8)
         self.assertEqual(kwargs['armour'], 2)
-        self.assertEqual(kwargs['weapon_base_damage'], 0)
-        self.assertEqual(kwargs['consistency_factor'], 2)
+        self.assertEqual(kwargs['weapon_base_damage'], -2)
+        self.assertEqual(kwargs['consistency_factor'], 3)
 
     def test_monster_and_player_share_helper(self):
         mon = Monster.from_type('troll', [0, 0], monster_id='t')

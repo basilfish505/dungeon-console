@@ -223,8 +223,8 @@ class ItemsShopPlayTests(unittest.TestCase):
         target.armour = 1
         rng = __import__('random').Random(1)
         hits = [damage_between(mon, target, rng=rng) for _ in range(20)]
-        self.assertTrue(all(isinstance(d, int) and d >= 0 for d in hits))
-        # Unarmed: mean ~= strength 20, sd ~= 10 — not the old hundreds from attack_power
+        self.assertTrue(all(isinstance(d, int) and d >= 1 for d in hits))
+        # Unarmed: mean ~= 18, sd ~= 6 — not the old hundreds from attack_power
         self.assertTrue(all(d < 80 for d in hits))
         avg = sum(hits) / len(hits)
         self.assertGreater(avg, 5.0)
