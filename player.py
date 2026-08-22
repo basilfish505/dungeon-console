@@ -36,6 +36,7 @@ class Player:
         self.interior_id = None  # None = outdoors; e.g. 'items_shop'
         self.level = 1
         self.total_xp = 0
+        self.elo = 0
         # HP/MP properties
         self.mhp = random.randint(10, 20)
         self.hp = self.mhp
@@ -111,6 +112,7 @@ class Player:
             'total_xp': self.total_xp,
             'xp': self.total_xp,
             'xp_progress': self.xp_progress_dict(),
+            'elo': round(float(getattr(self, 'elo', 0)), 1),
             'hp': f"{self.hp}/{self.mhp}",
             'mp': f"{self.mp}/{self.mmp}",
             'str': self.str,

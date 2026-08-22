@@ -13,6 +13,7 @@ from monster_elo import (
     LadderFighter,
     calibrate_instance_elo,
     closest_ladder_index,
+    elo_percentile,
     ladder_midpoint_elo,
     load_elo_ladder,
     pick_ladder_opponent,
@@ -48,6 +49,24 @@ class OpponentPickTests(unittest.TestCase):
         ladder = [_fighter(100), _fighter(500), _fighter(900), _fighter(1500), _fighter(2000)]
         self.assertEqual(ladder_midpoint_elo(ladder), 900.0)
         self.assertEqual(ladder_midpoint_elo([]), float(INITIAL_ELO))
+
+    def test_elo_percentile(self):
+        # 10 evenly spaced entries → rating just above index 1 → 20.0%
+        ladder = [_fighter(i * 100) for i in range(10)]
+        self.assertEqual(elo_percentile(0, ladder=ladder), 0.0)
+        self.assertEqual(elo_percentile(150, ladder=ladder), 20.0)
+        self.assertEqual(elo_percentile(900, ladder=ladder), 90.0)
+        self.assertEqual(elo_percentile(10000, ladder=ladder), 100.0)
+        self.assertIsNone(elo_percentile(500, ladder=[]))
+
+    def test_inspect_dict_includes_percentile(self):
+        ladder = [_fighter(100), _fighter(500), _fighter(900), _fighter(1500)]
+        with patch('monster_elo.load_elo_ladder', return_value=ladder):
+            mon = Monster.from_type('troll', [0, 0], monster_id='t', level=1)
+            mon.elo = 500
+            payload = mon.to_inspect_dict()
+        self.assertEqual(payload['elo'], 500.0)
+        self.assertEqual(payload['elo_percentile'], 25.0)
 
     def test_window_clamped_at_edges(self):
         ladder = [_fighter(i * 100) for i in range(10)]

@@ -210,6 +210,25 @@ def ladder_midpoint_elo(ladder, fallback=INITIAL_ELO):
     return float(ladder[len(ladder) // 2].elo)
 
 
+def elo_percentile(rating, ladder=None, path=None):
+    """
+    Percent of Elo test-set combatants with a lower rating than ``rating``.
+
+    Uses the frozen tournament ladder (ascending). Returns a float in
+    [0.0, 100.0] rounded to one decimal, or None if the ladder is empty.
+    """
+    if ladder is None:
+        ladder = load_elo_ladder(path=path)
+    if not ladder:
+        return None
+    try:
+        value = float(rating)
+    except (TypeError, ValueError):
+        return None
+    below = sum(1 for fighter in ladder if float(fighter.elo) < value)
+    return round(100.0 * below / len(ladder), 1)
+
+
 def shift_ratings_floor_to_zero(records):
     """
     Translate all ratings so the lowest is 0. Gaps and order are unchanged.

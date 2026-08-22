@@ -55,7 +55,14 @@ const InspectUI = (function () {
         if (data.elo != null && data.elo !== '') {
             const elo = Math.round(Number(data.elo));
             if (!Number.isNaN(elo)) {
-                eloHtml = '<span class="inspect-elo">' + escapeHtml('ELO RATING: ' + elo) + '</span>';
+                let text = 'ELO RATING: ' + elo;
+                if (data.elo_percentile != null && data.elo_percentile !== '') {
+                    const pct = Number(data.elo_percentile);
+                    if (!Number.isNaN(pct)) {
+                        text += ' (' + pct.toFixed(1) + '%)';
+                    }
+                }
+                eloHtml = '<span class="inspect-elo">' + escapeHtml(text) + '</span>';
             }
         }
         titleEl.innerHTML =

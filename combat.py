@@ -3,6 +3,7 @@ import random
 from player import Player
 from monster import Monster
 from combat_damage import resolve_attack
+from combat_elo import apply_elo_outcome
 from player_xp import calculate_xp_from_elo
 import uuid
 
@@ -653,7 +654,7 @@ class CombatSystem:
             
             # Check for player death
             if target.hp <= 0:
-                self._handle_player_death(target_id, battle)
+                self._handle_player_death(target_id, battle, killer_monster=monster)
             elif battle['status'] == 'active':
                 self._advance_turn(battle)
         else:
@@ -923,6 +924,13 @@ class CombatSystem:
                 killer_id,
                 f"You reached level {new_level}!",
             )
+
+        new_elo, _loser_elo, elo_delta = apply_elo_outcome(killer, monster)
+        delta_txt = f"+{elo_delta:.0f}" if elo_delta >= 0 else f"{elo_delta:.0f}"
+        self.game_state.add_player_message(
+            killer_id,
+            f"Elo {delta_txt} (now {new_elo:.0f}).",
+        )
         
         # Remove monster from battle
         battle['monsters'].remove(monster)
@@ -957,6 +965,7 @@ class CombatSystem:
                     'monster_id': monster_type,
                     'killer_id': killer_name,
                     'xp_gain': xp_gain,
+                    'elo': round(float(getattr(killer, 'elo', 0)), 1),
                     'message': f".... The {monster_type} has been defeated by {killer_name}!"
                 }, room=p_id)
 
@@ -970,7 +979,7 @@ class CombatSystem:
 
         self.socketio.start_background_task(finish_after_pause)
     
-    def _handle_player_death(self, player_id, battle, killer_id=None):
+    def _handle_player_death(self, player_id, battle, killer_id=None, killer_monster=None):
         """Handle a player's death in combat. killer_id set for PvP kills."""
         player = self.game_state.players[player_id]
         
@@ -978,10 +987,19 @@ class CombatSystem:
         player_position = tuple(player.pos)
         dead_name = player.id
 
-        # PvP kill — announce globally (same style as monster slay lines)
+        # Elo: PvP kill or monster kill (before the dead player is removed)
         if killer_id and killer_id in self.game_state.players:
-            killer_name = self.game_state.players[killer_id].id
+            killer = self.game_state.players[killer_id]
+            killer_name = killer.id
             self.game_state.add_global_message(f"{killer_name} slayed {dead_name}")
+            new_elo, _dead_elo, elo_delta = apply_elo_outcome(killer, player)
+            delta_txt = f"+{elo_delta:.0f}" if elo_delta >= 0 else f"{elo_delta:.0f}"
+            self.game_state.add_player_message(
+                killer_id,
+                f"Elo {delta_txt} (now {new_elo:.0f}).",
+            )
+        elif killer_monster is not None:
+            apply_elo_outcome(killer_monster, player)
         
         # Zero out HP and mark player as dead
         player.hp = 0

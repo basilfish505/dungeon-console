@@ -139,13 +139,20 @@ class Monster:
                 abilities.append({'id': ability.id, 'name': ability.name})
             else:
                 abilities.append({'id': str(aid), 'name': str(aid)})
+        elo_value = round(float(getattr(self, 'elo', 3000)), 1)
+        try:
+            from monster_elo import elo_percentile
+            percentile = elo_percentile(elo_value)
+        except Exception:
+            percentile = None
         return {
             'kind': 'monster',
             'name': self.name,
             'type_id': self.type_id,
             'description': description,
             'level': self.level,
-            'elo': round(float(getattr(self, 'elo', 3000)), 1),
+            'elo': elo_value,
+            'elo_percentile': percentile,
             'hp': self.hp,
             'mhp': self.mhp,
             'attributes': attributes_for_inspect(self),
