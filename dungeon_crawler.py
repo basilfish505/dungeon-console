@@ -29,16 +29,30 @@ from monster_ai import is_terrain_passable
 from level_turns import register_player_turn_action
 from collections import deque
 import item_types  # noqa: F401 — load item_types.xlsx into registry
+import weapon_types  # noqa: F401 — load weapon_types.xlsx
+import armour_types  # noqa: F401 — load armour_types.xlsx
 from items.service import (
     use_item as use_item_service,
     discard_item,
     purchase_item,
 )
+from items.equipment import equip_item, unequip_item
+from items.catalog import SHOP_TO_CATEGORY
+from player_persistence import load_player, save_player
 from interiors.items_shop import (
     ITEMS_SHOP_ID,
     build_items_shop,
     interior_spawn,
 )
+from interiors.weapon_shop import WEAPON_SHOP_ID, build_weapon_shop
+from interiors.armour_shop import ARMOUR_SHOP_ID, build_armour_shop
+from interiors.shop_common import shop_display_name
+
+SHOP_BUILDERS = {
+    ITEMS_SHOP_ID: build_items_shop,
+    WEAPON_SHOP_ID: build_weapon_shop,
+    ARMOUR_SHOP_ID: build_armour_shop,
+}
 
 # Constants (map spawn rates live in map_generator.py)
 SECRET_KEY = 'your-secret-key-here'
@@ -86,21 +100,25 @@ class GameState:
         self.interiors = {}
         self.town_doors = {}
         self.town_exits = {}
-        self._register_items_shop()
+        self._register_town_shops()
+
+    def _register_town_shops(self):
+        features = getattr(self.map_generator, 'town_features', None) or {}
+        for shop_id, builder in SHOP_BUILDERS.items():
+            feat = features.get(shop_id) or {}
+            facing = feat.get('facing', 's')
+            game_map, npcs = builder(facing)
+            self.interiors[shop_id] = (game_map, npcs)
+            door = feat.get('door')
+            road = feat.get('road')
+            if door:
+                self.town_doors[(int(door[0]), int(door[1]))] = shop_id
+            if road:
+                self.town_exits[shop_id] = [int(road[0]), int(road[1])]
 
     def _register_items_shop(self):
-        feat = (getattr(self.map_generator, 'town_features', None) or {}).get(
-            ITEMS_SHOP_ID
-        ) or {}
-        facing = feat.get('facing', 's')
-        game_map, npcs = build_items_shop(facing)
-        self.interiors[ITEMS_SHOP_ID] = (game_map, npcs)
-        door = feat.get('door')
-        road = feat.get('road')
-        if door:
-            self.town_doors[(int(door[0]), int(door[1]))] = ITEMS_SHOP_ID
-        if road:
-            self.town_exits[ITEMS_SHOP_ID] = [int(road[0]), int(road[1])]
+        """Compat: register all town shops."""
+        self._register_town_shops()
 
     def view_for(self, player):
         """(game_map, monsters, npcs) for the player's current location."""
@@ -282,13 +300,49 @@ class GameState:
         if npc is not None:
             return npc.to_inspect_result()
 
-        # --- kind dispatch (add player / stairs / chest later) ---
+        # --- kind dispatch (stairs / chest later) ---
         monster = monsters.get((y, x))
         if monster is not None:
             payload = monster.to_inspect_dict()
             return {'ok': True, 'kind': payload.get('kind', 'monster'), 'data': payload}
 
+        target = self._player_at_view_tile(player, y, x)
+        if target is not None:
+            payload = target.to_inspect_dict()
+            return {'ok': True, 'kind': payload.get('kind', 'player'), 'data': payload}
+
         return {'ok': False}
+
+    def _player_at_view_tile(self, viewer, y, x):
+        """Player on the same view (level/interior) standing at (y, x), if any.
+
+        If several players share the tile, prefer someone other than the viewer
+        so tapping a crowded cell inspects another character; otherwise self.
+        """
+        if viewer is None:
+            return None
+        viewer_level = getattr(viewer, 'dungeon_level', 0)
+        viewer_interior = getattr(viewer, 'interior_id', None)
+        self_hit = None
+        other_hit = None
+        for other in self.players.values():
+            if other is None:
+                continue
+            if getattr(other, 'dungeon_level', 0) != viewer_level:
+                continue
+            if getattr(other, 'interior_id', None) != viewer_interior:
+                continue
+            pos = getattr(other, 'pos', None)
+            if not pos or len(pos) < 2:
+                continue
+            if int(pos[0]) != y or int(pos[1]) != x:
+                continue
+            if other is viewer or getattr(other, 'id', None) == getattr(viewer, 'id', None):
+                self_hit = other
+            else:
+                other_hit = other
+                break
+        return other_hit if other_hit is not None else self_hit
 
     def find_random_start(self, level_number=0):
         """Find a random starting position on the given dungeon level"""
@@ -366,6 +420,7 @@ class GameState:
             position = self.find_random_start(0)
             new_player = Player(player_id, position)
             new_player.dungeon_level = 0
+            load_player(new_player)
             self.players[player_id] = new_player
             # Initialize player's message list
             self.player_messages[player_id] = []
@@ -473,21 +528,23 @@ class GameState:
 
             if tile == '+':
                 if getattr(player, 'interior_id', None):
+                    shop_name = shop_display_name(player.interior_id)
                     if not self.exit_interior(player):
                         self.add_player_message(
                             player_id, "The doorway is blocked; you stay put."
                         )
                         return False
-                    self.add_player_message(player_id, "You leave the Items Shop.")
+                    self.add_player_message(player_id, f"You leave the {shop_name}.")
                     return True
                 interior_id = (getattr(self, 'town_doors', None) or {}).get(dest)
                 if interior_id:
+                    shop_name = shop_display_name(interior_id)
                     if not self.enter_interior(player, interior_id):
                         self.add_player_message(
                             player_id, "The shop is too crowded; you stay put."
                         )
                         return False
-                    self.add_player_message(player_id, "You enter the Items Shop.")
+                    self.add_player_message(player_id, f"You enter the {shop_name}.")
                     return True
 
             player.pos = new_pos
@@ -1068,7 +1125,7 @@ def handle_combat_action(data):
 
 @socketio.on('inventory_action')
 def handle_inventory_action(data):
-    """Server-authoritative pack actions (use, discard, later equip/give/drop)."""
+    """Server-authoritative pack actions (use, discard, equip, unequip)."""
     player_id = session.get('player_id')
     if not player_id:
         return
@@ -1084,6 +1141,7 @@ def handle_inventory_action(data):
 
     in_combat = bool(getattr(player, 'in_combat', False))
     result = {'ok': False, 'message': 'Unknown action.', 'consumed': False}
+    persist = False
 
     if action == 'use':
         if in_combat:
@@ -1095,13 +1153,30 @@ def handle_inventory_action(data):
             if result.get('ok') and result.get('message'):
                 game_state.add_player_message(player_id, result['message'])
             emit('game_state', game_state.get_game_state(player_id), room=player_id)
+            persist = bool(result.get('ok') and result.get('consumed'))
     elif action == 'discard':
         result = discard_item(player, instance_id)
         if result.get('ok') and result.get('message'):
             game_state.add_player_message(player_id, result['message'])
         emit('game_state', game_state.get_game_state(player_id), room=player_id)
+        persist = bool(result.get('ok'))
+    elif action == 'equip':
+        result = equip_item(player, instance_id)
+        if result.get('ok') and result.get('message'):
+            game_state.add_player_message(player_id, result['message'])
+        emit('game_state', game_state.get_game_state(player_id), room=player_id)
+        persist = bool(result.get('ok'))
+    elif action == 'unequip':
+        result = unequip_item(player, instance_id)
+        if result.get('ok') and result.get('message'):
+            game_state.add_player_message(player_id, result['message'])
+        emit('game_state', game_state.get_game_state(player_id), room=player_id)
+        persist = bool(result.get('ok'))
     else:
         result['message'] = f'Cannot {action or "do that"} yet.'
+
+    if persist:
+        save_player(player)
 
     emit('item_action_result', {
         'ok': bool(result.get('ok')),
@@ -1113,7 +1188,7 @@ def handle_inventory_action(data):
 
 @socketio.on('buy_item')
 def handle_buy_item(data):
-    """Purchase a shop catalog item while inside the items shop."""
+    """Purchase a shop catalog item while inside a town shop."""
     player_id = session.get('player_id')
     if not player_id:
         emit('buy_item_result', {'ok': False, 'message': 'Not logged in.'})
@@ -1122,16 +1197,19 @@ def handle_buy_item(data):
     if not player:
         emit('buy_item_result', {'ok': False, 'message': 'Not logged in.'})
         return
-    if getattr(player, 'interior_id', None) != ITEMS_SHOP_ID:
+    shop_id = getattr(player, 'interior_id', None)
+    if shop_id not in SHOP_TO_CATEGORY:
         emit('buy_item_result', {
             'ok': False,
-            'message': 'You must be in the Items Shop to buy.',
+            'message': 'You must be in a shop to buy.',
             'pqg': int(getattr(player, 'pqg', 0) or 0),
         })
         return
 
     data = data or {}
-    result = purchase_item(player, data.get('item_id'))
+    result = purchase_item(player, data.get('item_id'), shop_id=shop_id)
+    if result.get('ok'):
+        save_player(player)
     emit('game_state', game_state.get_game_state(player_id), room=player_id)
     emit('buy_item_result', {
         'ok': bool(result.get('ok')),

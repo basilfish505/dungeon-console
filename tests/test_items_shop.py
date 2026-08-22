@@ -51,10 +51,10 @@ class TownShopStampTests(unittest.TestCase):
         self.game_map, self.monsters = self.gen.generate_top_level()
         self.feat = self.gen.town_features[ITEMS_SHOP_ID]
 
-    def test_town_is_20x20(self):
+    def test_town_is_sized_for_shops(self):
         self.assertEqual(len(self.game_map), TOWN_MAP_SIZE)
         self.assertEqual(len(self.game_map[0]), TOWN_MAP_SIZE)
-        self.assertEqual(TOWN_MAP_SIZE, 20)
+        self.assertEqual(TOWN_MAP_SIZE, 28)
 
     def test_door_and_road_are_cardinal(self):
         door = tuple(self.feat['door'])

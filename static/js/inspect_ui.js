@@ -48,8 +48,8 @@ const InspectUI = (function () {
         return d.innerHTML;
     }
 
-    function setMonsterHeading(data) {
-        const name = data.name || 'Monster';
+    function setCombatantHeading(data, fallbackName) {
+        const name = data.name || fallbackName || 'Unknown';
         const level = data.level != null ? data.level : '?';
         const main = name + ' (Level ' + level + ')';
         let eloHtml = '';
@@ -71,6 +71,23 @@ const InspectUI = (function () {
             eloHtml;
     }
 
+    function setMonsterHeading(data) {
+        setCombatantHeading(data, 'Monster');
+    }
+
+    function renderAttrSection(data) {
+        let html = '';
+        const attrs = data.attributes || [];
+        if (attrs.length) {
+            html += '<h4 class="inspect-section">Attributes</h4>';
+            attrs.forEach(function (row) {
+                html += `<div class="inspect-row"><span class="inspect-label">${escapeHtml(row.label)}</span>` +
+                    `<span class="inspect-value">${escapeHtml(row.value)}</span></div>`;
+            });
+        }
+        return html;
+    }
+
     function renderMonster(data) {
         if (!data) {
             return '';
@@ -84,15 +101,7 @@ const InspectUI = (function () {
         }
         html += `<div class="inspect-row"><span class="inspect-label">HP</span>` +
             `<span class="inspect-value">${escapeHtml(data.hp)} / ${escapeHtml(data.mhp)}</span></div>`;
-
-        const attrs = data.attributes || [];
-        if (attrs.length) {
-            html += '<h4 class="inspect-section">Attributes</h4>';
-            attrs.forEach(function (row) {
-                html += `<div class="inspect-row"><span class="inspect-label">${escapeHtml(row.label)}</span>` +
-                    `<span class="inspect-value">${escapeHtml(row.value)}</span></div>`;
-            });
-        }
+        html += renderAttrSection(data);
 
         const abilities = data.abilities || [];
         if (abilities.length) {
@@ -104,6 +113,33 @@ const InspectUI = (function () {
         return html;
     }
 
+    function renderPlayer(data) {
+        if (!data) {
+            return '';
+        }
+        let html = '';
+        if (data.portrait) {
+            html += `<div class="inspect-portrait-wrap"><img class="inspect-portrait" src="${escapeHtml(data.portrait)}" alt="${escapeHtml(data.name || 'Player')}"></div>`;
+        }
+        html += `<div class="inspect-row"><span class="inspect-label">HP</span>` +
+            `<span class="inspect-value">${escapeHtml(data.hp)} / ${escapeHtml(data.mhp)}</span></div>`;
+        if (data.mmp != null) {
+            html += `<div class="inspect-row"><span class="inspect-label">MP</span>` +
+                `<span class="inspect-value">${escapeHtml(data.mp)} / ${escapeHtml(data.mmp)}</span></div>`;
+        }
+        if (data.pqg != null) {
+            html += `<div class="inspect-row"><span class="inspect-label">PQG</span>` +
+                `<span class="inspect-value">${escapeHtml(data.pqg)}</span></div>`;
+        }
+        html += `<div class="inspect-row"><span class="inspect-label">Armour</span>` +
+            `<span class="inspect-value">${escapeHtml(data.armour != null ? data.armour : 1)}</span></div>`;
+        html += `<div class="inspect-row"><span class="inspect-label">Weapon</span>` +
+            `<span class="inspect-value">${escapeHtml(data.weapon_name || 'Unarmed')}</span></div>`;
+        html += `<div class="inspect-row"><span class="inspect-label">Mean Damage</span>` +
+            `<span class="inspect-value">${escapeHtml(data.mean_damage != null ? data.mean_damage : '?')}</span></div>`;
+        html += renderAttrSection(data);
+        return html;
+    }
     function buyItem(itemId) {
         if (!itemId || !window.socket) {
             return;
@@ -164,6 +200,9 @@ const InspectUI = (function () {
         if (kind === 'monster') {
             return renderMonster(data);
         }
+        if (kind === 'player') {
+            return renderPlayer(data);
+        }
         if (kind === 'shop' || kind === 'npc') {
             return renderShop(data);
         }
@@ -178,6 +217,8 @@ const InspectUI = (function () {
         const kind = result.kind || data.kind || 'unknown';
         if (kind === 'monster') {
             setMonsterHeading(data);
+        } else if (kind === 'player') {
+            setCombatantHeading(data, 'Player');
         } else {
             titleEl.textContent = data.name || kind;
         }
@@ -205,6 +246,9 @@ const InspectUI = (function () {
     let alertOverlayEl = null;
     let alertMessageEl = null;
     let alertOkBtn = null;
+    let alertCancelBtn = null;
+    let alertConfirmHandler = null;
+    let alertCancelHandler = null;
 
     function ensureAlertEls() {
         if (alertOverlayEl) {
@@ -213,20 +257,41 @@ const InspectUI = (function () {
         alertOverlayEl = document.getElementById('shop-alert-overlay');
         alertMessageEl = document.getElementById('shop-alert-message');
         alertOkBtn = document.getElementById('shop-alert-ok');
+        alertCancelBtn = document.getElementById('shop-alert-cancel');
         if (!alertOverlayEl || !alertMessageEl || !alertOkBtn) {
             return false;
         }
-        function closeAlert(e) {
+        alertOkBtn.addEventListener('click', function (e) {
             if (e) {
                 e.preventDefault();
                 e.stopPropagation();
             }
+            const onConfirm = alertConfirmHandler;
             hideAlert();
+            if (typeof onConfirm === 'function') {
+                onConfirm();
+            }
+        });
+        if (alertCancelBtn) {
+            alertCancelBtn.addEventListener('click', function (e) {
+                if (e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                }
+                const onCancel = alertCancelHandler;
+                hideAlert();
+                if (typeof onCancel === 'function') {
+                    onCancel();
+                }
+            });
         }
-        alertOkBtn.addEventListener('click', closeAlert);
         alertOverlayEl.addEventListener('click', function (e) {
             if (e.target === alertOverlayEl) {
-                closeAlert(e);
+                const onCancel = alertCancelHandler;
+                hideAlert();
+                if (typeof onCancel === 'function') {
+                    onCancel();
+                }
             }
         });
         const panel = document.getElementById('shop-alert-panel');
@@ -246,7 +311,40 @@ const InspectUI = (function () {
         if (!text) {
             return;
         }
+        alertConfirmHandler = null;
+        alertCancelHandler = null;
         alertMessageEl.textContent = text;
+        alertOkBtn.textContent = 'OK';
+        if (alertCancelBtn) {
+            alertCancelBtn.hidden = true;
+        }
+        alertOverlayEl.hidden = false;
+        alertOverlayEl.setAttribute('aria-hidden', 'false');
+        alertOpen = true;
+        try {
+            alertOkBtn.focus();
+        } catch (err) {
+            /* ignore */
+        }
+    }
+
+    function showConfirm(message, opts) {
+        if (!ensureAlertEls()) {
+            return;
+        }
+        opts = opts || {};
+        const text = message == null ? '' : String(message);
+        if (!text) {
+            return;
+        }
+        alertConfirmHandler = typeof opts.onConfirm === 'function' ? opts.onConfirm : null;
+        alertCancelHandler = typeof opts.onCancel === 'function' ? opts.onCancel : null;
+        alertMessageEl.textContent = text;
+        alertOkBtn.textContent = opts.confirmLabel || 'Confirm';
+        if (alertCancelBtn) {
+            alertCancelBtn.hidden = false;
+            alertCancelBtn.textContent = opts.cancelLabel || 'Cancel';
+        }
         alertOverlayEl.hidden = false;
         alertOverlayEl.setAttribute('aria-hidden', 'false');
         alertOpen = true;
@@ -264,8 +362,15 @@ const InspectUI = (function () {
         alertOverlayEl.hidden = true;
         alertOverlayEl.setAttribute('aria-hidden', 'true');
         alertMessageEl.textContent = '';
+        alertConfirmHandler = null;
+        alertCancelHandler = null;
+        alertOkBtn.textContent = 'OK';
+        if (alertCancelBtn) {
+            alertCancelBtn.hidden = true;
+            alertCancelBtn.textContent = 'Cancel';
+        }
         alertOpen = false;
     }
 
-    return { show, hide, isOpen, showAlert, hideAlert };
+    return { show, hide, isOpen, showAlert, showConfirm, hideAlert };
 })();

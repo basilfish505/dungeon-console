@@ -1,22 +1,15 @@
-"""Shared attack damage calculation for players and monsters.
-
-Weapons are not wired yet. Pass weapon_base_damage / consistency_factor
-explicitly (or rely on the defaults below) so gear can plug in later without
-redesigning this formula.
-"""
+"""Shared attack damage calculation for players and monsters."""
 
 from __future__ import annotations
 
 import random
 
+from items.equipment import equipped_weapon_stats
 from player import Player
 
 # Bare-hands defaults until equipped weapons supply their own values.
 DEFAULT_WEAPON_BASE_DAMAGE = -2
 DEFAULT_CONSISTENCY_FACTOR = 3
-
-# TEMP: boosted for player XP/level testing — revert when done.
-DEFAULT_PLAYER_WEAPON_BASE_DAMAGE = 30
 
 ZERO_BOTH_HIT_CHANCE = 0.75
 
@@ -76,10 +69,10 @@ def resolve_attack(attacker, defender, weapon=None, rng=None):
     }
 
 
-def _weapon_base_for(attacker):
+def _weapon_stats_for(attacker):
     if isinstance(attacker, Player):
-        return DEFAULT_PLAYER_WEAPON_BASE_DAMAGE
-    return DEFAULT_WEAPON_BASE_DAMAGE
+        return equipped_weapon_stats(attacker)
+    return DEFAULT_WEAPON_BASE_DAMAGE, DEFAULT_CONSISTENCY_FACTOR
 
 
 def calculate_attack_damage(
@@ -96,11 +89,6 @@ def calculate_attack_damage(
     standardDeviation = abs(meanDamage) / consistencyFactor
     rawDamage = Gaussian(mean, sd)   # may be negative
     finalDamage = max(1, round(rawDamage / max(1, armour)))
-
-    Future hooks (do not invent behaviour here yet):
-    - real weapons: pass weapon base damage + consistency
-    - critical hits / other offense modifiers: adjust mean or raw
-    - variable / random armour: replace the fixed armour divisor
     """
     rng = rng or random
 
@@ -113,7 +101,6 @@ def calculate_attack_damage(
     except (TypeError, ValueError):
         weapon_base_damage = float(DEFAULT_WEAPON_BASE_DAMAGE)
 
-    # meanDamage = weaponBaseDamage + attacker.strength
     mean_damage = weapon_base_damage + strength
 
     try:
@@ -123,14 +110,9 @@ def calculate_attack_damage(
     if consistency_factor <= 0:
         consistency_factor = float(DEFAULT_CONSISTENCY_FACTOR)
 
-    # standardDeviation = abs(meanDamage) / consistencyFactor (sd must be >= 0)
     standard_deviation = abs(mean_damage) / consistency_factor
-
-    # Normal/Gaussian roll centered on meanDamage (not a uniform dN).
-    # The curve may extend below zero; the floor is applied after armour.
     raw_damage = rng.gauss(mean_damage, standard_deviation)
 
-    # Armour is a divisor: 1 = full damage, 2 = half, etc. Never below 1.
     try:
         armour_eff = float(armour)
     except (TypeError, ValueError):
@@ -145,20 +127,20 @@ def damage_between(attacker, defender, weapon=None, rng=None):
     """
     Resolve damage between two combatants using the shared formula.
 
-    `weapon` is reserved for later (base damage + consistency). Until then
-    the DEFAULT_* bare-hands values are used.
+    For players, equipped weapon supplies base_damage / consistency.
+    Defender armour uses defender.armour (kept in sync for Players).
     """
-    # Future: read weapon.base_damage / weapon.consistency_factor when present.
     _ = weapon
     try:
         strength = int(getattr(attacker, 'str', 1))
     except (TypeError, ValueError):
         strength = 1
     armour = getattr(defender, 'armour', 1)
+    base, consistency = _weapon_stats_for(attacker)
     return calculate_attack_damage(
         strength=strength,
         armour=armour,
-        weapon_base_damage=_weapon_base_for(attacker),
-        consistency_factor=DEFAULT_CONSISTENCY_FACTOR,
+        weapon_base_damage=base,
+        consistency_factor=consistency,
         rng=rng,
     )

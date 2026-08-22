@@ -11,6 +11,7 @@ from items.service import (
     shop_starter_wares,
     use_item,
 )
+from items.equipment import equip_item, unequip_item, sync_equipment
 
 __all__ = [
     'ItemInstance',
@@ -22,4 +23,7 @@ __all__ = [
     'purchase_item',
     'shop_starter_wares',
     'use_item',
+    'equip_item',
+    'unequip_item',
+    'sync_equipment',
 ]

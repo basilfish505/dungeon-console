@@ -3,12 +3,32 @@ const InventoryUI = (function () {
     const SLOT_COUNT = 16;
     const HOLD_MS = 280;
     const MOVE_CANCEL_PX = 14;
-    // Add future pack verbs here (equip, give, drop, …). Server must accept the id.
+    // Actions are resolved per-item by category / equipped state.
     const ITEM_ACTIONS = [
         { id: 'use', label: 'Use' },
         { id: 'discard', label: 'Discard' },
     ];
 
+    function actionsForItem(item) {
+        if (!item) {
+            return ITEM_ACTIONS.slice();
+        }
+        const cat = String(item.category || 'item').toLowerCase();
+        const equipped = !!item.equipped;
+        if (cat === 'weapon' || cat === 'armour') {
+            if (equipped) {
+                return [
+                    { id: 'unequip', label: 'Unequip' },
+                    { id: 'discard', label: 'Discard' },
+                ];
+            }
+            return [
+                { id: 'equip', label: 'Equip' },
+                { id: 'discard', label: 'Discard' },
+            ];
+        }
+        return ITEM_ACTIONS.slice();
+    }
     let overlayEl = null;
     let gridEl = null;
     let detailEl = null;
@@ -181,8 +201,20 @@ const InventoryUI = (function () {
                 if (viewingItem && viewingItem.instance_id === item.instance_id) {
                     slot.classList.add('inventory-slot-selected');
                 }
-                slot.textContent = item.name || item.type_id || 'Item';
-                slot.setAttribute('aria-label', slot.textContent);
+                if (item.equipped) {
+                    slot.classList.add('inventory-slot-equipped');
+                }
+                const label = document.createElement('span');
+                label.className = 'inventory-slot-name';
+                label.textContent = item.name || item.type_id || 'Item';
+                slot.appendChild(label);
+                if (item.equipped) {
+                    const eq = document.createElement('span');
+                    eq.className = 'inventory-slot-equipped-label';
+                    eq.textContent = 'Equipped';
+                    slot.appendChild(eq);
+                }
+                slot.setAttribute('aria-label', label.textContent + (item.equipped ? ' (Equipped)' : ''));
                 slot.addEventListener('pointerdown', function (e) {
                     onSlotPointerDown(e, i, item, slot);
                 });
@@ -442,10 +474,16 @@ const InventoryUI = (function () {
         meta.appendChild(name);
         meta.appendChild(desc);
         meta.appendChild(price);
+        if (item.equipped) {
+            const eq = document.createElement('p');
+            eq.className = 'inventory-detail-equipped';
+            eq.textContent = 'Equipped';
+            meta.appendChild(eq);
+        }
 
         const actions = document.createElement('div');
         actions.className = 'inventory-detail-actions';
-        ITEM_ACTIONS.forEach(function (spec) {
+        actionsForItem(item).forEach(function (spec) {
             const btn = document.createElement('button');
             btn.type = 'button';
             btn.className = 'inventory-use-btn';
@@ -473,6 +511,40 @@ const InventoryUI = (function () {
         if (typeof window.socket === 'undefined' || !window.socket) {
             return;
         }
+        if (actionId === 'equip' || actionId === 'unequip') {
+            confirmEquipAction(actionId, item);
+            return;
+        }
+        emitInventoryAction(actionId, item);
+    }
+
+    function confirmEquipAction(actionId, item) {
+        const cat = String(item.category || 'item').toLowerCase();
+        const kind = cat === 'armour' ? 'armour' : 'weapon';
+        const name = item.name || item.type_id || kind;
+        let message;
+        let confirmLabel;
+        if (actionId === 'unequip') {
+            message = 'This ' + kind + ' is currently equipped.';
+            confirmLabel = 'Unequip';
+        } else {
+            message = 'Equip this ' + kind + '?';
+            confirmLabel = 'Equip';
+        }
+        if (typeof InspectUI !== 'undefined' && InspectUI.showConfirm) {
+            InspectUI.showConfirm(message, {
+                confirmLabel: confirmLabel,
+                cancelLabel: 'Cancel',
+                onConfirm: function () {
+                    emitInventoryAction(actionId, item);
+                },
+            });
+            return;
+        }
+        emitInventoryAction(actionId, item);
+    }
+
+    function emitInventoryAction(actionId, item) {
         window.socket.emit('inventory_action', {
             instance_id: item.instance_id,
             action: actionId,

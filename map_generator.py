@@ -6,11 +6,13 @@ from monster_types.registry import get_monster_type, pick_spawn_type_id
 from monster_types.leveling import assign_monster_level
 from monster_elo import calibrate_instance_elo
 from interiors.items_shop import ITEMS_SHOP_ID, stamp_items_shop
+from interiors.weapon_shop import WEAPON_SHOP_ID, stamp_weapon_shop
+from interiors.armour_shop import ARMOUR_SHOP_ID, stamp_armour_shop
 from visibility import GRASS, IMPASSABLE_TERRAIN, MOUNTAIN, OPEN_GROUND, TREE
 
 # Constants
 MAP_SIZE = 20  # Viewport / simple-dungeon footprint
-TOWN_MAP_SIZE = 20  # Top-level yard (shop, road, stairs)
+TOWN_MAP_SIZE = 28  # Top-level yard (three shops, road, stairs)
 MONSTER_PROBABILITY = 0.03
 TREE_SPAWN_RATE = 0.04
 # Keep trees off these tiles and their 8-neighbors (doors, road, stairs).
@@ -64,7 +66,13 @@ class MapGenerator:
             self.game_map[i][size - 1] = MOUNTAIN
 
         self.monsters = {}
-        self.town_features = {ITEMS_SHOP_ID: stamp_items_shop(self.game_map)}
+        self.town_features = {}
+        for shop_id, stamp_fn in (
+            (ITEMS_SHOP_ID, stamp_items_shop),
+            (WEAPON_SHOP_ID, stamp_weapon_shop),
+            (ARMOUR_SHOP_ID, stamp_armour_shop),
+        ):
+            self.town_features[shop_id] = stamp_fn(self.game_map)
         self.place_stair('↓')
         self._plant_trees()
         return self.game_map, self.monsters

@@ -100,7 +100,10 @@
     <div id="shop-alert-overlay" class="inspect-overlay shop-alert-overlay" hidden aria-hidden="true">
         <div id="shop-alert-panel" class="inspect-panel shop-alert-panel" role="alertdialog" aria-modal="true" aria-labelledby="shop-alert-message">
             <p id="shop-alert-message" class="shop-alert-message"></p>
-            <button type="button" id="shop-alert-ok" class="inspect-close shop-alert-ok">OK</button>
+            <div id="shop-alert-actions" class="shop-alert-actions">
+                <button type="button" id="shop-alert-cancel" class="inspect-close shop-alert-cancel" hidden>Cancel</button>
+                <button type="button" id="shop-alert-ok" class="inspect-close shop-alert-ok">OK</button>
+            </div>
         </div>
     </div>
 

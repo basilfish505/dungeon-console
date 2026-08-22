@@ -2,34 +2,58 @@
 
 from __future__ import annotations
 
+from items.catalog import (
+    CATEGORY_ARMOUR,
+    CATEGORY_ITEM,
+    CATEGORY_WEAPON,
+    normalize_category,
+    resolve_owned_type,
+)
 from items.instance import ItemInstance
-from item_types.registry import get_item_type
 
-PLACEHOLDER_IMAGE = '/static/items/sprites/placeholder.png'
+PLACEHOLDER_BY_CATEGORY = {
+    CATEGORY_ITEM: '/static/items/sprites/placeholder.png',
+    CATEGORY_WEAPON: '/static/weapons/sprites/placeholder.png',
+    CATEGORY_ARMOUR: '/static/armour/sprites/placeholder.png',
+}
 SLOT_COUNT = 16
 
 
-def _row_from_item(item):
-    type_def = get_item_type(item.type_id)
+def _row_from_item(item, equipped_ids=None):
+    equipped_ids = equipped_ids or set()
+    cat = normalize_category(getattr(item, 'category', CATEGORY_ITEM))
+    type_def = resolve_owned_type(cat, item.type_id)
+    equipped = item.instance_id in equipped_ids
     if type_def is None:
-        return {
+        row = {
             'instance_id': item.instance_id,
             'type_id': item.type_id,
             'quantity': item.quantity,
+            'category': cat,
             'name': item.type_id,
             'description': None,
             'price_pqg': 0,
-            'image': PLACEHOLDER_IMAGE,
+            'image': PLACEHOLDER_BY_CATEGORY.get(cat, PLACEHOLDER_BY_CATEGORY[CATEGORY_ITEM]),
+            'equipped': equipped,
         }
-    return {
+        return row
+    row = {
         'instance_id': item.instance_id,
         'type_id': item.type_id,
         'quantity': item.quantity,
+        'category': cat,
         'name': type_def.name,
         'description': type_def.description,
         'price_pqg': type_def.price_pqg,
         'image': type_def.image,
+        'equipped': equipped,
     }
+    if cat == CATEGORY_WEAPON:
+        row['base_damage'] = getattr(type_def, 'base_damage', -2)
+        row['consistency_factor'] = getattr(type_def, 'consistency_factor', 3)
+    elif cat == CATEGORY_ARMOUR:
+        row['armour_value'] = getattr(type_def, 'armour_value', 1)
+    return row
 
 
 class Inventory:
@@ -48,7 +72,7 @@ class Inventory:
                 return item
         return None
 
-    def add(self, type_id, quantity=1):
+    def add(self, type_id, quantity=1, category=CATEGORY_ITEM, instance_id=None):
         """
         Place a new instance in the first empty slot.
 
@@ -58,14 +82,20 @@ class Inventory:
         empty = self._first_empty()
         if empty is None:
             raise ValueError('Inventory is full')
-        type_def = get_item_type(type_id)
+        cat = normalize_category(category)
+        type_def = resolve_owned_type(cat, type_id)
         if type_def is None:
-            raise ValueError(f'Unknown item type_id: {type_id!r}')
+            raise ValueError(f'Unknown {cat} type_id: {type_id!r}')
         try:
             qty = max(1, int(quantity))
         except (TypeError, ValueError):
             qty = 1
-        inst = ItemInstance(type_id=type_def.id, quantity=qty)
+        inst = ItemInstance(
+            type_id=type_def.id,
+            quantity=qty,
+            category=cat,
+            instance_id=instance_id,
+        )
         self._slots[empty] = inst
         return inst
 
@@ -104,9 +134,40 @@ class Inventory:
                 return i
         return None
 
-    def to_client_list(self):
+    def to_client_list(self, equipped_weapon_id=None, equipped_armour_id=None):
         """16 entries for the UI; empty slots are None."""
+        equipped_ids = set()
+        if equipped_weapon_id:
+            equipped_ids.add(equipped_weapon_id)
+        if equipped_armour_id:
+            equipped_ids.add(equipped_armour_id)
         rows = []
         for item in self._slots:
-            rows.append(None if item is None else _row_from_item(item))
+            rows.append(None if item is None else _row_from_item(item, equipped_ids))
         return rows
+
+    def to_save_list(self):
+        return [item.to_dict() for item in self._slots if item is not None]
+
+    def load_from_save(self, rows):
+        self._slots = [None] * SLOT_COUNT
+        if not rows:
+            return
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            type_id = row.get('type_id')
+            if not type_id:
+                continue
+            cat = normalize_category(row.get('category', CATEGORY_ITEM))
+            if resolve_owned_type(cat, type_id) is None:
+                continue
+            try:
+                self.add(
+                    type_id,
+                    quantity=row.get('quantity', 1),
+                    category=cat,
+                    instance_id=row.get('instance_id'),
+                )
+            except ValueError:
+                break

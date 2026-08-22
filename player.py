@@ -1,5 +1,12 @@
 import random
 
+from character_stats import attributes_for_inspect
+from items.equipment import (
+    effective_armour_value,
+    equipped_weapon_name,
+    equipped_weapon_stats,
+    mean_damage_for,
+)
 from items.inventory import Inventory
 from player_leveling import (
     level_from_total_xp,
@@ -60,6 +67,8 @@ class Player:
         self.visible = set()  # current LOS tiles (y, x)
         self.appearance_id = 'peasant'
         self.inventory = Inventory()
+        self.equipped_weapon_instance_id = None
+        self.equipped_armour_instance_id = None
 
     def explored_key(self):
         """Fog memory key: dungeon level int, or ('interior', id)."""
@@ -106,6 +115,34 @@ class Player:
         """UI-ready progress snapshot toward the next level."""
         return xp_progress(self.total_xp, self.level)
 
+    def to_inspect_dict(self):
+        """Player-facing inspect payload (combat stats; no inventory dump)."""
+        weapon_base, _consistency = equipped_weapon_stats(self)
+        try:
+            strength = int(getattr(self, 'str', 1) or 1)
+        except (TypeError, ValueError):
+            strength = 1
+        return {
+            'kind': 'player',
+            'name': self.id,
+            'id': self.id,
+            'level': self.level,
+            'elo': round(float(getattr(self, 'elo', 1000)), 1),
+            'pqg': int(getattr(self, 'pqg', 0) or 0),
+            'hp': int(self.hp),
+            'mhp': int(self.mhp),
+            'mp': int(self.mp),
+            'mmp': int(self.mmp),
+            'attributes': attributes_for_inspect(self),
+            'armour': int(effective_armour_value(self)),
+            'weapon_name': equipped_weapon_name(self),
+            'weapon_base_damage': int(weapon_base),
+            'strength': strength,
+            'mean_damage': int(mean_damage_for(self)),
+            'sprite': self.sprite_url(),
+            'portrait': self.sprite_url(),
+        }
+
     def to_dict(self):
         return {
             'id': self.id,
@@ -130,7 +167,17 @@ class Player:
             'interior_id': self.interior_id,
             'appearance_id': self.appearance_id,
             'sprite': self.sprite_url(),
-            'inventory': self.inventory.to_client_list(),
+            'armour': int(getattr(self, 'armour', 1) or 1),
+            'equipped_weapon_instance_id': getattr(
+                self, 'equipped_weapon_instance_id', None
+            ),
+            'equipped_armour_instance_id': getattr(
+                self, 'equipped_armour_instance_id', None
+            ),
+            'inventory': self.inventory.to_client_list(
+                equipped_weapon_id=getattr(self, 'equipped_weapon_instance_id', None),
+                equipped_armour_id=getattr(self, 'equipped_armour_instance_id', None),
+            ),
         }
 
     def move(self, direction):

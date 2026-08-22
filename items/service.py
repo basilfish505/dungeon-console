@@ -1,4 +1,4 @@
-"""Centralized item grant / use API (server-authoritative).
+"""Centralized item grant / use / purchase API (server-authoritative).
 
 Merchants, treasure chests, and monster drops should all call
 add_item_to_inventory(...) rather than mutating inventories themselves.
@@ -11,47 +11,46 @@ from __future__ import annotations
 
 import random
 
+from items.catalog import (
+    CATEGORY_ITEM,
+    ITEMS_SHOP_IDS,
+    SHOP_ITEMS,
+    normalize_category,
+    resolve_owned_type,
+    shop_catalog,
+    shop_category,
+    shop_sale_ids,
+)
+from items.equipment import clear_equipped_if_removed
 from item_types.registry import get_item_type
 
 
-# Starter kit granted to brand-new players (testing the inventory path).
-STARTER_ITEM_IDS = (
-    'healing_potion',
-    'torch',
-    'bread',
-    'rope',
-    'antidote',
-)
+# Starter kit / items-shop catalog (testing the inventory path).
+STARTER_ITEM_IDS = ITEMS_SHOP_IDS
 
 
-def add_item_to_inventory(player, item_id, quantity=1):
+def add_item_to_inventory(player, item_id, quantity=1, category=CATEGORY_ITEM):
     """
-    Grant item_id to player.inventory.
+    Grant type_id to player.inventory under category.
 
     Returns the new ItemInstance, or None if the type is unknown or the pack is full.
-    Future callers: merchant purchase, chest open, monster death loot.
     """
     if player is None or getattr(player, 'inventory', None) is None:
         return None
     try:
-        return player.inventory.add(item_id, quantity=quantity)
+        return player.inventory.add(item_id, quantity=quantity, category=category)
     except ValueError:
         return None
 
 
 def shop_starter_wares():
-    """Catalog rows the items shop lists for sale."""
-    wares = []
-    for item_id in STARTER_ITEM_IDS:
-        type_def = get_item_type(item_id)
-        if type_def is not None:
-            wares.append(type_def.to_client_dict())
-    return wares
+    """Catalog rows the items shop lists for sale (compat)."""
+    return shop_catalog(SHOP_ITEMS)
 
 
-def purchase_item(player, item_id):
+def purchase_item(player, item_id, *, shop_id=None):
     """
-    Buy one shop-catalog item for its price_pqg.
+    Buy one catalog item for its price_pqg from the given shop.
 
     Returns dict: {ok, message, item_id, price_pqg, pqg}.
     """
@@ -65,13 +64,21 @@ def purchase_item(player, item_id):
     if player is None or getattr(player, 'inventory', None) is None:
         return result
 
+    sid = str(shop_id or SHOP_ITEMS).strip() or SHOP_ITEMS
+    category = shop_category(sid)
+    if category is None:
+        result['message'] = 'That shop is unknown.'
+        result['pqg'] = int(getattr(player, 'pqg', 0) or 0)
+        return result
+
     item_id = str(item_id or '').strip()
-    if not item_id or item_id not in STARTER_ITEM_IDS:
+    sale_ids = shop_sale_ids(sid)
+    if not item_id or item_id not in sale_ids:
         result['message'] = 'That item is not for sale.'
         result['pqg'] = int(getattr(player, 'pqg', 0) or 0)
         return result
 
-    type_def = get_item_type(item_id)
+    type_def = resolve_owned_type(category, item_id)
     if type_def is None:
         result['message'] = 'That item is unknown.'
         result['pqg'] = int(getattr(player, 'pqg', 0) or 0)
@@ -100,9 +107,8 @@ def purchase_item(player, item_id):
         return result
 
     player.pqg = purse - price
-    inst = add_item_to_inventory(player, item_id, quantity=1)
+    inst = add_item_to_inventory(player, item_id, quantity=1, category=category)
     if inst is None:
-        # Should be rare (type vanished between checks); refund.
         player.pqg = purse
         result['message'] = 'Your pack is full.'
         result['pqg'] = purse
@@ -118,7 +124,7 @@ def grant_starter_kit(player):
     """Give each registered starter item once (skips missing sheet rows)."""
     granted = []
     for item_id in STARTER_ITEM_IDS:
-        inst = add_item_to_inventory(player, item_id, quantity=1)
+        inst = add_item_to_inventory(player, item_id, quantity=1, category=CATEGORY_ITEM)
         if inst is not None:
             granted.append(inst)
     return granted
@@ -132,7 +138,6 @@ def use_item(player, instance_id, context='exploration', game_state=None):
     Returns dict: {ok, message, consumed, effects}
 
     Type-specific effects belong here (or a later dispatcher), never in UI.
-    v1: acknowledge use without consuming or applying effects.
     """
     result = {
         'ok': False,
@@ -146,6 +151,11 @@ def use_item(player, instance_id, context='exploration', game_state=None):
     inst = player.inventory.get(instance_id)
     if inst is None:
         result['message'] = 'You do not have that item.'
+        return result
+
+    cat = normalize_category(getattr(inst, 'category', CATEGORY_ITEM))
+    if cat != CATEGORY_ITEM:
+        result['message'] = 'That cannot be used.'
         return result
 
     type_def = get_item_type(inst.type_id)
@@ -207,9 +217,12 @@ def discard_item(player, instance_id):
         result['message'] = 'You do not have that item.'
         return result
 
-    type_def = get_item_type(inst.type_id)
+    type_def = resolve_owned_type(
+        getattr(inst, 'category', CATEGORY_ITEM), inst.type_id
+    )
     name = type_def.name if type_def else inst.type_id
     player.inventory.remove(instance_id)
+    clear_equipped_if_removed(player, instance_id)
     result['ok'] = True
     result['consumed'] = True
     result['message'] = f'You discard the {name}.'

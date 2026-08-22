@@ -1,6 +1,6 @@
 """Non-combat NPCs until bumped into (shopkeepers can fight)."""
 
-from items.service import shop_starter_wares
+from items.catalog import shop_catalog
 from monster import Monster
 
 
@@ -26,7 +26,7 @@ class Npc:
 
     def wares(self):
         if self.shop_id:
-            return shop_starter_wares()
+            return shop_catalog(self.shop_id)
         return []
 
     def as_combatant(self):

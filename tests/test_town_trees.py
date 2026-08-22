@@ -14,7 +14,7 @@ from visibility import GRASS, MOUNTAIN, OPEN_GROUND, TREE, WALL
 class TownGrassTreeTests(unittest.TestCase):
     def _generate(self, seed=0):
         rng = random.Random(seed)
-        with patch('map_generator.random', rng), patch('interiors.items_shop.random', rng):
+        with patch('map_generator.random', rng), patch('interiors.shop_common.random', rng):
             gen = MapGenerator()
             game_map, _monsters = gen.generate_top_level()
         return gen, game_map

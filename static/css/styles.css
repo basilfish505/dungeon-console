@@ -521,6 +521,36 @@ body {
     min-width: 6em;
 }
 
+.shop-alert-actions {
+    display: flex;
+    justify-content: center;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.shop-alert-cancel {
+    align-self: center;
+    min-width: 6em;
+}
+
+.inventory-slot-equipped-label {
+    display: block;
+    margin-top: 4px;
+    font-size: 0.7rem;
+    line-height: 1.1;
+    color: #9f9;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.inventory-detail-equipped {
+    margin: 4px 0 0;
+    font-size: 0.85rem;
+    color: #9f9;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
 .inspect-ware-icon {
     width: 28px;
     height: 28px;
