@@ -50,6 +50,7 @@ class ParseRowTests(unittest.TestCase):
         self.assertEqual(td.base_attributes['agi'], 7)
         self.assertEqual(td.base_mhp, 8)
         self.assertEqual(td.attack_power, 3)
+        self.assertEqual(td.armour, 1)
         self.assertEqual(td.aggression, 8)
         self.assertEqual(td.activeness, 7)
         self.assertEqual(td.sight_range, 12)
@@ -78,6 +79,7 @@ class XlsxLoadTests(unittest.TestCase):
             'agi': 6,
             'base_mhp': 8,
             'attack_power': 3,
+            'armour': 2,
             'aggression': 8,
             'speed': 10,
             'activeness': 7,
@@ -97,8 +99,10 @@ class XlsxLoadTests(unittest.TestCase):
             ids = [td.id for td in loaded]
             self.assertEqual(ids, ['troll', 'goblin'])
             self.assertEqual(MONSTER_TYPES['goblin'].base_mhp, 8)
+            self.assertEqual(MONSTER_TYPES['goblin'].armour, 2)
             self.assertEqual(MONSTER_TYPES['goblin'].spawn_weight, 2.0)
             self.assertEqual(MONSTER_TYPES['troll'].name, 'Troll')
+            self.assertEqual(MONSTER_TYPES['troll'].armour, 1)
         finally:
             MONSTER_TYPES.clear()
             MONSTER_TYPES.update(previous)

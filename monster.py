@@ -60,8 +60,8 @@ class Monster:
         self.attack_power = int(runtime_overrides.pop(
             'attack_power', type_def.attack_power
         ))
-        # Damage divisor in combat_damage; 1 = no reduction until gear/types set it.
-        self.armour = int(runtime_overrides.pop('armour', 1))
+        # Damage divisor in combat_damage; species default from type sheet (min 1).
+        self.armour = int(runtime_overrides.pop('armour', type_def.armour))
         if self.armour < 1:
             self.armour = 1
         self.in_combat = False

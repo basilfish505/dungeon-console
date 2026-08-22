@@ -38,6 +38,7 @@ class MonsterTypeDef:
         activeness=5,
         sight_range=20,
         attack_power=5,
+        armour=1,
         spawn_weight=1,
     ):
         self.id = str(type_id)
@@ -57,6 +58,12 @@ class MonsterTypeDef:
         self.activeness = activeness
         self.sight_range = sight_range
         self.attack_power = attack_power
+        try:
+            self.armour = int(armour)
+        except (TypeError, ValueError):
+            self.armour = 1
+        if self.armour < 1:
+            self.armour = 1
         try:
             self.spawn_weight = float(spawn_weight)
         except (TypeError, ValueError):
