@@ -192,12 +192,13 @@ const Combat = (function () {
             currentBattle.selectedTarget = currentBattle.opponents[0].id;
             const first = elements.opponentsList.querySelector('.opponent-entry');
             if (first) first.classList.add('selected-target');
-            elements.opponentName.textContent = currentBattle.opponents[0].id;
-            elements.opponentHP.textContent = currentBattle.opponents[0].hp;
-            setOpponentPortrait(currentBattle.opponents[0]);
-        } else if (currentBattle.selectedTarget) {
-            const selected = currentBattle.opponents.find(o => o.id === currentBattle.selectedTarget);
-            setOpponentPortrait(selected || null);
+        }
+
+        const selected = currentBattle.opponents.find(o => o.id === currentBattle.selectedTarget);
+        if (selected) {
+            elements.opponentName.textContent = selected.id;
+            elements.opponentHP.textContent = selected.hp;
+            setOpponentPortrait(selected);
         } else {
             setOpponentPortrait(null);
         }

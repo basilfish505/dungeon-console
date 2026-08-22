@@ -54,32 +54,47 @@ const Sound = (function () {
 
     function start(buf) {
         const c = audioContext();
+        const playNow = function () {
+            const src = c.createBufferSource();
+            src.buffer = buf;
+            const gain = c.createGain();
+            gain.gain.value = 0.85;
+            src.connect(gain);
+            gain.connect(c.destination);
+            src.start(c.currentTime);
+        };
+        // start() while suspended is often dropped; wait for resume first
         if (c.state === 'suspended') {
-            c.resume().catch(() => {});
+            c.resume().then(playNow).catch(() => {});
+            return;
         }
-        const src = c.createBufferSource();
-        src.buffer = buf;
-        const gain = c.createGain();
-        gain.gain.value = 0.85;
-        src.connect(gain);
-        gain.connect(c.destination);
-        src.start(0);
+        playNow();
     }
+
+    const playGen = {};
 
     function play(name) {
         unlock();
         const url = PATHS[name];
         if (!url) return;
 
+        const gen = (playGen[name] = (playGen[name] || 0) + 1);
         const ready = buffers[name];
         if (ready) {
             start(ready);
             return;
         }
 
-        // First play may race preload — wait for decode, then play
+        // First play may race preload — wait for decode, then play if still current
+        const requestedAt = (typeof performance !== 'undefined' && performance.now)
+            ? performance.now() : Date.now();
         load(name, url).then(buf => {
-            if (buf) start(buf);
+            if (!buf || playGen[name] !== gen) return;
+            const now = (typeof performance !== 'undefined' && performance.now)
+                ? performance.now() : Date.now();
+            // Too late to stay in sync with the attack that requested it
+            if (now - requestedAt > 500) return;
+            start(buf);
         });
     }
 
