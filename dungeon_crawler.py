@@ -1049,6 +1049,19 @@ def handle_inspect_map(data):
     emit('inspect_result', result)
 
 
+@socketio.on('inspect_combatant')
+def handle_inspect_combatant(data):
+    """Tap combat portrait: return inspect payload for a combatant in this battle."""
+    player_id = session.get('player_id')
+    if not player_id or player_id not in game_state.players:
+        emit('inspect_result', {'ok': False})
+        return
+    if not isinstance(data, dict):
+        emit('inspect_result', {'ok': False})
+        return
+    emit('inspect_result', combat_system.inspect_combatant(player_id, data.get('target_id')))
+
+
 @socketio.on('set_viewport')
 def handle_set_viewport(data):
     """Client reports how many tiles fit the map pane at the current zoom.

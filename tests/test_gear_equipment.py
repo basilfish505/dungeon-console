@@ -111,9 +111,11 @@ class EquipTests(unittest.TestCase):
         purchase_item(self.p, 'leather', shop_id=ARMOUR_SHOP_ID)
         self.weapons = [i for i in self.p.inventory if i.category == 'weapon']
         self.armour = [i for i in self.p.inventory if i.category == 'armour'][0]
+        self.club = next(i for i in self.weapons if i.type_id == 'club')
+        self.sword = next(i for i in self.weapons if i.type_id == 'short_sword')
 
     def test_equip_unequip_and_swap(self):
-        club, sword = self.weapons[0], self.weapons[1]
+        club, sword = self.club, self.sword
         r = equip_item(self.p, club.instance_id)
         self.assertTrue(r['ok'])
         self.assertEqual(self.p.equipped_weapon_instance_id, club.instance_id)
@@ -123,7 +125,8 @@ class EquipTests(unittest.TestCase):
         r2 = equip_item(self.p, sword.instance_id)
         self.assertTrue(r2['ok'])
         self.assertEqual(self.p.equipped_weapon_instance_id, sword.instance_id)
-        self.assertEqual(len(self.p.inventory), 5)
+        # starter club + purchased club + sword + leather + 2 torches
+        self.assertEqual(len(self.p.inventory), 6)
 
         r3 = unequip_item(self.p, sword.instance_id)
         self.assertTrue(r3['ok'])
@@ -199,7 +202,7 @@ class PersistenceTests(unittest.TestCase):
             self.assertTrue(load_player(p2, save_dir=tmp))
             self.assertEqual(p2.pqg, 77)
             self.assertEqual(p2.elo, 1100.5)
-            self.assertEqual(len(p2.inventory), 4)
+            self.assertEqual(len(p2.inventory), 5)
             self.assertEqual(p2.equipped_weapon_instance_id, club.instance_id)
             self.assertEqual(p2.equipped_armour_instance_id, leather.instance_id)
             self.assertEqual(p2.armour, 2)

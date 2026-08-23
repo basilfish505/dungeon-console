@@ -12,6 +12,48 @@ MONSTER_TURN_DELAY_SECONDS = 1  # pause before monster acts after another turn
 KILLING_BLOW_PAUSE_SECONDS = 1  # pause so killer can read damage before combat closes
 
 
+def _monster_combatant(monster, is_current_turn=False):
+    """Client-facing monster entry for combat UI payloads."""
+    return {
+        'id': monster.type,
+        'monster_id': monster.id,
+        'type_id': monster.type_id,
+        'name': monster.name,
+        'level': int(getattr(monster, 'level', 1) or 1),
+        'hp': monster.hp,
+        'mhp': monster.mhp,
+        'elo': round(float(getattr(monster, 'elo', 0) or 0), 1),
+        'is_monster': True,
+        'is_current_turn': bool(is_current_turn),
+        'portrait': monster.portrait_url(),
+    }
+
+
+def _player_combatant(player, is_current_turn=False, defending=False):
+    """Client-facing player entry for combat UI payloads."""
+    sprite = None
+    if hasattr(player, 'sprite_url'):
+        try:
+            sprite = player.sprite_url()
+        except Exception:
+            sprite = None
+    return {
+        'id': player.id,
+        'name': player.id,
+        'level': int(getattr(player, 'level', 1) or 1),
+        'hp': player.hp,
+        'mhp': player.mhp,
+        'mp': getattr(player, 'mp', 0),
+        'mmp': getattr(player, 'mmp', 0),
+        'elo': round(float(getattr(player, 'elo', 0) or 0), 1),
+        'is_monster': False,
+        'is_current_turn': bool(is_current_turn),
+        'defending': bool(defending),
+        'sprite': sprite,
+        'portrait': sprite,
+    }
+
+
 class CombatSystem:
     def __init__(self, game_state, socketio):
         self.game_state = game_state
@@ -177,39 +219,40 @@ class CombatSystem:
         
         # Get all opponents (players and monsters)
         opponents = []
-        
+        current_turn_id = None
+        if battle['turn_order'] and battle['current_turn_index'] < len(battle['turn_order']):
+            current_turn_id = battle['turn_order'][battle['current_turn_index']]
+
         # Add player opponents
         for p_id in battle['participants']:
             if p_id != player_id:
                 opponent = self.game_state.players[p_id]
-                opponents.append({
-                    'id': opponent.id,
-                    'hp': opponent.hp,
-                    'is_monster': False
-                })
-        
+                opponents.append(_player_combatant(
+                    opponent,
+                    is_current_turn=(p_id == current_turn_id),
+                    defending=battle.get('defend_status', {}).get(p_id, False),
+                ))
+
         # Add monster opponents
         for monster in battle['monsters']:
-            opponents.append({
-                'id': monster.type,
-                'monster_id': monster.id,
-                'type_id': monster.type_id,
-                'hp': monster.hp,
-                'is_monster': True,
-                'portrait': monster.portrait_url(),
-            })
-        
+            opponents.append(_monster_combatant(
+                monster,
+                is_current_turn=(monster.id == current_turn_id),
+            ))
+
         # Create combat info
         combat_info = {
             'type': 'combat_start',
             'battle_id': battle['battle_id'],
+            'viewer_id': player_id,
             'opponents': opponents,
+            'combatants': self._get_combatants_status(battle),
             'turn_timeout': TURN_TIMEOUT_SECONDS
         }
-        
+
         # Add accurate turn information
         self._update_combat_turn_info(combat_info, player_id, battle)
-        
+
         self._emit('combat_update', combat_info, room=player_id)
     
     def process_action(self, player_id, action, target_id=None):
@@ -326,35 +369,34 @@ class CombatSystem:
         
         # Get all potential targets
         targets = []
-        
+        current_turn_id = None
+        if battle['turn_order'] and battle['current_turn_index'] < len(battle['turn_order']):
+            current_turn_id = battle['turn_order'][battle['current_turn_index']]
+
         # Add player targets
         for p_id in battle['participants']:
             if p_id != player_id:
                 opponent = self.game_state.players[p_id]
-                targets.append({
-                    'id': opponent.id,
-                    'hp': opponent.hp,
-                    'is_monster': False
-                })
-        
+                targets.append(_player_combatant(
+                    opponent,
+                    is_current_turn=(p_id == current_turn_id),
+                    defending=battle.get('defend_status', {}).get(p_id, False),
+                ))
+
         # Add monster targets
         for monster in battle['monsters']:
-            targets.append({
-                'id': monster.type,
-                'monster_id': monster.id,  # Include the full ID for targeting
-                'type_id': monster.type_id,
-                'hp': monster.hp,
-                'is_monster': True,
-                'portrait': monster.portrait_url(),
-            })
-        
+            targets.append(_monster_combatant(
+                monster,
+                is_current_turn=(monster.id == current_turn_id),
+            ))
+
         # Create and send the target request
         target_request = {
             'type': 'target_request',
             'battle_id': battle['battle_id'],
             'targets': targets
         }
-        
+
         self._emit('combat_update', target_request, room=player_id)
     
     def _handle_attack(self, attacker_id, target_id, battle):
@@ -851,34 +893,26 @@ class CombatSystem:
     def _get_combatants_status(self, battle):
         """Get the status of all combatants in a battle"""
         combatants = []
-        
+        current_turn_id = None
+        if battle['turn_order'] and battle['current_turn_index'] < len(battle['turn_order']):
+            current_turn_id = battle['turn_order'][battle['current_turn_index']]
+
         # Add players
         for p_id in battle['participants']:
             player = self.game_state.players[p_id]
-            is_current = battle['turn_order'][battle['current_turn_index']] == p_id
-            
-            combatants.append({
-                'id': player.id,
-                'hp': player.hp,
-                'is_monster': False,
-                'defending': battle.get('defend_status', {}).get(p_id, False),
-                'is_current_turn': is_current
-            })
-        
+            combatants.append(_player_combatant(
+                player,
+                is_current_turn=(p_id == current_turn_id),
+                defending=battle.get('defend_status', {}).get(p_id, False),
+            ))
+
         # Add monsters
         for monster in battle['monsters']:
-            is_current = battle['turn_order'][battle['current_turn_index']] == monster.id
-            
-            combatants.append({
-                'id': monster.type,
-                'monster_id': monster.id,
-                'type_id': monster.type_id,
-                'hp': monster.hp,
-                'is_monster': True,
-                'is_current_turn': is_current,
-                'portrait': monster.portrait_url(),
-            })
-        
+            combatants.append(_monster_combatant(
+                monster,
+                is_current_turn=(monster.id == current_turn_id),
+            ))
+
         # Sort combatants by turn order
         sorted_combatants = []
         for turn_id in battle['turn_order']:
@@ -887,13 +921,51 @@ class CombatSystem:
                    (not combatant['is_monster'] and combatant['id'] == turn_id):
                     sorted_combatants.append(combatant)
                     break
-        
+
         # Add any combatants that weren't in the turn order
         for combatant in combatants:
             if combatant not in sorted_combatants:
                 sorted_combatants.append(combatant)
-        
+
         return sorted_combatants
+
+    def inspect_combatant(self, player_id, target_id):
+        """
+        Return inspect payload for a combatant in the caller's active battle only.
+        """
+        if not player_id or player_id not in self.game_state.active_combats:
+            return {'ok': False}
+        battle_id = self.game_state.active_combats[player_id]
+        battle = self.battles.get(battle_id)
+        if not battle:
+            return {'ok': False}
+
+        tid = str(target_id) if target_id is not None else ''
+        if not tid:
+            return {'ok': False}
+
+        for monster in battle.get('monsters', []):
+            if monster.id == tid or monster.type == tid or getattr(monster, 'type_id', None) == tid:
+                payload = monster.to_inspect_dict()
+                return {
+                    'ok': True,
+                    'kind': payload.get('kind', 'monster'),
+                    'data': payload,
+                }
+
+        for p_id in battle.get('participants', []):
+            if p_id == tid:
+                player = self.game_state.players.get(p_id)
+                if player is None:
+                    return {'ok': False}
+                payload = player.to_inspect_dict()
+                return {
+                    'ok': True,
+                    'kind': payload.get('kind', 'player'),
+                    'data': payload,
+                }
+
+        return {'ok': False}
     
     def _handle_monster_death(self, killer_id, monster, battle):
         """Handle a monster's death in combat"""

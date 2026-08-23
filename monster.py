@@ -145,6 +145,12 @@ class Monster:
             percentile = elo_percentile(elo_value)
         except Exception:
             percentile = None
+        try:
+            strength = int(getattr(self, 'str', 1) or 1)
+        except (TypeError, ValueError):
+            strength = 1
+        from combat_damage import DEFAULT_WEAPON_BASE_DAMAGE
+        mean_damage = int(DEFAULT_WEAPON_BASE_DAMAGE) + strength
         return {
             'kind': 'monster',
             'name': self.name,
@@ -155,6 +161,8 @@ class Monster:
             'elo_percentile': percentile,
             'hp': self.hp,
             'mhp': self.mhp,
+            'armour': int(getattr(self, 'armour', 1) or 1),
+            'mean_damage': mean_damage,
             'attributes': attributes_for_inspect(self),
             'abilities': abilities,
             'sprite': self.sprite_url(),

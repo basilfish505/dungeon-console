@@ -120,28 +120,26 @@
         </div>
     </div>
 
-    <div id="combat-box" style="display: none;">
-        <h3>Combat</h3>
-        <div id="target-selection">
-            <div class="combat-target-row">
-                <img id="opponent-portrait" class="opponent-portrait" alt="" hidden>
-                <p>Current Target: <span id="opponent-name"></span> (HP: <span id="opponent-hp"></span>)</p>
+    <input type="hidden" id="player-id" value="">
+
+    <div id="combat-overlay" class="combat-overlay" hidden aria-hidden="true">
+        <div id="combat-screen" class="combat-screen" role="dialog" aria-modal="true" aria-labelledby="combat-status">
+            <div id="combat-status" class="combat-statusbar" aria-live="polite"></div>
+            <div id="combat-roster" class="combat-roster" aria-label="Opponents"></div>
+            <div id="combat-self" class="combat-self" aria-label="You"></div>
+            <div id="combat-message-container" class="combat-message-container">
+                <div id="combat-log" class="combat-log" aria-live="polite"></div>
+                <p id="combat-message" class="combat-message"></p>
+                <p id="opponent-thinking" class="opponent-thinking" style="display: none;"></p>
             </div>
-            <div id="opponents-list" class="opponents-list"></div>
+            <div id="combat-controls" class="combat-controls">
+                <button type="button" id="attack-btn">Attack</button>
+                <button type="button" id="defend-btn">Defend</button>
+                <button type="button" id="spell-btn">Spell</button>
+                <button type="button" id="item-btn">Item</button>
+                <button type="button" id="run-btn">Run</button>
+            </div>
         </div>
-        <div id="combat-controls">
-            <button id="attack-btn">Attack</button>
-            <button id="defend-btn">Defend</button>
-            <button id="spell-btn">Spell</button>
-            <button id="item-btn">Item</button>
-            <button id="run-btn">Run</button>
-        </div>
-        <div id="combat-message-container">
-            <div id="combat-log" aria-live="polite"></div>
-            <p id="combat-message"></p>
-            <p id="opponent-thinking" style="display: none; margin-top: 15px;"></p>
-        </div>
-        <input type="hidden" id="player-id" value="">
     </div>
 
     <link rel="preload" as="image" href="{{ url_for('static', filename='tiles/floor.png') }}">

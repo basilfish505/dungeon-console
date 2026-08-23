@@ -108,9 +108,6 @@ def light_item(player, instance_id, game_state=None):
     if getattr(player, 'interior_id', None):
         result['message'] = 'There is already enough light here.'
         return result
-    if getattr(player, 'dungeon_level', 0) <= 0:
-        result['message'] = 'You only need a light in the dungeon.'
-        return result
 
     inst = player.inventory.get(instance_id)
     if inst is None:

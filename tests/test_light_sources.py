@@ -56,13 +56,19 @@ class LightUseTests(unittest.TestCase):
         self.assertTrue(result['ok'])
         self.assertEqual(p.sight_range, 3.0)
 
-    def test_town_use_rejected(self):
+    def test_town_use_still_lights_torch_without_changing_fov(self):
         p = Player('hero', [5, 5])
         p.dungeon_level = 0
-        inst = add_item_to_inventory(p, 'candle')
+        inst = add_item_to_inventory(p, 'torch')
         result = light_item(p, inst.instance_id)
-        self.assertFalse(result['ok'])
-        self.assertEqual(p.sight_range, 0)
+        self.assertTrue(result['ok'])
+        self.assertTrue(inst.extras.get('lit'))
+        self.assertEqual(p.sight_range, 3.0)
+        self.assertEqual(p.lit_light_instance_id, inst.instance_id)
+        # Town uses fixed full visibility regardless of lit torch.
+        self.assertEqual(p.effective_sight_range(), 30)
+        self.assertTrue(tick_player_light(p))
+        self.assertEqual(inst.extras.get('light_remaining'), 999)
 
     def test_lighting_torch_extinguishes_candle(self):
         p = Player('hero', [5, 5])

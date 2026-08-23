@@ -101,6 +101,14 @@ const InspectUI = (function () {
         }
         html += `<div class="inspect-row"><span class="inspect-label">HP</span>` +
             `<span class="inspect-value">${escapeHtml(data.hp)} / ${escapeHtml(data.mhp)}</span></div>`;
+        if (data.armour != null) {
+            html += `<div class="inspect-row"><span class="inspect-label">Armour</span>` +
+                `<span class="inspect-value">${escapeHtml(data.armour)}</span></div>`;
+        }
+        if (data.mean_damage != null) {
+            html += `<div class="inspect-row"><span class="inspect-label">Mean Damage</span>` +
+                `<span class="inspect-value">${escapeHtml(data.mean_damage)}</span></div>`;
+        }
         html += renderAttrSection(data);
 
         const abilities = data.abilities || [];

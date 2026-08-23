@@ -1,29 +1,44 @@
-// combat.js - Combat UI and actions
+// combat.js - Full-screen combat UI and actions
 const Combat = (function () {
     const MAX_COMBAT_LOG_LINES = 12;
 
     const elements = {
-        combatBox: document.getElementById('combat-box'),
-        opponentName: document.getElementById('opponent-name'),
-        opponentHP: document.getElementById('opponent-hp'),
-        opponentPortrait: document.getElementById('opponent-portrait'),
+        overlay: document.getElementById('combat-overlay'),
+        screen: document.getElementById('combat-screen'),
+        status: document.getElementById('combat-status'),
+        roster: document.getElementById('combat-roster'),
+        selfCard: document.getElementById('combat-self'),
         combatLog: document.getElementById('combat-log'),
         combatMessage: document.getElementById('combat-message'),
         opponentThinking: document.getElementById('opponent-thinking'),
-        opponentsList: document.getElementById('opponents-list'),
         attackBtn: document.getElementById('attack-btn'),
         defendBtn: document.getElementById('defend-btn'),
         spellBtn: document.getElementById('spell-btn'),
         itemBtn: document.getElementById('item-btn'),
-        runBtn: document.getElementById('run-btn')
+        runBtn: document.getElementById('run-btn'),
+        mobileControls: document.getElementById('mobile-controls'),
     };
 
-    let currentBattle = { battleId: null, opponents: [], selectedTarget: null };
+    let currentBattle = {
+        battleId: null,
+        opponents: [],
+        combatants: [],
+        selectedTarget: null,
+        viewerId: null,
+        selfHp: null,
+        selfMhp: null,
+        selfMp: null,
+        selfMmp: null,
+        selfLevel: null,
+        selfName: null,
+    };
     let combatLogLines = [];
     let countdownTimer = null;
     let countdownRemaining = 0;
     let countdownYourTurn = false;
     let countdownActivePlayer = null;
+    let open = false;
+    let mobileWasVisible = false;
 
     function stripHtml(html) {
         const tmp = document.createElement('div');
@@ -32,16 +47,50 @@ const Combat = (function () {
     }
 
     function escapeHtml(text) {
-        return String(text)
+        return String(text == null ? '' : text)
             .replace(/&/g, '&amp;')
             .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;');
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
+    }
+
+    function isOpen() {
+        return open;
+    }
+
+    function showOverlay() {
+        if (!elements.overlay) return;
+        elements.overlay.hidden = false;
+        elements.overlay.setAttribute('aria-hidden', 'false');
+        elements.overlay.style.display = '';
+        open = true;
+        if (elements.mobileControls) {
+            mobileWasVisible = elements.mobileControls.style.display !== 'none';
+            elements.mobileControls.style.display = 'none';
+        }
+    }
+
+    function hideOverlay() {
+        if (!elements.overlay) return;
+        elements.overlay.hidden = true;
+        elements.overlay.setAttribute('aria-hidden', 'true');
+        elements.overlay.style.display = 'none';
+        open = false;
+        if (elements.mobileControls && mobileWasVisible) {
+            elements.mobileControls.style.display = '';
+        }
+        mobileWasVisible = false;
     }
 
     function renderCombatLog() {
         if (!elements.combatLog) return;
         elements.combatLog.innerHTML = combatLogLines
-            .map(line => `<div class="combat-log-line">${escapeHtml(line)}</div>`)
+            .map(line => {
+                const cls = /damage|hit|slay|defeat|miss/i.test(line)
+                    ? 'combat-log-line combat-log-damage'
+                    : 'combat-log-line';
+                return `<div class="${cls}">${escapeHtml(line)}</div>`;
+            })
             .join('');
         elements.combatLog.scrollTop = elements.combatLog.scrollHeight;
     }
@@ -55,7 +104,6 @@ const Combat = (function () {
         if (!message) return;
         const text = stripHtml(message);
         if (!text) return;
-        // Skip noisy status/countdown lines
         if (/^\d+s\)?$/.test(text) || text.indexOf('to take their turn') !== -1) return;
         if (text.indexOf("It's your turn to act!") === 0 && text.indexOf('(') !== -1) return;
         if (combatLogLines.length && combatLogLines[combatLogLines.length - 1] === text) return;
@@ -67,11 +115,12 @@ const Combat = (function () {
     }
 
     function shakeCombatWindow() {
-        if (!elements.combatBox) return;
-        elements.combatBox.classList.remove('combat-shake');
-        void elements.combatBox.offsetWidth;
-        elements.combatBox.classList.add('combat-shake');
-        setTimeout(() => elements.combatBox.classList.remove('combat-shake'), 500);
+        const target = elements.screen || elements.overlay;
+        if (!target) return;
+        target.classList.remove('combat-shake');
+        void target.offsetWidth;
+        target.classList.add('combat-shake');
+        setTimeout(() => target.classList.remove('combat-shake'), 500);
     }
 
     function stopCountdown() {
@@ -81,15 +130,27 @@ const Combat = (function () {
         }
     }
 
+    function setStatus(html) {
+        if (elements.status) {
+            elements.status.innerHTML = html;
+        }
+        if (elements.combatMessage) {
+            elements.combatMessage.innerHTML = html;
+        }
+    }
+
     function renderCountdownMessage() {
         const secs = Math.max(0, countdownRemaining);
-        // Status line only — never mirror into opponent-thinking (avoids duplicate text)
-        elements.opponentThinking.style.display = 'none';
+        if (elements.opponentThinking) {
+            elements.opponentThinking.style.display = 'none';
+        }
         if (countdownYourTurn) {
-            elements.combatMessage.innerHTML = `It's your turn to act! (${secs}s)`;
+            setStatus(`Your turn <span class="combat-countdown">(${secs}s)</span>`);
         } else {
-            elements.combatMessage.innerHTML =
-                `Waiting for ${countdownActivePlayer || 'opponent'} to take their turn... (${secs}s)`;
+            setStatus(
+                `Waiting for ${escapeHtml(countdownActivePlayer || 'opponent')} ` +
+                `<span class="combat-countdown">(${secs}s)</span>`
+            );
         }
     }
 
@@ -109,108 +170,292 @@ const Combat = (function () {
 
     function updateButtonStates(isYourTurn) {
         const disableAll = isYourTurn === false;
-        elements.attackBtn.disabled = disableAll;
-        elements.defendBtn.disabled = disableAll;
-        elements.spellBtn.disabled = true;
-        elements.itemBtn.disabled = disableAll;
-        elements.runBtn.disabled = true;
-        // Keep a single status line in #combat-message; hide the secondary thinking line
-        elements.opponentThinking.style.display = 'none';
+        if (elements.attackBtn) elements.attackBtn.disabled = disableAll;
+        if (elements.defendBtn) elements.defendBtn.disabled = disableAll;
+        if (elements.spellBtn) elements.spellBtn.disabled = true;
+        if (elements.itemBtn) elements.itemBtn.disabled = disableAll;
+        if (elements.runBtn) elements.runBtn.disabled = true;
+        if (elements.opponentThinking) {
+            elements.opponentThinking.style.display = 'none';
+        }
         if (disableAll && !countdownTimer) {
-            elements.combatMessage.innerHTML = "Waiting for opponent's move...";
+            setStatus("Waiting for opponent's move...");
+        }
+        if (elements.overlay) {
+            elements.overlay.classList.toggle('combat-your-turn', !!isYourTurn);
         }
     }
 
-    function setOpponentPortrait(opponent) {
-        const img = elements.opponentPortrait;
-        if (!img) {
-            return;
-        }
-        if (!opponent || !opponent.is_monster) {
-            img.hidden = true;
-            img.removeAttribute('src');
-            return;
-        }
-        const typeId = opponent.type_id;
-        const url = opponent.portrait || null;
-        if (typeof MonsterAssets !== 'undefined' && typeId) {
-            MonsterAssets.ensureType(typeId, null, url);
-        }
-        const resolved = url || (typeId ? '/static/monsters/portraits/' + typeId + '.png' : null);
-        if (!resolved) {
-            img.hidden = true;
-            img.removeAttribute('src');
-            return;
-        }
-        img.src = resolved;
-        img.alt = (opponent.id || 'Monster') + ' portrait';
-        img.hidden = false;
+    function hpBarClass(pct) {
+        if (pct <= 0.25) return 'hp-low';
+        if (pct <= 0.6) return 'hp-hurt';
+        return 'hp-ok';
     }
 
-    function updateOpponentsList() {
-        if (!elements.opponentsList) {
-            elements.opponentsList = document.createElement('div');
-            elements.opponentsList.id = 'opponents-list';
-            elements.opponentsList.className = 'opponents-list';
-            elements.combatBox.appendChild(elements.opponentsList);
+    function hpBarHtml(hp, mhp) {
+        let cur = Number(hp);
+        let max = Number(mhp);
+        if (!Number.isFinite(cur)) cur = 0;
+        if (!Number.isFinite(max) || max <= 0) max = Math.max(cur, 1);
+        const pct = Math.max(0, Math.min(1, cur / max));
+        const width = Math.round(pct * 100);
+        const cls = hpBarClass(pct);
+        return (
+            `<div class="combat-hpbar ${cls}" role="progressbar" ` +
+            `aria-valuenow="${escapeHtml(cur)}" aria-valuemin="0" aria-valuemax="${escapeHtml(max)}">` +
+            `<div class="combat-hpbar-fill" style="width:${width}%"></div>` +
+            `<span class="combat-hpbar-text">${escapeHtml(cur)} / ${escapeHtml(max)}</span>` +
+            `</div>`
+        );
+    }
+
+    function mpBarHtml(mp, mmp) {
+        let cur = Number(mp);
+        let max = Number(mmp);
+        if (!Number.isFinite(cur)) cur = 0;
+        if (!Number.isFinite(max) || max < 0) max = 0;
+        if (max <= 0) {
+            return (
+                `<div class="combat-mpbar combat-mpbar-empty">` +
+                `<span class="combat-hpbar-text">MP ${escapeHtml(cur)}</span>` +
+                `</div>`
+            );
         }
+        const pct = Math.max(0, Math.min(1, cur / max));
+        const width = Math.round(pct * 100);
+        return (
+            `<div class="combat-mpbar" role="progressbar">` +
+            `<div class="combat-mpbar-fill" style="width:${width}%"></div>` +
+            `<span class="combat-hpbar-text">${escapeHtml(cur)} / ${escapeHtml(max)}</span>` +
+            `</div>`
+        );
+    }
 
-        elements.opponentsList.innerHTML = '<h4>Combatants:</h4>';
-        currentBattle.opponents.forEach((opponent, index) => {
-            const el = document.createElement('div');
-            el.className = 'opponent-entry';
-            el.dataset.id = opponent.is_monster ? (opponent.monster_id || opponent.id) : opponent.id;
-            if (currentBattle.selectedTarget === opponent.id) el.classList.add('selected-target');
-            if (opponent.is_current_turn) el.classList.add('current-turn');
+    function combatantKey(c) {
+        if (!c) return null;
+        if (c.is_monster) return c.monster_id || c.id;
+        return c.id;
+    }
 
-            const turn = opponent.is_current_turn ? '→ ' : '';
-            const kind = opponent.is_monster ? ' (Monster)' : '';
-            el.innerHTML =
-                `<span class="opponent-name">${turn}${opponent.id}${kind}</span>` +
-                `<span class="opponent-hp">HP: ${opponent.hp}</span>`;
+    function displayName(c) {
+        if (!c) return 'Unknown';
+        return c.name || c.id || 'Unknown';
+    }
 
-            el.addEventListener('click', function () {
-                currentBattle.selectedTarget = opponent.id;
-                document.querySelectorAll('.opponent-entry').forEach(n => n.classList.remove('selected-target'));
-                this.classList.add('selected-target');
-                elements.opponentName.textContent = opponent.id;
-                elements.opponentHP.textContent = opponent.hp;
-                setOpponentPortrait(opponent);
+    function portraitUrl(c) {
+        if (!c) return null;
+        if (c.portrait) return c.portrait;
+        if (c.is_monster && c.type_id) {
+            return '/static/monsters/portraits/' + c.type_id + '.png';
+        }
+        return c.sprite || null;
+    }
+
+    function parseHpString(value) {
+        if (value == null) return null;
+        if (typeof value === 'number') {
+            return { hp: value, mhp: value };
+        }
+        const text = String(value);
+        const m = text.match(/^(\d+)\s*\/\s*(\d+)$/);
+        if (m) {
+            return { hp: Number(m[1]), mhp: Number(m[2]) };
+        }
+        const n = Number(text);
+        if (Number.isFinite(n)) {
+            return { hp: n, mhp: n };
+        }
+        return null;
+    }
+
+    function syncSelfFromCombatants() {
+        const viewer = currentBattle.viewerId;
+        if (!viewer || !currentBattle.combatants) return;
+        const me = currentBattle.combatants.find(
+            c => !c.is_monster && c.id === viewer
+        );
+        if (!me) return;
+        currentBattle.selfName = displayName(me);
+        currentBattle.selfLevel = me.level;
+        currentBattle.selfHp = me.hp;
+        currentBattle.selfMhp = me.mhp;
+        currentBattle.selfMp = me.mp;
+        currentBattle.selfMmp = me.mmp;
+    }
+
+    function renderSelfCard() {
+        if (!elements.selfCard) return;
+        const name = currentBattle.selfName
+            || currentBattle.viewerId
+            || (document.getElementById('player-id') || {}).value
+            || 'You';
+        const level = currentBattle.selfLevel != null ? currentBattle.selfLevel : '?';
+        const hp = currentBattle.selfHp != null ? currentBattle.selfHp : '?';
+        const mhp = currentBattle.selfMhp != null ? currentBattle.selfMhp : '?';
+        const mp = currentBattle.selfMp != null ? currentBattle.selfMp : 0;
+        const mmp = currentBattle.selfMmp != null ? currentBattle.selfMmp : 0;
+        const turn = (currentBattle.combatants || []).some(
+            c => !c.is_monster && c.id === currentBattle.viewerId && c.is_current_turn
+        );
+        const defending = (currentBattle.combatants || []).some(
+            c => !c.is_monster && c.id === currentBattle.viewerId && c.defending
+        );
+        elements.selfCard.className = 'combat-self' + (turn ? ' current-turn' : '');
+        elements.selfCard.innerHTML =
+            `<div class="combat-self-meta">` +
+            `<span class="combat-self-name">${escapeHtml(name)}</span>` +
+            `<span class="combat-level-badge">Lv ${escapeHtml(level)}</span>` +
+            (defending ? '<span class="combat-badge-defend">Defend</span>' : '') +
+            (turn ? '<span class="combat-badge-turn">Your turn</span>' : '') +
+            `</div>` +
+            hpBarHtml(hp, mhp) +
+            mpBarHtml(mp, mmp);
+    }
+
+    function inspectTarget(combatant, ev) {
+        if (ev) {
+            ev.preventDefault();
+            ev.stopPropagation();
+        }
+        if (!combatant) return;
+        const tid = combatant.is_monster
+            ? (combatant.monster_id || combatant.id)
+            : combatant.id;
+        if (typeof SocketHandler !== 'undefined' && SocketHandler.inspectCombatant) {
+            SocketHandler.inspectCombatant(tid);
+        }
+    }
+
+    function selectTarget(combatant) {
+        if (!combatant) return;
+        currentBattle.selectedTarget = combatant.id;
+        renderRoster();
+    }
+
+    function cardHtml(opponent) {
+        const name = displayName(opponent);
+        const level = opponent.level != null ? opponent.level : '?';
+        const turn = opponent.is_current_turn ? '→ ' : '';
+        const selected = currentBattle.selectedTarget === opponent.id;
+        const key = combatantKey(opponent);
+        const url = portraitUrl(opponent);
+        let classes = 'combat-card';
+        if (opponent.is_monster) classes += ' combat-card-enemy';
+        else classes += ' combat-card-player';
+        if (selected) classes += ' selected-target';
+        if (opponent.is_current_turn) classes += ' current-turn';
+        if (opponent.defending) classes += ' defending';
+
+        const portrait = url
+            ? `<button type="button" class="combat-card-portrait-btn" data-inspect="1" aria-label="Inspect ${escapeHtml(name)}">` +
+              `<img class="combat-card-portrait" src="${escapeHtml(url)}" alt="">` +
+              `<span class="combat-card-info" aria-hidden="true">i</span>` +
+              `</button>`
+            : `<button type="button" class="combat-card-portrait-btn combat-card-portrait-empty" data-inspect="1" aria-label="Inspect ${escapeHtml(name)}">` +
+              `<span class="combat-card-info" aria-hidden="true">i</span>` +
+              `</button>`;
+
+        return (
+            `<div class="${classes}" data-id="${escapeHtml(opponent.id)}" data-key="${escapeHtml(key || '')}" role="button" tabindex="0">` +
+            portrait +
+            `<div class="combat-card-body">` +
+            `<div class="combat-card-header">` +
+            `<span class="combat-card-name">${turn}${escapeHtml(name)}</span>` +
+            `<span class="combat-level-badge">Lv ${escapeHtml(level)}</span>` +
+            `</div>` +
+            hpBarHtml(opponent.hp, opponent.mhp) +
+            (opponent.defending ? '<span class="combat-badge-defend">Defend</span>' : '') +
+            `</div>` +
+            `</div>`
+        );
+    }
+
+    function bindRosterEvents() {
+        if (!elements.roster) return;
+        elements.roster.querySelectorAll('.combat-card').forEach(function (el) {
+            const id = el.getAttribute('data-id');
+            const opponent = currentBattle.opponents.find(o => o.id === id);
+            el.addEventListener('click', function (e) {
+                if (e.target && e.target.closest && e.target.closest('[data-inspect]')) {
+                    inspectTarget(opponent, e);
+                    return;
+                }
+                selectTarget(opponent);
             });
-            elements.opponentsList.appendChild(el);
+            el.addEventListener('keydown', function (e) {
+                if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    selectTarget(opponent);
+                }
+            });
         });
+    }
 
-        // Drop selection if that combatant left (e.g. eliminated); default to whoever remains
+    function renderRoster() {
+        if (!elements.roster) return;
+
+        // Drop selection if that combatant left; default to whoever remains
         const selectionValid = currentBattle.opponents.some(
             o => o.id === currentBattle.selectedTarget
         );
         if (!selectionValid) {
             currentBattle.selectedTarget = null;
         }
-
         if (!currentBattle.selectedTarget && currentBattle.opponents.length > 0) {
             currentBattle.selectedTarget = currentBattle.opponents[0].id;
-            const first = elements.opponentsList.querySelector('.opponent-entry');
-            if (first) first.classList.add('selected-target');
         }
 
-        const selected = currentBattle.opponents.find(o => o.id === currentBattle.selectedTarget);
-        if (selected) {
-            elements.opponentName.textContent = selected.id;
-            elements.opponentHP.textContent = selected.hp;
-            setOpponentPortrait(selected);
+        if (!currentBattle.opponents.length) {
+            elements.roster.innerHTML = '<div class="combat-roster-empty">No opponents</div>';
         } else {
-            setOpponentPortrait(null);
+            elements.roster.innerHTML = currentBattle.opponents.map(cardHtml).join('');
+            bindRosterEvents();
         }
+
+        const selected = currentBattle.opponents.find(
+            o => o.id === currentBattle.selectedTarget
+        );
+        if (selected && selected.is_monster && selected.type_id && typeof MonsterAssets !== 'undefined') {
+            MonsterAssets.ensureType(selected.type_id, null, selected.portrait || null);
+        }
+
+        renderSelfCard();
+    }
+
+    function ingestCombatants(list, viewerId) {
+        if (Array.isArray(list)) {
+            currentBattle.combatants = list;
+        }
+        if (viewerId) {
+            currentBattle.viewerId = viewerId;
+        }
+        if (!currentBattle.viewerId) {
+            const el = document.getElementById('player-id');
+            if (el && el.value) currentBattle.viewerId = el.value;
+        }
+        syncSelfFromCombatants();
+    }
+
+    function opponentsFromCombatants(list, viewerId) {
+        const me = viewerId || currentBattle.viewerId;
+        return (list || []).filter(c => {
+            if (c.is_monster) return true;
+            return c.id !== me;
+        });
     }
 
     function handleCombatStart(data) {
         Sound.warm();
         clearCombatLog();
         currentBattle.battleId = data.battle_id;
-        currentBattle.opponents = data.opponents;
-        elements.combatBox.style.display = 'block';
-        updateOpponentsList();
+        currentBattle.viewerId = data.viewer_id || currentBattle.viewerId;
+        ingestCombatants(data.combatants, data.viewer_id);
+        currentBattle.opponents = data.opponents || opponentsFromCombatants(
+            data.combatants, currentBattle.viewerId
+        );
+        currentBattle.selectedTarget = null;
+        showOverlay();
+        renderRoster();
         updateButtonStates(data.your_turn);
         const startMsg = data.your_turn
             ? "Combat has begun! It's your turn to act!"
@@ -219,90 +464,132 @@ const Combat = (function () {
         if (data.turn_timeout) {
             startCountdown(data.turn_timeout, data.your_turn, data.active_player);
         } else {
-            elements.combatMessage.innerHTML = startMsg;
+            setStatus(startMsg);
         }
     }
 
     function handleTargetRequest(data) {
-        currentBattle.opponents = data.targets;
-        updateOpponentsList();
-        elements.combatMessage.innerHTML = 'Select a target for your action.';
+        currentBattle.opponents = data.targets || [];
+        renderRoster();
+        setStatus('Select a target for your action.');
         appendCombatLog('Select a target for your action.');
     }
 
     function handleCombatAction(data) {
-        // FX first — same flags for attacker and defender keep them in sync
         if (data.play_hit_sound) Sound.play('hit');
         if (data.shake_combat) shakeCombatWindow();
 
         updateButtonStates(data.your_turn);
         if (data.message) {
-            elements.combatMessage.innerHTML = data.message;
+            setStatus(data.message);
             appendCombatLog(data.message);
         }
 
-        elements.opponentThinking.style.display = 'none';
+        if (elements.opponentThinking) {
+            elements.opponentThinking.style.display = 'none';
+        }
 
         if (data.combatants) {
-            const me = document.getElementById('player-id').value;
-            currentBattle.opponents = data.combatants.filter(c => c.id !== me);
-            updateOpponentsList();
+            const me = currentBattle.viewerId
+                || (document.getElementById('player-id') || {}).value;
+            ingestCombatants(data.combatants, me);
+            currentBattle.opponents = opponentsFromCombatants(data.combatants, me);
+            renderRoster();
         }
         if (data.your_hp) {
+            const parsed = parseHpString(data.your_hp);
+            if (parsed) {
+                currentBattle.selfHp = parsed.hp;
+                currentBattle.selfMhp = parsed.mhp;
+                renderSelfCard();
+            }
             const hp = document.getElementById('player-hp');
             if (hp) hp.textContent = data.your_hp;
         }
     }
 
     function handleMonsterDeath(data) {
-        elements.combatMessage.innerHTML = data.message;
-        appendCombatLog(data.message);
+        if (data.message) {
+            setStatus(data.message);
+            appendCombatLog(data.message);
+        }
         currentBattle.opponents = currentBattle.opponents.filter(
-            o => !(o.is_monster && o.id === data.monster_id)
+            o => !(o.is_monster && (
+                o.id === data.monster_id
+                || o.monster_id === data.monster_id
+                || o.type_id === data.monster_id
+            ))
         );
-        updateOpponentsList();
+        renderRoster();
     }
 
     function handlePlayerDeath(data) {
-        elements.combatMessage.innerHTML = data.message;
-        appendCombatLog(data.message);
+        if (data.message) {
+            setStatus(data.message);
+            appendCombatLog(data.message);
+        }
         currentBattle.opponents = currentBattle.opponents.filter(
             o => o.is_monster || o.id !== data.player_id
         );
-        updateOpponentsList();
+        renderRoster();
     }
 
     function handleCombatEnd(data) {
         stopCountdown();
         if (data.victory) Sound.play('victory');
         if (data.message) appendCombatLog(data.message);
-        elements.combatBox.style.display = 'none';
-        currentBattle = { battleId: null, opponents: [], selectedTarget: null };
-        setOpponentPortrait(null);
+        hideOverlay();
+        currentBattle = {
+            battleId: null,
+            opponents: [],
+            combatants: [],
+            selectedTarget: null,
+            viewerId: currentBattle.viewerId,
+            selfHp: null,
+            selfMhp: null,
+            selfMp: null,
+            selfMmp: null,
+            selfLevel: null,
+            selfName: null,
+        };
         clearCombatLog();
+        if (elements.roster) elements.roster.innerHTML = '';
+        if (elements.selfCard) elements.selfCard.innerHTML = '';
+        if (elements.status) elements.status.innerHTML = '';
     }
 
     function handleTurnNotification(data) {
         updateButtonStates(data.your_turn);
         if (data.message && data.message.indexOf('forfeited') !== -1) {
             stopCountdown();
-            elements.combatMessage.innerHTML = data.message;
+            setStatus(data.message);
             appendCombatLog(data.message);
         } else if (data.turn_timeout) {
             startCountdown(data.turn_timeout, data.your_turn, data.active_player);
         } else if (data.message) {
             stopCountdown();
-            elements.combatMessage.innerHTML = data.message;
+            setStatus(data.message);
             appendCombatLog(data.message);
-            elements.opponentThinking.style.display = 'none';
+            if (elements.opponentThinking) {
+                elements.opponentThinking.style.display = 'none';
+            }
         }
 
-        if (data.active_player && currentBattle.opponents) {
+        if (data.combatants) {
+            ingestCombatants(data.combatants, currentBattle.viewerId);
+            currentBattle.opponents = opponentsFromCombatants(
+                data.combatants, currentBattle.viewerId
+            );
+        } else if (data.active_player && currentBattle.opponents) {
             currentBattle.opponents.forEach(o => {
                 o.is_current_turn = (o.id === data.active_player);
             });
-            updateOpponentsList();
+            (currentBattle.combatants || []).forEach(c => {
+                c.is_current_turn = (c.id === data.active_player)
+                    || (c.monster_id && c.monster_id === data.active_player);
+            });
         }
+        renderRoster();
     }
 
     function processCombatUpdate(data) {
@@ -337,5 +624,14 @@ const Combat = (function () {
         }
     }
 
-    return { processCombatUpdate, sendAction };
+    function bindScreenGuards() {
+        if (!elements.screen) return;
+        elements.screen.addEventListener('pointerdown', function (e) {
+            e.stopPropagation();
+        });
+    }
+
+    bindScreenGuards();
+
+    return { processCombatUpdate, sendAction, isOpen };
 })();

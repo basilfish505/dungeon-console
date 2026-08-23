@@ -176,6 +176,9 @@ const MapInspect = (function () {
         if (typeof InventoryUI !== 'undefined' && InventoryUI.isOpen()) {
             return true;
         }
+        if (typeof Combat !== 'undefined' && Combat.isOpen && Combat.isOpen()) {
+            return true;
+        }
         const tile = clientToWorldTile(clientX, clientY);
         if (!tile) {
             return false;

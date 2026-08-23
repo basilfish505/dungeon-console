@@ -220,6 +220,13 @@ const SocketHandler = (function () {
         socket.emit('inspect_map', { y: y | 0, x: x | 0 });
     }
 
+    function inspectCombatant(targetId) {
+        if (!targetId) {
+            return;
+        }
+        socket.emit('inspect_combatant', { target_id: targetId });
+    }
+
     function buyItem(itemId) {
         if (!itemId) {
             return;
@@ -235,6 +242,7 @@ const SocketHandler = (function () {
         setViewport,
         panCamera,
         inspectMap,
+        inspectCombatant,
         buyItem,
         tryResumeSession,
         getJoinedPlayerId,

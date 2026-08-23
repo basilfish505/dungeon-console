@@ -12,7 +12,7 @@ const UI = (function() {
         messageLog: document.getElementById('message-log'),
         playerProperties: document.getElementById('player-properties'),
         gameInfo: document.getElementById('game-info').querySelector('.properties-grid'),
-        combatBox: document.getElementById('combat-box')
+        combatBox: document.getElementById('combat-overlay')
     };
 
     let mapSystemReady = false;
@@ -27,6 +27,8 @@ const UI = (function() {
             elements.mobileControls.style.display = 'none';
         }
         if (elements.combatBox) {
+            elements.combatBox.hidden = true;
+            elements.combatBox.setAttribute('aria-hidden', 'true');
             elements.combatBox.style.display = 'none';
         }
     }
@@ -178,6 +180,8 @@ const UI = (function() {
 
     function showLoginScreen() {
         if (elements.combatBox) {
+            elements.combatBox.hidden = true;
+            elements.combatBox.setAttribute('aria-hidden', 'true');
             elements.combatBox.style.display = 'none';
         }
         if (typeof MapRenderer !== 'undefined' && MapRenderer.clearCanvas) {
@@ -197,7 +201,11 @@ const UI = (function() {
 
     // Handle player death
     function handlePlayerDeath() {
-        elements.combatBox.style.display = 'none';
+        if (elements.combatBox) {
+            elements.combatBox.hidden = true;
+            elements.combatBox.setAttribute('aria-hidden', 'true');
+            elements.combatBox.style.display = 'none';
+        }
         if (typeof MapRenderer !== 'undefined' && MapRenderer.clearCanvas) {
             MapRenderer.clearCanvas();
         } else if (elements.mapDisplay) {
