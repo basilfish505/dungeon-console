@@ -46,7 +46,7 @@ class Player:
         self.elo = 1000
         self.pqg = 10
         # HP/MP properties
-        self.mhp = random.randint(10, 20)
+        self.mhp = random.randint(300, 500)
         self.hp = self.mhp
         self.mmp = 0
         self.mp = 0

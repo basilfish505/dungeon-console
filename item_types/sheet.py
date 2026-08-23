@@ -59,11 +59,11 @@ TEST_ITEMS = [
         'name': 'Torch',
         'description': (
             'A wooden torch. Light it in the dungeon for steady light '
-            '(sight 3). Burns for about 1000 turns.'
+            '(sight 20). Burns for about 1000 turns.'
         ),
         'price_pqg': 15,
         'image': 'torch.png',
-        'light_sight': 3,
+        'light_sight': 20,
         'light_ticks': 1000,
     },
     {

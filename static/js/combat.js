@@ -16,6 +16,7 @@ const Combat = (function () {
         spellBtn: document.getElementById('spell-btn'),
         itemBtn: document.getElementById('item-btn'),
         runBtn: document.getElementById('run-btn'),
+        mapPeekBtn: document.getElementById('map-peek-btn'),
         mobileControls: document.getElementById('mobile-controls'),
     };
 
@@ -39,6 +40,72 @@ const Combat = (function () {
     let countdownActivePlayer = null;
     let open = false;
     let mobileWasVisible = false;
+    let mapPeekActive = false;
+
+    function endMapPeek() {
+        if (!mapPeekActive) {
+            return;
+        }
+        mapPeekActive = false;
+        if (elements.overlay) {
+            elements.overlay.classList.remove('combat-map-peek');
+        }
+        if (elements.mapPeekBtn) {
+            elements.mapPeekBtn.classList.remove('active');
+        }
+    }
+
+    function refreshMapDuringPeek() {
+        if (typeof MapView !== 'undefined' && MapView.getState) {
+            const st = MapView.getState();
+            if (typeof SocketHandler !== 'undefined' && SocketHandler.setViewport) {
+                SocketHandler.setViewport(st.visibleRows, st.visibleCols);
+            }
+        }
+        if (typeof UI !== 'undefined' && UI.requestMapUpdate) {
+            UI.requestMapUpdate('combat-map-peek');
+        }
+        if (typeof MapView !== 'undefined' && MapView.paint) {
+            MapView.paint();
+        }
+    }
+
+    function startMapPeek(e) {
+        if (!open || mapPeekActive || !elements.overlay) {
+            return;
+        }
+        if (e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+        mapPeekActive = true;
+        elements.overlay.classList.add('combat-map-peek');
+        if (elements.mapPeekBtn) {
+            elements.mapPeekBtn.classList.add('active');
+            if (e && elements.mapPeekBtn.setPointerCapture && e.pointerId != null) {
+                try {
+                    elements.mapPeekBtn.setPointerCapture(e.pointerId);
+                } catch (_err) {
+                    // Ignore capture failures on unsupported browsers.
+                }
+            }
+        }
+        refreshMapDuringPeek();
+    }
+
+    function bindMapPeek() {
+        const btn = elements.mapPeekBtn;
+        if (!btn) {
+            return;
+        }
+        btn.addEventListener('pointerdown', startMapPeek);
+        btn.addEventListener('pointerup', endMapPeek);
+        btn.addEventListener('pointercancel', endMapPeek);
+        btn.addEventListener('lostpointercapture', endMapPeek);
+        btn.addEventListener('contextmenu', function (e) {
+            e.preventDefault();
+        });
+    }
 
     function stripHtml(html) {
         const tmp = document.createElement('div');
@@ -71,6 +138,7 @@ const Combat = (function () {
     }
 
     function hideOverlay() {
+        endMapPeek();
         if (!elements.overlay) return;
         elements.overlay.hidden = true;
         elements.overlay.setAttribute('aria-hidden', 'true');
@@ -632,6 +700,7 @@ const Combat = (function () {
     }
 
     bindScreenGuards();
+    bindMapPeek();
 
     return { processCombatUpdate, sendAction, isOpen };
 })();

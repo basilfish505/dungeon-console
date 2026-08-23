@@ -333,8 +333,17 @@ const MapRenderer = (function () {
                     if (TileAssets.isTerrainOnly(ch) && drewTerrain) {
                         continue;
                     }
-                    if (ch === '&' && overlayActors) {
-                        continue;
+                    if (ch === '&' && overlayActors && ent && ent.kind === 'monster') {
+                        let skipForOverlay = true;
+                        if (typeof MonsterAssets !== 'undefined') {
+                            MonsterAssets.ensureType(ent.type_id, ent.sprite, null);
+                            if (!MonsterAssets.getSprite(ent.type_id, ent.sprite)) {
+                                skipForOverlay = false;
+                            }
+                        }
+                        if (skipForOverlay) {
+                            continue;
+                        }
                     }
                     if (ch === '&') {
                         if (ent && ent.kind === 'monster') {
@@ -346,7 +355,7 @@ const MapRenderer = (function () {
                             continue;
                         }
                     }
-                    if (ch === '@' && overlayActors) {
+                    if (ch === '@' && overlayActors && ent && ent.kind === 'player') {
                         continue;
                     }
                 }

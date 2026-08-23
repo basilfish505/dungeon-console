@@ -27,7 +27,7 @@ class ItemSheetLightTests(unittest.TestCase):
         self.assertIsNotNone(torch)
         self.assertEqual(candle.light_sight, 1.5)
         self.assertEqual(candle.light_ticks, 200)
-        self.assertEqual(torch.light_sight, 3.0)
+        self.assertEqual(torch.light_sight, 20.0)
         self.assertEqual(torch.light_ticks, 1000)
 
 
@@ -54,7 +54,7 @@ class LightUseTests(unittest.TestCase):
         inst = add_item_to_inventory(p, 'torch')
         result = light_item(p, inst.instance_id)
         self.assertTrue(result['ok'])
-        self.assertEqual(p.sight_range, 3.0)
+        self.assertEqual(p.sight_range, 20.0)
 
     def test_town_use_still_lights_torch_without_changing_fov(self):
         p = Player('hero', [5, 5])
@@ -63,7 +63,7 @@ class LightUseTests(unittest.TestCase):
         result = light_item(p, inst.instance_id)
         self.assertTrue(result['ok'])
         self.assertTrue(inst.extras.get('lit'))
-        self.assertEqual(p.sight_range, 3.0)
+        self.assertEqual(p.sight_range, 20.0)
         self.assertEqual(p.lit_light_instance_id, inst.instance_id)
         # Town uses fixed full visibility regardless of lit torch.
         self.assertEqual(p.effective_sight_range(), 30)
@@ -80,7 +80,7 @@ class LightUseTests(unittest.TestCase):
         light_item(p, torch.instance_id)
         self.assertFalse(candle.extras.get('lit'))
         self.assertTrue(torch.extras.get('lit'))
-        self.assertEqual(p.sight_range, 3.0)
+        self.assertEqual(p.sight_range, 20.0)
         self.assertEqual(candle.extras.get('light_remaining'), 200)
 
 

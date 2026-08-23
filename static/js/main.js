@@ -18,6 +18,9 @@ const Game = (function () {
         });
 
         document.querySelectorAll('#combat-controls button').forEach(btn => {
+            if (btn.id === 'map-peek-btn') {
+                return;
+            }
             btn.addEventListener('click', function () {
                 Combat.sendAction(this.id.replace('-btn', ''));
             });

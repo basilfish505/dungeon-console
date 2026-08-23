@@ -220,13 +220,13 @@ const MapView = (function () {
         state.cameraX = Math.round(anchor.worldX - anchor.localX / tw);
     }
 
-    function emitIfNeeded(zoomFocused) {
+    function emitIfNeeded(zoomFocused, force) {
         if (!emitViewport || !state.ready) {
             return;
         }
         const h = state.visibleRows;
         const w = state.visibleCols;
-        if (!zoomFocused && h === lastEmitted.h && w === lastEmitted.w) {
+        if (!force && !zoomFocused && h === lastEmitted.h && w === lastEmitted.w) {
             return;
         }
         lastEmitted = { h: h, w: w };
@@ -266,7 +266,10 @@ const MapView = (function () {
             updateCameraForPlayer();
         }
 
-        emitIfNeeded(zoomFocused);
+        const forceViewport = reasons.some(function (r) {
+            return r === 'level-change' || r === 'combat-map-peek';
+        });
+        emitIfNeeded(zoomFocused, forceViewport);
         if (initialViewportSynced || !state.lastMap) {
             applyRender();
         }
@@ -400,6 +403,7 @@ const MapView = (function () {
             return;
         }
         applySnapshot(held, { snapPlayer: true });
+        requestMapUpdate('level-change');
         applyRender();
     }
 
@@ -452,6 +456,10 @@ const MapView = (function () {
         const interiorChanged = state.interiorId !== newInterior;
 
         applySnapshot(data, { snapPlayer: !!levelChanged || interiorChanged });
+
+        if (levelChanged || interiorChanged) {
+            requestMapUpdate('level-change');
+        }
 
         if (!initialViewportSynced) {
             const matched = data.viewport &&

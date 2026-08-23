@@ -84,6 +84,21 @@ def chebyshev(a, b):
     return max(abs(a[0] - b[0]), abs(a[1] - b[1]))
 
 
+def _is_aggressive(monster):
+    """Aggression above neutral (5) — willing to engage or join a fight."""
+    return float(getattr(monster, 'aggression', 0) or 0) > 5.0
+
+
+def _try_join_player_combat(combat_system, player_id, player, monster):
+    """Start or join combat with player_id if rules allow."""
+    if combat_system is None or monster.in_combat:
+        return False
+    if getattr(player, 'in_combat', False) and not _is_aggressive(monster):
+        return False
+    combat_system.start_combat(player_id, monster)
+    return True
+
+
 # --- Walkability ------------------------------------------------------------
 
 def _in_bounds(game_map, y, x):
@@ -348,8 +363,7 @@ def process_monster_opportunity(game_state, level_number, monster, combat_system
     # Combat if player on destination
     hit_pid, hit_player = player_at_tile(players, dest[0], dest[1])
     if hit_pid is not None:
-        if combat_system is not None and not monster.in_combat:
-            combat_system.start_combat(hit_pid, monster)
+        if _try_join_player_combat(combat_system, hit_pid, hit_player, monster):
             changed = True
             monster.last_fail_reason = 'initiated_combat'
         else:
@@ -360,6 +374,15 @@ def process_monster_opportunity(game_state, level_number, monster, combat_system
     # Execute move
     if game_state.move_monster(level_number, monster, dest):
         changed = True
+        # Aggressive monsters adjacent to an ongoing fight may pile in.
+        if combat_system is not None and _is_aggressive(monster) and not monster.in_combat:
+            for pid, p in players.items():
+                if not getattr(p, 'in_combat', False):
+                    continue
+                if chebyshev(monster.pos, p.pos) == 1:
+                    if _try_join_player_combat(combat_system, pid, p, monster):
+                        changed = True
+                    break
     else:
         monster.last_fail_reason = 'move_failed'
 

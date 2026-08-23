@@ -588,7 +588,7 @@ body {
 .combat-controls,
 #combat-controls {
     display: grid;
-    grid-template-columns: repeat(5, minmax(0, 1fr));
+    grid-template-columns: repeat(6, minmax(0, 1fr));
     gap: 8px;
     margin: 0;
     flex-shrink: 0;
@@ -622,6 +622,63 @@ body {
     cursor: not-allowed;
     opacity: 0.55;
     background: #050a08;
+}
+
+.combat-map-peek-btn.active {
+    background: #063820;
+    border-color: #0f8;
+    box-shadow: 0 0 12px rgba(0, 255, 120, 0.35);
+    color: #bff;
+}
+
+.combat-overlay.combat-map-peek {
+    background: transparent;
+    pointer-events: none;
+}
+
+.combat-overlay.combat-map-peek .combat-screen {
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    width: 100%;
+    max-width: none;
+    height: 100%;
+    max-height: none;
+    padding: 0;
+    pointer-events: none;
+}
+
+.combat-overlay.combat-map-peek .combat-roster,
+.combat-overlay.combat-map-peek .combat-self,
+.combat-overlay.combat-map-peek .combat-message-container {
+    display: none !important;
+}
+
+.combat-overlay.combat-map-peek .combat-statusbar {
+    position: fixed;
+    top: max(8px, env(safe-area-inset-top, 0px));
+    left: max(8px, env(safe-area-inset-left, 0px));
+    right: max(8px, env(safe-area-inset-right, 0px));
+    z-index: 1560;
+    pointer-events: none;
+}
+
+.combat-overlay.combat-map-peek .combat-controls,
+.combat-overlay.combat-map-peek #combat-controls {
+    position: fixed;
+    left: max(8px, env(safe-area-inset-left, 0px));
+    right: max(8px, env(safe-area-inset-right, 0px));
+    bottom: max(8px, env(safe-area-inset-bottom, 0px));
+    z-index: 1560;
+    grid-template-columns: 1fr;
+    max-width: 220px;
+    margin: 0 auto;
+    pointer-events: auto;
+}
+
+.combat-overlay.combat-map-peek .combat-controls button:not(.combat-map-peek-btn),
+.combat-overlay.combat-map-peek #combat-controls button:not(.combat-map-peek-btn) {
+    display: none;
 }
 
 @media (max-width: 420px) {

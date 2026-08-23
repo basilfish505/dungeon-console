@@ -13,7 +13,7 @@ from visibility import GRASS, IMPASSABLE_TERRAIN, MOUNTAIN, OPEN_GROUND, TREE
 # Constants
 MAP_SIZE = 20  # Viewport / simple-dungeon footprint
 TOWN_MAP_SIZE = 28  # Top-level yard (three shops, road, stairs)
-MONSTER_PROBABILITY = 0.03
+MONSTER_PROBABILITY = 0.15
 TREE_SPAWN_RATE = 0.04
 # Keep trees off these tiles and their 8-neighbors (doors, road, stairs).
 TREE_CLEAR_GLYPHS = frozenset({'+', ',', '↓', '↑'})

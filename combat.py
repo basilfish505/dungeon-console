@@ -257,10 +257,10 @@ class CombatSystem:
         self._emit('combat_update', combat_info, room=player_id)
     
     def process_action(self, player_id, action, target_id=None):
-        """Process a combat action from a player"""
+        """Process a combat action from a player. Returns True if a turn was consumed."""
         # Validate the action can be taken
         if not player_id or player_id not in self.game_state.active_combats:
-            return
+            return False
         
         battle_id = self.game_state.active_combats[player_id]
         battle = self.battles[battle_id]
@@ -268,7 +268,7 @@ class CombatSystem:
         # Check if it's this player's turn
         current_turn_id = battle['turn_order'][battle['current_turn_index']]
         if current_turn_id != player_id:
-            return
+            return False
         
         # If no target specified, try to infer one
         if action == 'attack' and not target_id:
@@ -276,7 +276,7 @@ class CombatSystem:
             if not target_id:
                 # No valid target could be inferred
                 self._send_target_request(player_id, battle)
-                return
+                return False
         
         # Process the action based on type
         action_processed = False
@@ -291,6 +291,7 @@ class CombatSystem:
         if action_processed and battle['status'] == 'active':
             self._cancel_turn_timer(battle)
             self._advance_turn(battle)
+        return action_processed
 
     def process_item_use(self, player_id, instance_id):
         """Use an inventory item during combat (server-authoritative)."""

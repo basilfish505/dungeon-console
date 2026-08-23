@@ -1125,9 +1125,21 @@ def handle_pan_camera(data):
 @socketio.on('combat_action')
 def handle_combat_action(data):
     player_id = session.get('player_id')
+    if not player_id or player_id not in game_state.players:
+        return
     action = data['action']
     target_id = data.get('target_id')  # Get the target if provided
-    combat_system.process_action(player_id, action, target_id)
+    processed = combat_system.process_action(player_id, action, target_id)
+    if not processed:
+        return
+
+    player = game_state.players[player_id]
+    if not getattr(player, 'interior_id', None):
+        register_player_turn_action(
+            game_state, player_id, combat_system, socketio
+        )
+    for pid in list(game_state.active_players.keys()):
+        emit('game_state', game_state.get_game_state(pid), room=pid)
 
 
 @socketio.on('inventory_action')
@@ -1153,6 +1165,12 @@ def handle_inventory_action(data):
     if action == 'use':
         if in_combat:
             result = combat_system.process_item_use(player_id, instance_id)
+            if result.get('ok') and not getattr(player, 'interior_id', None):
+                register_player_turn_action(
+                    game_state, player_id, combat_system, socketio
+                )
+                for pid in list(game_state.active_players.keys()):
+                    emit('game_state', game_state.get_game_state(pid), room=pid)
         else:
             result = use_item_service(
                 player, instance_id, context='exploration', game_state=game_state

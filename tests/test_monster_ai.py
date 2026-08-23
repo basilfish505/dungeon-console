@@ -3,6 +3,7 @@
 import random
 import time
 import unittest
+from unittest.mock import patch
 from collections import Counter
 
 from monster import Monster, EIGHT_DIRECTIONS
@@ -308,3 +309,82 @@ class CombatEnterTests(unittest.TestCase):
         self.assertEqual(combat.calls[0][0], 'hero')
         self.assertEqual(mon.last_fail_reason, 'initiated_combat')
 
+    def test_passive_monster_wont_join_existing_fight_on_tile(self):
+        class Combat:
+            def __init__(self):
+                self.calls = []
+
+            def start_combat(self, player_id, monster):
+                self.calls.append((player_id, monster.id))
+
+        class FakeGS:
+            def __init__(self, mon):
+                self.mon = mon
+
+            def ensure_level(self, n):
+                m = [['.' for _ in range(5)] for _ in range(5)]
+                for i in range(5):
+                    m[0][i] = m[4][i] = m[i][0] = m[i][4] = '#'
+                return m, {(2, 2): self.mon}
+
+            def players_on_level(self, n):
+                return {'hero': type('P', (), {
+                    'pos': [2, 3], 'dungeon_level': 1, 'in_combat': True,
+                })()}
+
+            def move_monster(self, level, mon, dest):
+                if list(dest) == [2, 3]:
+                    raise AssertionError('should not move onto player')
+                mon.pos = list(dest)
+                return True
+
+        mon = Monster.from_type(
+            'troll', [2, 2], monster_id='g',
+            speed=5.0, activeness=10.0, aggression=5.0, sight_range=5,
+        )
+        gs = FakeGS(mon)
+        combat = Combat()
+        with patch('monster_ai.sample_aggression_intention', return_value=Intention.TOWARD_TARGET):
+            process_monster_opportunity(
+                gs, 1, mon, combat, now=time.monotonic(), rng=random.Random(0)
+            )
+        self.assertEqual(combat.calls, [])
+        self.assertEqual(mon.last_fail_reason, 'player_tile_no_combat')
+
+    def test_aggressive_monster_joins_adjacent_fight_after_move(self):
+        class Combat:
+            def __init__(self):
+                self.calls = []
+
+            def start_combat(self, player_id, monster):
+                self.calls.append((player_id, monster.id))
+
+        class FakeGS:
+            def __init__(self, mon):
+                self.mon = mon
+
+            def ensure_level(self, n):
+                m = [['.' for _ in range(7)] for _ in range(7)]
+                for i in range(7):
+                    m[0][i] = m[6][i] = m[i][0] = m[i][6] = '#'
+                return m, {(3, 3): self.mon}
+
+            def players_on_level(self, n):
+                return {'hero': type('P', (), {
+                    'pos': [3, 5], 'dungeon_level': 1, 'in_combat': True,
+                })()}
+
+            def move_monster(self, level, mon, dest):
+                mon.pos = list(dest)
+                return True
+
+        mon = Monster.from_type(
+            'troll', [3, 3], monster_id='g',
+            speed=5.0, activeness=0.0, aggression=10.0, sight_range=6,
+        )
+        gs = FakeGS(mon)
+        combat = Combat()
+        process_monster_opportunity(
+            gs, 1, mon, combat, now=time.monotonic(), rng=random.Random(1)
+        )
+        self.assertEqual(combat.calls, [('hero', 'g')])
