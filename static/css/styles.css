@@ -41,8 +41,8 @@ body {
 
 .game-screen {
     display: grid;
-    /* Map row is auto so square aspect-ratio is not stretched by 1fr */
-    grid-template-rows: auto auto auto minmax(0, 1fr);
+    /* Map takes leftover space; stats size to content and bound the map from below */
+    grid-template-rows: auto auto minmax(0, 1fr) auto;
     width: 100%;
     height: 100dvh;
     max-height: 100dvh;
@@ -78,16 +78,20 @@ body {
     white-space: pre-wrap;
 }
 
+/* Landscape phones: trade log lines for map size, or the map is squeezed to nothing. */
+@media (max-height: 520px) {
+    #message-log {
+        height: calc(1.25em * 3 + 8px);
+        max-height: calc(1.25em * 3 + 8px);
+    }
+}
+
 .map-pane {
-    /* Square map window: height matches width, capped for phone layout */
-    width: min(100%, 52dvh);
-    max-width: 100%;
-    aspect-ratio: 1 / 1;
-    height: auto;
-    margin-left: auto;
-    margin-right: auto;
-    justify-self: center;
+    /* Rectangular map: fills the grid cell edge-to-edge on every device */
+    width: 100%;
+    height: 100%;
     min-height: 0;
+    min-width: 0;
     overflow: hidden;
     position: relative;
     touch-action: none;
@@ -157,14 +161,21 @@ body {
 .mobile-controls {
     position: fixed;
     right: max(10px, env(safe-area-inset-right, 0px));
-    /* Sit at the bottom of the screen so the 3×3 pad does not cover the map */
+    /* Sits over the stats pane; on short screens it clips the map's bottom-right corner */
     bottom: max(10px, env(safe-area-inset-bottom, 0px));
     z-index: 1500;
     display: grid;
-    grid-template-columns: repeat(3, 56px);
-    grid-template-rows: repeat(3, 56px);
+    grid-template-columns: repeat(3, var(--pad-btn, 56px));
+    grid-template-rows: repeat(3, var(--pad-btn, 56px));
     gap: 6px;
     pointer-events: auto;
+}
+
+/* Shorter screens: trim the pad so it overlaps less of the full-width map */
+@media (max-height: 720px) {
+    .mobile-controls {
+        --pad-btn: 48px;
+    }
 }
 
 .mobile-btn {
@@ -1138,8 +1149,83 @@ body {
     background: #110800;
 }
 
+/* Wide screens: map on the left, message log + stats in a right sidebar */
 @media (min-width: 900px) {
     .game-screen {
-        max-width: 720px;
+        grid-template-columns: minmax(0, 1fr) minmax(260px, 320px);
+        grid-template-rows: auto auto minmax(0, 1fr);
+        max-width: none;
+    }
+
+    .game-header {
+        grid-column: 1 / -1;
+    }
+
+    .message-pane {
+        grid-column: 2;
+        grid-row: 2;
+        border-bottom: 1px solid #003300;
+        border-left: 1px solid #003300;
+    }
+
+    .map-pane {
+        grid-column: 1;
+        grid-row: 2 / 4;
+        border-bottom: none;
+        border-right: 1px solid #003300;
+    }
+
+    .player-info-pane {
+        grid-column: 2;
+        grid-row: 3;
+        max-height: none;
+        /* Arrow pad is fixed bottom-right and lands in this sidebar */
+        padding-right: 10px;
+        padding-bottom: calc(200px + env(safe-area-inset-bottom, 0px));
+        border-left: 1px solid #003300;
+        overflow-y: auto;
+    }
+}
+
+/* Landscape phones: same sidebar so the map keeps legible tile size */
+@media (orientation: landscape) and (max-height: 520px) {
+    .game-screen {
+        grid-template-columns: minmax(0, 1fr) minmax(200px, 280px);
+        grid-template-rows: auto auto minmax(0, 1fr);
+        max-width: none;
+    }
+
+    .game-header {
+        grid-column: 1 / -1;
+        font-size: clamp(1rem, 4vw, 1.35rem);
+        padding: 2px 6px;
+    }
+
+    .message-pane {
+        grid-column: 2;
+        grid-row: 2;
+        border-bottom: 1px solid #003300;
+        border-left: 1px solid #003300;
+    }
+
+    .map-pane {
+        grid-column: 1;
+        grid-row: 2 / 4;
+        border-bottom: none;
+        border-right: 1px solid #003300;
+    }
+
+    .player-info-pane {
+        grid-column: 2;
+        grid-row: 3;
+        max-height: none;
+        padding-right: 10px;
+        padding-bottom: calc(160px + env(safe-area-inset-bottom, 0px));
+        border-left: 1px solid #003300;
+        overflow-y: auto;
+    }
+
+    .mobile-controls {
+        --pad-btn: 44px;
     }
 }

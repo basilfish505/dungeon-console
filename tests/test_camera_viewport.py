@@ -21,16 +21,17 @@ class ClampViewportTests(unittest.TestCase):
     def test_clamp_within_bounds_square(self):
         self.assertEqual(clamp_viewport_size(20, 20), (20, 20))
 
-    def test_clamp_normalizes_to_square(self):
-        # Non-square requests collapse to min(vh, vw)
-        self.assertEqual(clamp_viewport_size(20, 30), (20, 20))
-        self.assertEqual(clamp_viewport_size(6, 10), (6, 6))
+    def test_clamp_allows_rectangular(self):
+        self.assertEqual(clamp_viewport_size(20, 30), (20, 30))
+        self.assertEqual(clamp_viewport_size(6, 10), (6, 10))
+        self.assertEqual(clamp_viewport_size(40, 20), (40, 20))
 
     def test_clamp_raises_floor(self):
         self.assertEqual(clamp_viewport_size(2, 3), (4, 4))
 
     def test_clamp_caps_ceiling(self):
-        self.assertEqual(clamp_viewport_size(200, 99), (80, 80))
+        self.assertEqual(clamp_viewport_size(200, 99), (120, 99))
+        self.assertEqual(clamp_viewport_size(200, 200), (120, 120))
 
     def test_clamp_invalid_falls_back(self):
         self.assertEqual(clamp_viewport_size('x', None), (20, 20))
@@ -116,6 +117,20 @@ class CameraMarginTests(unittest.TestCase):
         cam = update_camera((0, 0), (1, 5), 30, 30, vh=20, vw=20)
         sy = 1 - cam[0]
         self.assertGreaterEqual(sy, EDGE_MARGIN)
+
+    def test_rectangular_uses_per_axis_margins(self):
+        # vh=10 → my=2; vw=20 → mx=4. Player near left edge of a wide viewport scrolls X only.
+        cam = update_camera((0, 5), (5, 6), 40, 60, vh=10, vw=20)
+        # sx = 6-5 = 1 < mx(4) → cam_x = 6-4 = 2
+        self.assertEqual(cam[1], 2)
+        # sy = 5-0 = 5; my=2; 5 is not < 2 and not > 10-1-2=7 → cam_y stays 0
+        self.assertEqual(cam[0], 0)
+        # Tall viewport: margin on Y is larger than on X when vh > vw at same formula
+        cam2 = update_camera((5, 0), (6, 5), 60, 40, vh=20, vw=10)
+        # sy = 6-5 = 1 < my(4) → cam_y = 6-4 = 2
+        self.assertEqual(cam2[0], 2)
+        # sx = 5-0 = 5; mx=2; 5 is not < 2 and not > 10-1-2=7 → cam_x stays 0
+        self.assertEqual(cam2[1], 0)
 
 
 class PanCameraTests(unittest.TestCase):

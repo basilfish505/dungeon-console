@@ -8,14 +8,14 @@ EDGE_MARGIN = 4
 DEFAULT_VIEW_SPAN = 20
 
 # Adaptive viewport bounds (client may request sizes within this range).
-# Clients send square viewports (vh === vw = N for N×N zoom). Non-square
-# requests are collapsed to min(vh, vw) so follow margin stays uniform.
+# Clients send rectangular viewports; each axis is clamped independently.
+# Zoom is "N tiles across the shorter axis"; the longer axis may show more.
 MIN_VIEWPORT = 4
-MAX_VIEWPORT = 80
+MAX_VIEWPORT = 120
 
 
 def clamp_viewport_size(vh, vw, min_size=MIN_VIEWPORT, max_size=MAX_VIEWPORT):
-    """Clamp requested viewport dimensions and normalize to a square N×N."""
+    """Clamp requested viewport dimensions per axis (rectangular allowed)."""
     try:
         vh = int(vh)
         vw = int(vw)
@@ -23,8 +23,7 @@ def clamp_viewport_size(vh, vw, min_size=MIN_VIEWPORT, max_size=MAX_VIEWPORT):
         return VIEWPORT_H, VIEWPORT_W
     vh = max(min_size, min(max_size, vh))
     vw = max(min_size, min(max_size, vw))
-    n = min(vh, vw)
-    return n, n
+    return vh, vw
 
 
 def margin_for_span(span, ref_margin=EDGE_MARGIN, ref_span=DEFAULT_VIEW_SPAN):

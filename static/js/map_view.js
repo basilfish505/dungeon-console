@@ -1,11 +1,14 @@
 // map_view.js — authoritative client map viewport state + RAF update pipeline
 const MapView = (function () {
-    // Zoom = visible tile span (N×N). Last entry is max zoom → exactly 5×5.
+    // Zoom = tiles across the shorter pane axis. Longer axis shows more tiles.
     const ZOOM_SPANS = [40, 36, 32, 28, 24, 20, 16, 14, 12, 10, 5];
     const DEFAULT_ZOOM_INDEX = 5; // 20×20 — matches camera.DEFAULT_VIEW_SPAN
     const MIN_VISIBLE = 5; // furthest zoom-in
     const MARGIN_REF_SPAN = 20; // matches camera.DEFAULT_VIEW_SPAN
     const EDGE_MARGIN_REF = 4; // matches camera.EDGE_MARGIN at default span
+    // Keep payload size bounded (mirrors camera.MAX_VIEWPORT and ~3200 cells).
+    const MAX_VIEWPORT_AXIS = 120;
+    const MAX_VIEWPORT_CELLS = 3200;
 
     // Back-compat alias for any callers still reading ZOOM_LEVELS
     const ZOOM_LEVELS = ZOOM_SPANS;
@@ -62,8 +65,7 @@ const MapView = (function () {
         return state.zoomIndex >= ZOOM_SPANS.length - 1;
     }
 
-    function paneSide() {
-        // Prefer measured square; fall back to either axis if layout is mid-update
+    function shortSide() {
         if (state.paneW > 0 && state.paneH > 0) {
             return Math.min(state.paneW, state.paneH);
         }
@@ -91,31 +93,38 @@ const MapView = (function () {
             return false;
         }
         const rect = paneEl.getBoundingClientRect();
-        let w = Math.max(0, Math.floor(rect.width));
-        let h = Math.max(0, Math.floor(rect.height));
-        // Enforce square metrics even if CSS is slightly off
-        if (w > 0 && h > 0 && w !== h) {
-            const side = Math.min(w, h);
-            w = side;
-            h = side;
-        }
-        state.paneW = w;
-        state.paneH = h;
+        state.paneW = Math.max(0, Math.floor(rect.width));
+        state.paneH = Math.max(0, Math.floor(rect.height));
         return state.paneW > 0 && state.paneH > 0;
     }
 
     function measureTileMetrics() {
         const n = currentSpan();
-        const side = paneSide();
-        const size = side > 0 ? side / n : 1;
+        const side = shortSide();
+        let size = side > 0 && n > 0 ? side / n : 1;
+        // Grow tile size until the rectangular request fits the budget.
+        for (let guard = 0; guard < 64; guard++) {
+            const rows = Math.max(1, Math.ceil(state.paneH / size));
+            const cols = Math.max(1, Math.ceil(state.paneW / size));
+            if (rows <= MAX_VIEWPORT_AXIS && cols <= MAX_VIEWPORT_AXIS
+                    && rows * cols <= MAX_VIEWPORT_CELLS) {
+                break;
+            }
+            size *= 1.05;
+        }
         state.tileW = size;
         state.tileH = size;
     }
 
     function computeVisibleCounts() {
-        const n = currentSpan();
-        state.visibleCols = n;
-        state.visibleRows = n;
+        const tw = Math.max(1e-6, state.tileW);
+        const th = Math.max(1e-6, state.tileH);
+        let rows = Math.max(1, Math.ceil(state.paneH / th));
+        let cols = Math.max(1, Math.ceil(state.paneW / tw));
+        rows = Math.min(MAX_VIEWPORT_AXIS, rows);
+        cols = Math.min(MAX_VIEWPORT_AXIS, cols);
+        state.visibleRows = rows;
+        state.visibleCols = cols;
     }
 
     function snapDrawCam() {
@@ -125,37 +134,39 @@ const MapView = (function () {
     }
 
     function followDrawCam() {
-        const n = state.visibleRows;
+        const vh = state.visibleRows;
+        const vw = state.visibleCols;
         const vis = (typeof PlayerPresentation !== 'undefined' && PlayerPresentation.visualPos)
             ? PlayerPresentation.visualPos(state.playerId)
             : null;
         const py = vis ? vis.y : state.playerY;
         const px = vis ? vis.x : state.playerX;
-        const m = effectiveMargin(n, marginForSpan(n));
+        const my = effectiveMargin(vh, marginForSpan(vh));
+        const mx = effectiveMargin(vw, marginForSpan(vw));
 
         if (!drawCamReady) {
             snapDrawCam();
         }
 
-        if (state.mapH > 0 && n >= state.mapH) {
-            state.drawCamY = (state.mapH - n) / 2;
+        if (state.mapH > 0 && vh >= state.mapH) {
+            state.drawCamY = (state.mapH - vh) / 2;
         } else {
             let cy = state.drawCamY;
             const sy = py - cy;
-            if (sy < m) cy = py - m;
-            else if (sy > n - 1 - m) cy = py - (n - 1 - m);
-            cy = Math.max(py - (n - 1), Math.min(cy, py));
+            if (sy < my) cy = py - my;
+            else if (sy > vh - 1 - my) cy = py - (vh - 1 - my);
+            cy = Math.max(py - (vh - 1), Math.min(cy, py));
             state.drawCamY = cy;
         }
 
-        if (state.mapW > 0 && n >= state.mapW) {
-            state.drawCamX = (state.mapW - n) / 2;
+        if (state.mapW > 0 && vw >= state.mapW) {
+            state.drawCamX = (state.mapW - vw) / 2;
         } else {
             let cx = state.drawCamX;
             const sx = px - cx;
-            if (sx < m) cx = px - m;
-            else if (sx > n - 1 - m) cx = px - (n - 1 - m);
-            cx = Math.max(px - (n - 1), Math.min(cx, px));
+            if (sx < mx) cx = px - mx;
+            else if (sx > vw - 1 - mx) cx = px - (vw - 1 - mx);
+            cx = Math.max(px - (vw - 1), Math.min(cx, px));
             state.drawCamX = cx;
         }
     }
@@ -183,31 +194,33 @@ const MapView = (function () {
     }
 
     function updateCameraForPlayer() {
-        // Client camera is advisory until server ack. Square viewport → one margin.
-        const n = state.visibleRows;
+        // Client camera is advisory until server ack. Per-axis margins match camera.py.
+        const vh = state.visibleRows;
+        const vw = state.visibleCols;
         const py = state.playerY;
         const px = state.playerX;
-        const m = effectiveMargin(n, marginForSpan(n));
+        const my = effectiveMargin(vh, marginForSpan(vh));
+        const mx = effectiveMargin(vw, marginForSpan(vw));
 
-        if (state.mapH > 0 && n >= state.mapH) {
-            state.cameraY = Math.floor((state.mapH - n) / 2);
+        if (state.mapH > 0 && vh >= state.mapH) {
+            state.cameraY = Math.floor((state.mapH - vh) / 2);
         } else {
             let cy = state.cameraY;
             const sy = py - cy;
-            if (sy < m) cy = py - m;
-            else if (sy > n - 1 - m) cy = py - (n - 1 - m);
-            cy = Math.max(py - (n - 1), Math.min(cy, py));
+            if (sy < my) cy = py - my;
+            else if (sy > vh - 1 - my) cy = py - (vh - 1 - my);
+            cy = Math.max(py - (vh - 1), Math.min(cy, py));
             state.cameraY = cy | 0;
         }
 
-        if (state.mapW > 0 && n >= state.mapW) {
-            state.cameraX = Math.floor((state.mapW - n) / 2);
+        if (state.mapW > 0 && vw >= state.mapW) {
+            state.cameraX = Math.floor((state.mapW - vw) / 2);
         } else {
             let cx = state.cameraX;
             const sx = px - cx;
-            if (sx < m) cx = px - m;
-            else if (sx > n - 1 - m) cx = px - (n - 1 - m);
-            cx = Math.max(px - (n - 1), Math.min(cx, px));
+            if (sx < mx) cx = px - mx;
+            else if (sx > vw - 1 - mx) cx = px - (vw - 1 - mx);
+            cx = Math.max(px - (vw - 1), Math.min(cx, px));
             state.cameraX = cx | 0;
         }
     }
@@ -389,11 +402,6 @@ const MapView = (function () {
         if (data.viewport) {
             if (data.viewport.h) state.visibleRows = data.viewport.h | 0;
             if (data.viewport.w) state.visibleCols = data.viewport.w | 0;
-            if (state.visibleRows !== state.visibleCols) {
-                const n = Math.min(state.visibleRows, state.visibleCols);
-                state.visibleRows = n;
-                state.visibleCols = n;
-            }
         }
         if (data.map_size) {
             state.mapH = data.map_size.h | 0;
