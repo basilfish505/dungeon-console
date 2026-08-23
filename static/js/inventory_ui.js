@@ -116,6 +116,40 @@ const InventoryUI = (function () {
         return lastInventory.slice();
     }
 
+    function lightFuelRemaining(item) {
+        if (!item || item.light_remaining == null) {
+            return null;
+        }
+        return String(item.light_remaining);
+    }
+
+    function appendSlotName(slot, item) {
+        const fuel = lightFuelRemaining(item);
+        if (fuel != null) {
+            const stack = document.createElement('span');
+            stack.className = 'inventory-slot-label-stack';
+
+            const title = document.createElement('span');
+            title.className = 'inventory-slot-item-title';
+            title.textContent = item.name || item.type_id || 'Item';
+            stack.appendChild(title);
+
+            const fuelEl = document.createElement('span');
+            fuelEl.className = 'inventory-slot-fuel';
+            fuelEl.textContent = fuel;
+            stack.appendChild(fuelEl);
+
+            slot.appendChild(stack);
+            return title.textContent + ' ' + fuel;
+        }
+
+        const label = document.createElement('span');
+        label.className = 'inventory-slot-name';
+        label.textContent = item.name || item.type_id || 'Item';
+        slot.appendChild(label);
+        return label.textContent;
+    }
+
     function open(opts) {
         cacheDom();
         if (!overlayEl) {
@@ -150,6 +184,7 @@ const InventoryUI = (function () {
         viewingItem = null;
         if (detailEl) {
             detailEl.innerHTML = '';
+            detailEl.hidden = true;
         }
     }
 
@@ -204,10 +239,7 @@ const InventoryUI = (function () {
                 if (item.equipped) {
                     slot.classList.add('inventory-slot-equipped');
                 }
-                const label = document.createElement('span');
-                label.className = 'inventory-slot-name';
-                label.textContent = item.name || item.type_id || 'Item';
-                slot.appendChild(label);
+                let aria = appendSlotName(slot, item);
                 if (item.equipped) {
                     const eq = document.createElement('span');
                     eq.className = 'inventory-slot-equipped-label';
@@ -220,14 +252,6 @@ const InventoryUI = (function () {
                     lit.textContent = 'Lit';
                     slot.appendChild(lit);
                 }
-                if (item.light_remaining != null) {
-                    const fuel = document.createElement('span');
-                    fuel.className = 'inventory-slot-fuel';
-                    const maxTicks = item.light_ticks != null ? item.light_ticks : item.light_remaining;
-                    fuel.textContent = item.light_remaining + '/' + maxTicks;
-                    slot.appendChild(fuel);
-                }
-                let aria = label.textContent;
                 if (item.equipped) {
                     aria += ' (Equipped)';
                 }
@@ -450,21 +474,18 @@ const InventoryUI = (function () {
         }
         detailEl.innerHTML = '';
 
+        if (!item) {
+            detailEl.hidden = true;
+            return;
+        }
+
+        detailEl.hidden = false;
+
         const iconWrap = document.createElement('div');
         iconWrap.className = 'inventory-detail-icon-wrap';
 
         const meta = document.createElement('div');
         meta.className = 'inventory-detail-meta';
-
-        if (!item) {
-            const placeholder = document.createElement('div');
-            placeholder.className = 'inventory-detail-icon inventory-detail-icon-empty';
-            placeholder.setAttribute('aria-hidden', 'true');
-            iconWrap.appendChild(placeholder);
-            detailEl.appendChild(iconWrap);
-            detailEl.appendChild(meta);
-            return;
-        }
 
         const img = document.createElement('img');
         img.className = 'inventory-detail-icon';
@@ -497,8 +518,7 @@ const InventoryUI = (function () {
         if (item.light_remaining != null) {
             const fuel = document.createElement('p');
             fuel.className = 'inventory-detail-fuel';
-            const maxTicks = item.light_ticks != null ? item.light_ticks : item.light_remaining;
-            fuel.textContent = 'Fuel ' + item.light_remaining + '/' + maxTicks;
+            fuel.textContent = String(item.light_remaining);
             meta.appendChild(fuel);
         }
         if (item.lit) {
