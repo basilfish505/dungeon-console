@@ -93,6 +93,7 @@ class CombatDeathEloWiringTests(unittest.TestCase):
         }
         cs.battles = {battle['battle_id']: battle}
         cs._handle_monster_death('hero', mon, battle)
+        cs._apply_pending_rewards(battle, 'hero')
 
         self.assertGreater(killer.elo, 0)
         self.assertLess(mon.elo, mon_elo_before)
@@ -134,6 +135,7 @@ class CombatDeathEloWiringTests(unittest.TestCase):
 
         with patch('combat.calculate_pqg_from_xp', return_value=12):
             cs._handle_monster_death('hero', mon, battle)
+            cs._apply_pending_rewards(battle, 'hero')
 
         self.assertEqual(killer.pqg, 22)
 
@@ -175,6 +177,7 @@ class CombatDeathEloWiringTests(unittest.TestCase):
 
         with patch('combat.save_player') as save_mock:
             cs._handle_monster_death('hero', mon, battle)
+            cs._apply_pending_rewards(battle, 'hero')
 
         save_mock.assert_called_once_with(killer)
 
@@ -220,6 +223,69 @@ class CombatDeathEloWiringTests(unittest.TestCase):
         self.assertGreater(mon.elo, mon_before)
         # Victim was removed from the game after Elo applied
         self.assertNotIn('hero', gs.players)
+
+    def test_multi_kill_rewards_deferred_until_battle_end(self):
+        from unittest.mock import patch
+
+        from combat import CombatSystem
+
+        messages = []
+
+        def add_message(self, _pid, msg):
+            messages.append(msg)
+
+        gs = type('GS', (), {
+            'players': {},
+            'active_combats': {},
+            'add_player_message': add_message,
+            'remove_monster_at': lambda *a, **k: None,
+        })()
+        cs = CombatSystem(gs, socketio=type('S', (), {
+            'emit': lambda *a, **k: None,
+            'sleep': lambda *a, **k: None,
+            'start_background_task': lambda fn, *a, **k: None,
+        })())
+
+        killer = Player('hero', [1, 1])
+        killer.pqg = 10
+        mon1 = Monster.from_type('troll', [2, 2], monster_id='m1', level=1)
+        mon2 = Monster.from_type('skeleton', [3, 3], monster_id='m2', level=1)
+        mon1.elo = 1000
+        mon2.elo = 1100
+        gs.players = {'hero': killer}
+
+        battle = {
+            'battle_id': 'b1',
+            'participants': ['hero'],
+            'monsters': [mon1, mon2],
+            'turn_order': ['hero', mon1.id, mon2.id],
+            'current_turn_index': 0,
+            'status': 'active',
+            'defend_status': {},
+            'turn_token': None,
+            'pending_rewards': {},
+        }
+        cs.battles = {battle['battle_id']: battle}
+
+        with patch('combat.calculate_pqg_from_xp', side_effect=[5, 7]):
+            cs._handle_monster_death('hero', mon1, battle)
+            self.assertEqual(killer.pqg, 10)
+            self.assertEqual(battle['pending_rewards']['hero']['kills'], 1)
+            self.assertEqual(messages, [])
+
+            cs._handle_monster_death('hero', mon2, battle)
+            self.assertEqual(killer.pqg, 10)
+            self.assertEqual(battle['pending_rewards']['hero']['kills'], 2)
+            self.assertEqual(messages, [])
+
+            summary = cs._apply_pending_rewards(battle, 'hero')
+
+        self.assertEqual(killer.pqg, 22)
+        self.assertIn('You defeated 2 enemies.', messages)
+        self.assertIn('You gain', messages[1])
+        self.assertIn('You gain 12 PQG.', messages)
+        self.assertIn('2 enemies', summary)
+        self.assertIn('12 PQG', summary)
 
 
 if __name__ == '__main__':

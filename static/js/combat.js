@@ -1,6 +1,8 @@
 // combat.js - Full-screen combat UI and actions
 const Combat = (function () {
     const MAX_COMBAT_LOG_LINES = 12;
+    /** Every battle message stays on the status bar at least this long. */
+    const STATUS_HOLD_MS = 1000;
 
     const elements = {
         overlay: document.getElementById('combat-overlay'),
@@ -35,6 +37,9 @@ const Combat = (function () {
     };
     let combatLogLines = [];
     let countdownTimer = null;
+    let countdownActive = false;
+    let statusHoldUntil = 0;
+    let statusHoldTimer = null;
     let countdownRemaining = 0;
     let countdownYourTurn = false;
     let countdownActivePlayer = null;
@@ -127,12 +132,15 @@ const Combat = (function () {
 
     function showOverlay() {
         if (!elements.overlay) return;
+        const opening = !open;
         elements.overlay.hidden = false;
         elements.overlay.setAttribute('aria-hidden', 'false');
         elements.overlay.style.display = '';
         open = true;
         if (elements.mobileControls) {
-            mobileWasVisible = elements.mobileControls.style.display !== 'none';
+            if (opening) {
+                mobileWasVisible = elements.mobileControls.style.display !== 'none';
+            }
             elements.mobileControls.style.display = 'none';
         }
     }
@@ -144,8 +152,11 @@ const Combat = (function () {
         elements.overlay.setAttribute('aria-hidden', 'true');
         elements.overlay.style.display = 'none';
         open = false;
-        if (elements.mobileControls && mobileWasVisible) {
-            elements.mobileControls.style.display = '';
+        if (elements.mobileControls) {
+            const shell = document.getElementById('game-shell');
+            if (shell && !shell.hidden) {
+                elements.mobileControls.style.display = 'grid';
+            }
         }
         mobileWasVisible = false;
     }
@@ -192,6 +203,11 @@ const Combat = (function () {
     }
 
     function stopCountdown() {
+        countdownActive = false;
+        if (statusHoldTimer) {
+            clearTimeout(statusHoldTimer);
+            statusHoldTimer = null;
+        }
         if (countdownTimer) {
             clearInterval(countdownTimer);
             countdownTimer = null;
@@ -207,7 +223,29 @@ const Combat = (function () {
         }
     }
 
+    /** Paint a battle message and keep it readable before the timer takes over. */
+    function showStatusMessage(html) {
+        setStatus(html);
+        statusHoldUntil = Date.now() + STATUS_HOLD_MS;
+    }
+
+    function statusHoldRemaining() {
+        return statusHoldUntil - Date.now();
+    }
+
     function renderCountdownMessage() {
+        const holdLeft = statusHoldRemaining();
+        if (holdLeft > 0) {
+            if (!statusHoldTimer) {
+                statusHoldTimer = setTimeout(function () {
+                    statusHoldTimer = null;
+                    if (countdownActive) {
+                        renderCountdownMessage();
+                    }
+                }, holdLeft);
+            }
+            return;
+        }
         const secs = Math.max(0, countdownRemaining);
         if (elements.opponentThinking) {
             elements.opponentThinking.style.display = 'none';
@@ -224,15 +262,20 @@ const Combat = (function () {
 
     function startCountdown(seconds, isYourTurn, activePlayer) {
         stopCountdown();
-        if (!seconds || seconds <= 0) return;
+        if (!seconds || seconds <= 0) {
+            return;
+        }
         countdownRemaining = seconds;
         countdownYourTurn = !!isYourTurn;
         countdownActivePlayer = activePlayer || null;
+        countdownActive = true;
         renderCountdownMessage();
         countdownTimer = setInterval(function () {
             countdownRemaining -= 1;
             renderCountdownMessage();
-            if (countdownRemaining <= 0) stopCountdown();
+            if (countdownRemaining <= 0) {
+                stopCountdown();
+            }
         }, 1000);
     }
 
@@ -246,7 +289,7 @@ const Combat = (function () {
         if (elements.opponentThinking) {
             elements.opponentThinking.style.display = 'none';
         }
-        if (disableAll && !countdownTimer) {
+        if (disableAll && !countdownActive && statusHoldRemaining() <= 0) {
             setStatus("Waiting for opponent's move...");
         }
         if (elements.overlay) {
@@ -529,17 +572,16 @@ const Combat = (function () {
             ? "Combat has begun! It's your turn to act!"
             : 'Combat has begun! Select your target and action.';
         appendCombatLog(data.message || startMsg);
+        showStatusMessage(data.message || startMsg);
         if (data.turn_timeout) {
             startCountdown(data.turn_timeout, data.your_turn, data.active_player);
-        } else {
-            setStatus(startMsg);
         }
     }
 
     function handleTargetRequest(data) {
         currentBattle.opponents = data.targets || [];
         renderRoster();
-        setStatus('Select a target for your action.');
+        showStatusMessage('Select a target for your action.');
         appendCombatLog('Select a target for your action.');
     }
 
@@ -549,7 +591,7 @@ const Combat = (function () {
 
         updateButtonStates(data.your_turn);
         if (data.message) {
-            setStatus(data.message);
+            showStatusMessage(data.message);
             appendCombatLog(data.message);
         }
 
@@ -577,8 +619,8 @@ const Combat = (function () {
     }
 
     function handleMonsterDeath(data) {
-        if (data.message) {
-            setStatus(data.message);
+        if (data.message && !data.silent) {
+            showStatusMessage(data.message);
             appendCombatLog(data.message);
         }
         currentBattle.opponents = currentBattle.opponents.filter(
@@ -593,7 +635,7 @@ const Combat = (function () {
 
     function handlePlayerDeath(data) {
         if (data.message) {
-            setStatus(data.message);
+            showStatusMessage(data.message);
             appendCombatLog(data.message);
         }
         currentBattle.opponents = currentBattle.opponents.filter(
@@ -604,8 +646,11 @@ const Combat = (function () {
 
     function handleCombatEnd(data) {
         stopCountdown();
+        statusHoldUntil = 0;
         if (data.victory) Sound.play('victory');
-        if (data.message) appendCombatLog(data.message);
+        if (data.message) {
+            appendCombatLog(data.message);
+        }
         hideOverlay();
         currentBattle = {
             battleId: null,
@@ -627,21 +672,22 @@ const Combat = (function () {
     }
 
     function handleTurnNotification(data) {
-        updateButtonStates(data.your_turn);
         if (data.message && data.message.indexOf('forfeited') !== -1) {
             stopCountdown();
-            setStatus(data.message);
+            showStatusMessage(data.message);
             appendCombatLog(data.message);
         } else if (data.turn_timeout) {
             startCountdown(data.turn_timeout, data.your_turn, data.active_player);
         } else if (data.message) {
             stopCountdown();
-            setStatus(data.message);
+            showStatusMessage(data.message);
             appendCombatLog(data.message);
             if (elements.opponentThinking) {
                 elements.opponentThinking.style.display = 'none';
             }
         }
+
+        updateButtonStates(data.your_turn);
 
         if (data.combatants) {
             ingestCombatants(data.combatants, currentBattle.viewerId);

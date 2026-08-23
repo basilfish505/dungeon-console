@@ -165,7 +165,8 @@ class CombatSystem:
             'status': 'active',
             'defend_status': {},
             'turn_token': None,
-            'monster_turn_delay_token': None
+            'monster_turn_delay_token': None,
+            'pending_rewards': {},
         }
         
         # Store the battle
@@ -968,6 +969,85 @@ class CombatSystem:
                 }
 
         return {'ok': False}
+
+    def _record_monster_kill_reward(self, battle, killer_id, monster):
+        """Accumulate XP/PQG/Elo rewards until the battle ends."""
+        pending = battle.setdefault('pending_rewards', {})
+        bucket = pending.setdefault(killer_id, {
+            'kills': 0,
+            'xp': 0,
+            'pqg': 0,
+            'elo_opponents': [],
+        })
+        xp_gain = calculate_xp_from_elo(getattr(monster, 'elo', None))
+        pqg_gain = calculate_pqg_from_xp(xp_gain)
+        bucket['kills'] += 1
+        bucket['xp'] += xp_gain
+        bucket['pqg'] += pqg_gain
+        bucket['elo_opponents'].append(monster)
+
+    def _apply_pending_rewards(self, battle, player_id):
+        """
+        Grant accumulated kill rewards and write the message log summary.
+
+        Returns a combat-window summary string, or None if there were no kills.
+        """
+        pending = battle.get('pending_rewards', {})
+        bucket = pending.pop(player_id, None)
+        if not bucket or bucket.get('kills', 0) <= 0:
+            return None
+
+        killer = self.game_state.players.get(player_id)
+        if killer is None:
+            return None
+
+        kills = bucket['kills']
+        xp_total = bucket['xp']
+        pqg_total = bucket['pqg']
+        level_before = killer.level
+        killer.award_xp(xp_total)
+        if pqg_total > 0:
+            killer.pqg = int(getattr(killer, 'pqg', 0) or 0) + pqg_total
+
+        elo_before = float(getattr(killer, 'elo', 0) or 0)
+        for opponent in bucket.get('elo_opponents', []):
+            apply_elo_outcome(killer, opponent)
+        elo_after = float(getattr(killer, 'elo', 0) or 0)
+        elo_delta = elo_after - elo_before
+
+        enemy_word = 'enemy' if kills == 1 else 'enemies'
+        self.game_state.add_player_message(
+            player_id,
+            f"You defeated {kills} {enemy_word}.",
+        )
+        self.game_state.add_player_message(
+            player_id,
+            f"You gain {xp_total} experience.",
+        )
+        if pqg_total > 0:
+            self.game_state.add_player_message(
+                player_id,
+                f"You gain {pqg_total} PQG.",
+            )
+        for new_level in range(level_before + 1, killer.level + 1):
+            self.game_state.add_player_message(
+                player_id,
+                f"You reached level {new_level}!",
+            )
+        delta_txt = f"+{elo_delta:.0f}" if elo_delta >= 0 else f"{elo_delta:.0f}"
+        self.game_state.add_player_message(
+            player_id,
+            f"Elo {delta_txt} (now {elo_after:.0f}).",
+        )
+        save_player(killer)
+
+        summary_lines = [
+            f"You defeated {kills} {enemy_word}.",
+            f"You gain {xp_total} experience.",
+        ]
+        if pqg_total > 0:
+            summary_lines.append(f"You gain {pqg_total} PQG.")
+        return ' '.join(summary_lines)
     
     def _handle_monster_death(self, killer_id, monster, battle):
         """Handle a monster's death in combat"""
@@ -979,41 +1059,8 @@ class CombatSystem:
         
         # Clear monster's combat flag
         monster.in_combat = False
-        
-        # Main dialogue: slay line only
-        self.game_state.add_player_message(
-            killer_id,
-            f"{killer.id} slayed a {monster.type}"
-        )
 
-        xp_gain = calculate_xp_from_elo(getattr(monster, 'elo', None))
-        level_before = killer.level
-        killer.award_xp(xp_gain)
-        self.game_state.add_player_message(
-            killer_id,
-            f"You gain {xp_gain} experience.",
-        )
-
-        pqg_gain = calculate_pqg_from_xp(xp_gain)
-        if pqg_gain > 0:
-            killer.pqg = int(getattr(killer, 'pqg', 0) or 0) + pqg_gain
-            self.game_state.add_player_message(
-                killer_id,
-                f"You gain {pqg_gain} PQG.",
-            )
-        for new_level in range(level_before + 1, killer.level + 1):
-            self.game_state.add_player_message(
-                killer_id,
-                f"You reached level {new_level}!",
-            )
-
-        new_elo, _loser_elo, elo_delta = apply_elo_outcome(killer, monster)
-        delta_txt = f"+{elo_delta:.0f}" if elo_delta >= 0 else f"{elo_delta:.0f}"
-        self.game_state.add_player_message(
-            killer_id,
-            f"Elo {delta_txt} (now {new_elo:.0f}).",
-        )
-        save_player(killer)
+        self._record_monster_kill_reward(battle, killer_id, monster)
         
         # Remove monster from battle
         battle['monsters'].remove(monster)
@@ -1040,17 +1087,14 @@ class CombatSystem:
             if not current:
                 return
 
-            # Death line in combat window, then close with victory
+            # Update roster only; rewards are summarized when the battle ends.
             for p_id in participants:
                 self._emit('combat_update', {
                     'type': 'monster_death',
                     'battle_id': battle_id,
                     'monster_id': monster_type,
                     'killer_id': killer_name,
-                    'xp_gain': xp_gain,
-                    'pqg_gain': pqg_gain,
-                    'elo': round(float(getattr(killer, 'elo', 0)), 1),
-                    'message': f".... The {monster_type} has been defeated by {killer_name}!"
+                    'silent': True,
                 }, room=p_id)
 
             if current:
@@ -1173,6 +1217,14 @@ class CombatSystem:
             
             # Clear combat flags for remaining player if any
             if battle['participants']:
+                summary_parts = []
+                if victory:
+                    for pid in battle['participants']:
+                        part_summary = self._apply_pending_rewards(battle, pid)
+                        if part_summary:
+                            summary_parts.append(part_summary)
+                summary = ' '.join(summary_parts) if summary_parts else None
+
                 last_player_id = battle['participants'][0]
                 if last_player_id in self.game_state.players:
                     self.game_state.players[last_player_id].in_combat = False
@@ -1186,7 +1238,7 @@ class CombatSystem:
                     'type': 'combat_end',
 
                     'battle_id': battle['battle_id'],
-                    'message': ".... The battle has ended.",
+                    'message': summary or ".... The battle has ended.",
                     'victory': victory
                 }
                 self._emit('combat_update', end_data, room=last_player_id)
