@@ -15,6 +15,8 @@ from items.service import (
     use_item,
 )
 from player import Player
+from weapon_types.base import WeaponTypeDef
+from weapon_types.registry import WEAPON_TYPES, register_weapon_type
 
 
 class FakePlayer:
@@ -30,7 +32,9 @@ class FakePlayer:
 class InventoryServiceTests(unittest.TestCase):
     def setUp(self):
         self.previous = dict(ITEM_TYPES)
+        self.previous_weapons = dict(WEAPON_TYPES)
         ITEM_TYPES.clear()
+        WEAPON_TYPES.clear()
         register_item_type(ItemTypeDef(
             item_id='torch',
             name='Torch',
@@ -42,10 +46,19 @@ class InventoryServiceTests(unittest.TestCase):
             name='Healing Potion',
             price_pqg=25,
         ))
+        register_weapon_type(WeaponTypeDef(
+            weapon_id='club',
+            name='Club',
+            description='A crude wooden club.',
+            price_pqg=8,
+            base_damage=2,
+        ))
 
     def tearDown(self):
         ITEM_TYPES.clear()
         ITEM_TYPES.update(self.previous)
+        WEAPON_TYPES.clear()
+        WEAPON_TYPES.update(self.previous_weapons)
 
     def test_add_unknown_type_returns_none(self):
         player = FakePlayer()
@@ -142,7 +155,9 @@ class InventoryServiceTests(unittest.TestCase):
         add_item_to_inventory(player, 'torch')
         payload = player.to_dict()
         self.assertIn('inventory', payload)
-        self.assertEqual(payload['inventory'][0]['type_id'], 'torch')
+        type_ids = [row['type_id'] for row in payload['inventory'] if row]
+        self.assertEqual(type_ids[0], 'club')
+        self.assertIn('torch', type_ids)
 
     def test_grant_starter_kit_skips_unregistered(self):
         player = FakePlayer()
@@ -238,18 +253,21 @@ class InventoryServiceTests(unittest.TestCase):
         self.assertEqual(player.pqg, 10)
         self.assertIn('not for sale', result['message'].lower())
 
-    def test_new_player_starts_with_pqg_and_two_torches(self):
+    def test_new_player_starts_with_pqg_club_and_two_torches(self):
         player = Player('buyer', [1, 1])
         self.assertEqual(player.pqg, 10)
-        self.assertEqual(len(player.inventory), 2)
-        self.assertEqual([i.type_id for i in player.inventory], ['torch', 'torch'])
+        self.assertEqual(len(player.inventory), 3)
+        self.assertEqual(
+            [i.type_id for i in player.inventory],
+            ['club', 'torch', 'torch'],
+        )
 
-    def test_grant_starting_inventory_adds_two_torch_instances(self):
+    def test_grant_starting_inventory_adds_club_and_two_torches(self):
         player = FakePlayer()
         granted = grant_starting_inventory(player)
-        self.assertEqual(len(granted), 2)
-        self.assertEqual([i.type_id for i in granted], ['torch', 'torch'])
-        self.assertNotEqual(granted[0].instance_id, granted[1].instance_id)
+        self.assertEqual(len(granted), 3)
+        self.assertEqual([i.type_id for i in granted], ['club', 'torch', 'torch'])
+        self.assertNotEqual(granted[1].instance_id, granted[2].instance_id)
 
 
 if __name__ == '__main__':

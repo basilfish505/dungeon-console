@@ -13,6 +13,7 @@ import random
 
 from items.catalog import (
     CATEGORY_ITEM,
+    CATEGORY_WEAPON,
     ITEMS_SHOP_IDS,
     SHOP_ITEMS,
     normalize_category,
@@ -134,8 +135,11 @@ def grant_starter_kit(player):
 
 
 def grant_starting_inventory(player):
-    """Default pack for a new player: two separate torches (each with own fuel)."""
+    """Default pack for a new player: club + two separate torches (each with own fuel)."""
     granted = []
+    club = add_item_to_inventory(player, 'club', quantity=1, category=CATEGORY_WEAPON)
+    if club is not None:
+        granted.append(club)
     for _ in range(STARTING_TORCH_COUNT):
         inst = add_item_to_inventory(player, 'torch', quantity=1, category=CATEGORY_ITEM)
         if inst is not None:

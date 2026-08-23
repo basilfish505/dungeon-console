@@ -4,7 +4,7 @@ from player import Player
 from monster import Monster
 from combat_damage import resolve_attack
 from combat_elo import apply_elo_outcome
-from player_xp import calculate_xp_from_elo
+from player_xp import calculate_pqg_from_xp, calculate_xp_from_elo
 import uuid
 
 TURN_TIMEOUT_SECONDS = 20
@@ -919,6 +919,14 @@ class CombatSystem:
             killer_id,
             f"You gain {xp_gain} experience.",
         )
+
+        pqg_gain = calculate_pqg_from_xp(xp_gain)
+        if pqg_gain > 0:
+            killer.pqg = int(getattr(killer, 'pqg', 0) or 0) + pqg_gain
+            self.game_state.add_player_message(
+                killer_id,
+                f"You gain {pqg_gain} PQG.",
+            )
         for new_level in range(level_before + 1, killer.level + 1):
             self.game_state.add_player_message(
                 killer_id,
@@ -965,6 +973,7 @@ class CombatSystem:
                     'monster_id': monster_type,
                     'killer_id': killer_name,
                     'xp_gain': xp_gain,
+                    'pqg_gain': pqg_gain,
                     'elo': round(float(getattr(killer, 'elo', 0)), 1),
                     'message': f".... The {monster_type} has been defeated by {killer_name}!"
                 }, room=p_id)
