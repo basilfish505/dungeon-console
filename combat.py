@@ -94,44 +94,102 @@ class CombatSystem:
                 emit_game_state=emit_game_state,
             )
     
-    def _find_existing_battle(self, attacker_id, defender_id):
-        """Check if any participant is already in a battle"""
-        # Check attacker's battles
-        if attacker_id in self.game_state.active_combats:
-            return self.game_state.active_combats[attacker_id]
-        
-        # Check defender's battles (if it's a player)
-        if not isinstance(defender_id, Monster) and defender_id in self.game_state.active_combats:
-            return self.game_state.active_combats[defender_id]
-        
+    def _battle_for_combatant(self, combatant_id):
+        """Battle id this player or monster currently belongs to, if any.
+
+        Stale ``active_combats`` entries pointing at finished battles resolve to
+        ``None`` so the caller starts a fresh battle instead of crashing.
+        """
+        if not combatant_id:
+            return None
+        battle_id = self.game_state.active_combats.get(combatant_id)
+        if battle_id in self.battles:
+            return battle_id
+        for bid, battle in self.battles.items():
+            for monster in battle['monsters']:
+                if monster.id == combatant_id:
+                    return bid
         return None
-    
+
+    def _find_existing_battle(self, attacker_id, defender_id):
+        """Battle this engagement belongs to.
+
+        A player or monster is only ever in one battle, so engaging anyone who is
+        already fighting joins their battle rather than opening a second one.
+        """
+        attacker_battle = self._battle_for_combatant(attacker_id)
+        defender_battle = self._battle_for_combatant(defender_id)
+
+        if attacker_battle and defender_battle and attacker_battle != defender_battle:
+            self._merge_battles(attacker_battle, defender_battle)
+            return attacker_battle
+
+        return attacker_battle or defender_battle
+
+    def _merge_battles(self, target_id, source_id):
+        """Fold the source battle into the target so nobody fights in two battles."""
+        target = self.battles.get(target_id)
+        if target is None or target_id == source_id:
+            return
+        # Drop the source first so the one-battle guards see its members as free.
+        source = self.battles.pop(source_id, None)
+        if source is None:
+            return
+
+        self._cancel_turn_timer(source)
+        source['status'] = 'merged'
+
+        for player_id in list(source['participants']):
+            player = self.game_state.players.get(player_id)
+            if player is not None:
+                self._add_entity_to_battle(target, player_id, player, False)
+        for monster in list(source['monsters']):
+            self._add_entity_to_battle(target, monster.id, monster, True)
+
+        defend_status = target.setdefault('defend_status', {})
+        for entity_id, defending in (source.get('defend_status') or {}).items():
+            defend_status[entity_id] = defending
+
+        target_rewards = target.setdefault('pending_rewards', {})
+        for player_id, bucket in (source.get('pending_rewards') or {}).items():
+            existing = target_rewards.get(player_id)
+            if existing is None:
+                target_rewards[player_id] = bucket
+                continue
+            existing['kills'] += bucket.get('kills', 0)
+            existing['xp'] += bucket.get('xp', 0)
+            existing['pqg'] += bucket.get('pqg', 0)
+            existing['elo_opponents'].extend(bucket.get('elo_opponents', []))
+
     def _add_entity_to_battle(self, battle, entity_id, entity, is_monster=False):
-        """Add an entity (player or monster) to a battle"""
-        # Add to participants or monsters list
+        """Add an entity (player or monster) to a battle. True if newly added."""
         if is_monster:
-            # Check if monster is already in battle
+            # Already in this battle, or committed to another one
             for m in battle['monsters']:
                 if m.id == entity.id:
-                    return  # Already in battle
-            
-            # Add monster to battle
+                    return False
+            if self._battle_for_combatant(entity.id) is not None:
+                return False
+
             battle['monsters'].append(entity)
             entity.in_combat = True
-            
-            # Add to turn order if not already present
+
             if entity.id not in battle['turn_order']:
                 battle['turn_order'].append(entity.id)
-        else:
-            # Check if player is already in battle
-            if entity_id in battle['participants']:
-                return  # Already in battle
-            
-            # Add player to battle
-            battle['participants'].append(entity_id)
-            battle['turn_order'].append(entity_id)
-            entity.in_combat = True
-            self.game_state.active_combats[entity_id] = battle['battle_id']
+            return True
+
+        # Already in this battle, or committed to another one
+        if entity_id in battle['participants']:
+            return False
+        other_battle = self.game_state.active_combats.get(entity_id)
+        if other_battle in self.battles and other_battle != battle['battle_id']:
+            return False
+
+        battle['participants'].append(entity_id)
+        battle['turn_order'].append(entity_id)
+        entity.in_combat = True
+        self.game_state.active_combats[entity_id] = battle['battle_id']
+        return True
     
     def _create_new_battle(
         self, attacker_id, defender_id, defender, is_monster_combat, emit_game_state=True
@@ -200,11 +258,19 @@ class CombatSystem:
         new_player = self.game_state.players[new_player_id]
         
         # Add the defender to the battle if not already present
-        self._add_entity_to_battle(battle, defender_id, defender, is_monster_combat)
+        defender_joined = self._add_entity_to_battle(
+            battle, defender_id, defender, is_monster_combat
+        )
         
         # Add the new player to the battle if not already present
-        if new_player_id not in battle['participants']:
-            self._add_entity_to_battle(battle, new_player_id, new_player, False)
+        player_joined = self._add_entity_to_battle(
+            battle, new_player_id, new_player, False
+        )
+        
+        self._announce_join(
+            battle, new_player, player_joined, defender, defender_joined,
+            is_monster_combat,
+        )
         
         # Send updated battle info to all participants
         for participant_id in battle['participants']:
@@ -214,6 +280,31 @@ class CombatSystem:
             self._update_all_players()
         
         return battle_id
+    
+    def _announce_join(
+        self, battle, new_player, player_joined, defender, defender_joined,
+        is_monster_combat,
+    ):
+        """Tell everyone in a running battle who just piled in."""
+        for p_id in battle['participants']:
+            if player_joined:
+                self.game_state.add_player_message(
+                    p_id,
+                    "You join a battle already in progress."
+                    if p_id == new_player.id else
+                    f"{new_player.id} joins the battle!"
+                )
+            if defender_joined and is_monster_combat:
+                self.game_state.add_player_message(
+                    p_id, f"A {defender.type} joins the battle!"
+                )
+            elif defender_joined and not player_joined:
+                self.game_state.add_player_message(
+                    p_id,
+                    "You join a battle already in progress."
+                    if p_id == defender.id else
+                    f"{defender.id} joins the battle!"
+                )
     
     def _send_combat_start(self, player_id, battle):
         """Send battle information to a player"""
@@ -1209,6 +1300,18 @@ class CombatSystem:
     
     def _check_battle_end(self, battle, victory=False):
         """End battle if only one (or zero) combatants remain. Returns True if ended."""
+        # No players left: release the monsters so they roam instead of staying
+        # locked in a battle nobody can finish.
+        if not battle['participants']:
+            self._cancel_turn_timer(battle)
+            battle['status'] = 'ended'
+            for monster in battle['monsters']:
+                monster.in_combat = False
+            battle['monsters'] = []
+            battle['turn_order'] = []
+            self.battles.pop(battle['battle_id'], None)
+            return True
+
         # End if no monsters and only one or zero players
         if len(battle['monsters']) == 0 and len(battle['participants']) <= 1:
             # End the battle
@@ -1244,7 +1347,7 @@ class CombatSystem:
                 self._emit('combat_update', end_data, room=last_player_id)
             
             # Remove battle
-            del self.battles[battle['battle_id']]
+            self.battles.pop(battle['battle_id'], None)
             return True
         return False    
     def _update_all_players(self):

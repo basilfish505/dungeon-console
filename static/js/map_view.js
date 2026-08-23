@@ -329,8 +329,24 @@ const MapView = (function () {
         return true;
     }
 
+    function preloadMonsterEntities(entities) {
+        if (typeof MonsterAssets === 'undefined' || !entities) {
+            return;
+        }
+        for (let i = 0; i < entities.length; i++) {
+            const ent = entities[i];
+            if (ent && ent.kind === 'monster') {
+                MonsterAssets.ensureType(ent.type_id, ent.sprite, null);
+            }
+        }
+    }
+
     function applySnapshot(data, opts) {
         opts = opts || {};
+        if (opts.floorChange && typeof PlayerPresentation !== 'undefined'
+            && PlayerPresentation.purgeMonsters) {
+            PlayerPresentation.purgeMonsters();
+        }
         if (data.map) {
             state.lastMap = data.map;
         }
@@ -339,6 +355,7 @@ const MapView = (function () {
         }
         if (Object.prototype.hasOwnProperty.call(data, 'entities')) {
             state.lastEntities = Array.isArray(data.entities) ? data.entities : [];
+            preloadMonsterEntities(state.lastEntities);
         }
         if (data.player && data.player.id != null) {
             state.playerId = String(data.player.id);
@@ -402,7 +419,7 @@ const MapView = (function () {
             applyRender();
             return;
         }
-        applySnapshot(held, { snapPlayer: true });
+        applySnapshot(held, { snapPlayer: true, floorChange: true });
         requestMapUpdate('level-change');
         applyRender();
     }
@@ -455,7 +472,10 @@ const MapView = (function () {
         const newInterior = data.player ? (data.player.interior_id || null) : null;
         const interiorChanged = state.interiorId !== newInterior;
 
-        applySnapshot(data, { snapPlayer: !!levelChanged || interiorChanged });
+        applySnapshot(data, {
+            snapPlayer: !!levelChanged || interiorChanged,
+            floorChange: levelChanged || interiorChanged,
+        });
 
         if (levelChanged || interiorChanged) {
             requestMapUpdate('level-change');

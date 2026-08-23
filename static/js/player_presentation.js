@@ -335,6 +335,15 @@ const PlayerPresentation = (function () {
         return out;
     }
 
+    function purgeMonsters() {
+        for (const id in actors) {
+            const actor = actors[id];
+            if (actor && actor.kind === 'monster') {
+                delete actors[id];
+            }
+        }
+    }
+
     function setOnFrame(fn) {
         onFrame = typeof fn === 'function' ? fn : null;
     }
@@ -369,6 +378,7 @@ const PlayerPresentation = (function () {
         predictLocalStep,
         walkToThen,
         snapTo,
+        purgeMonsters,
         setOnFrame,
         kick,
     };

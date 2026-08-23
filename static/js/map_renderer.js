@@ -333,23 +333,19 @@ const MapRenderer = (function () {
                     if (TileAssets.isTerrainOnly(ch) && drewTerrain) {
                         continue;
                     }
-                    if (ch === '&' && overlayActors && ent && ent.kind === 'monster') {
-                        let skipForOverlay = true;
-                        if (typeof MonsterAssets !== 'undefined') {
-                            MonsterAssets.ensureType(ent.type_id, ent.sprite, null);
-                            if (!MonsterAssets.getSprite(ent.type_id, ent.sprite)) {
-                                skipForOverlay = false;
-                            }
-                        }
-                        if (skipForOverlay) {
-                            continue;
-                        }
-                    }
                     if (ch === '&') {
                         if (ent && ent.kind === 'monster') {
+                            if (typeof MonsterAssets !== 'undefined') {
+                                MonsterAssets.ensureType(ent.type_id, ent.sprite, null);
+                            }
                             drewEntitySprite = drawMonsterSprite(
                                 ent.type_id, ent.sprite, px, py, dw, dh, fogState
                             );
+                        }
+                        if (useGraphics) {
+                            // Terrain is already drawn; never paint ASCII '&' while
+                            // sprites load or entity data catches up after a floor change.
+                            continue;
                         }
                         if (drewEntitySprite) {
                             continue;
