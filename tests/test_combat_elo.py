@@ -137,6 +137,47 @@ class CombatDeathEloWiringTests(unittest.TestCase):
 
         self.assertEqual(killer.pqg, 22)
 
+    def test_monster_death_persists_killer_progression(self):
+        from unittest.mock import patch
+
+        from combat import CombatSystem
+
+        gs = type('GS', (), {
+            'players': {},
+            'active_combats': {},
+            'add_player_message': lambda *a, **k: None,
+            'remove_monster_at': lambda *a, **k: None,
+        })()
+        cs = CombatSystem(gs, socketio=type('S', (), {
+            'emit': lambda *a, **k: None,
+            'sleep': lambda *a, **k: None,
+            'start_background_task': lambda fn, *a, **k: None,
+        })())
+
+        killer = Player('hero', [1, 1])
+        killer.elo = 0
+        killer.pqg = 5
+        mon = Monster.from_type('troll', [2, 2], monster_id='m1', level=1)
+        mon.elo = 1200
+        gs.players = {'hero': killer}
+
+        battle = {
+            'battle_id': 'b1',
+            'participants': ['hero'],
+            'monsters': [mon],
+            'turn_order': ['hero', mon.id],
+            'current_turn_index': 0,
+            'status': 'active',
+            'defend_status': {},
+            'turn_token': None,
+        }
+        cs.battles = {battle['battle_id']: battle}
+
+        with patch('combat.save_player') as save_mock:
+            cs._handle_monster_death('hero', mon, battle)
+
+        save_mock.assert_called_once_with(killer)
+
     def test_player_death_by_monster_updates_both(self):
         from combat import CombatSystem
 

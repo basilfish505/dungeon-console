@@ -3,6 +3,9 @@
 <head>
     <title>PermaQuest</title>
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=VT323&display=swap">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
 </head>
@@ -165,7 +168,6 @@
     <link rel="preload" as="image" href="{{ url_for('static', filename='player/sprites/player_walk1.png') }}">
     <link rel="preload" as="image" href="{{ url_for('static', filename='player/sprites/player_walk2.png') }}">
     <link rel="preload" as="image" href="{{ url_for('static', filename='player/sprites/player_walk3.png') }}">
-    <script src="{{ url_for('static', filename='js/utils.js') }}"></script>
     <script src="{{ url_for('static', filename='js/sound.js') }}"></script>
     <script src="{{ url_for('static', filename='js/map_view.js') }}"></script>
     <script src="{{ url_for('static', filename='js/tile_assets.js') }}"></script>

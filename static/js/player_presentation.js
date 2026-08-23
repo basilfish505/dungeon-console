@@ -224,10 +224,6 @@ const PlayerPresentation = (function () {
         return false;
     }
 
-    function anyMoving() {
-        return anyWalkGrace();
-    }
-
     function isBusy(id) {
         if (id == null || id === '') {
             return false;
@@ -339,15 +335,6 @@ const PlayerPresentation = (function () {
         return out;
     }
 
-    function setClip(id, clipName) {
-        const actor = actors[String(id)];
-        if (!actor || !clipName) {
-            return;
-        }
-        actor.clip = clipName;
-        actor.clipStartMs = performance.now();
-    }
-
     function setOnFrame(fn) {
         onFrame = typeof fn === 'function' ? fn : null;
     }
@@ -373,7 +360,6 @@ const PlayerPresentation = (function () {
         ACK_FAILSAFE_MS,
         sync,
         sample,
-        anyMoving,
         isBusy,
         isMoving,
         progress,
@@ -383,7 +369,6 @@ const PlayerPresentation = (function () {
         predictLocalStep,
         walkToThen,
         snapTo,
-        setClip,
         setOnFrame,
         kick,
     };

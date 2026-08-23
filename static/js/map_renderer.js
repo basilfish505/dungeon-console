@@ -145,17 +145,29 @@ const MapRenderer = (function () {
         return true;
     }
 
-    function entityAt(entities, vy, vx) {
+    function buildEntityIndex(entities) {
+        const index = new Map();
         if (!entities || !entities.length) {
-            return null;
+            return index;
         }
         for (let i = 0; i < entities.length; i++) {
             const e = entities[i];
-            if (e && (e.vy | 0) === vy && (e.vx | 0) === vx) {
-                return e;
+            if (!e) {
+                continue;
+            }
+            const vy = e.vy | 0;
+            const vx = e.vx | 0;
+            const key = (vy << 16) | (vx & 0xffff);
+            // Preserve first-match semantics of the old linear scan.
+            if (!index.has(key)) {
+                index.set(key, e);
             }
         }
-        return null;
+        return index;
+    }
+
+    function entityAtIndex(index, vy, vx) {
+        return index.get((vy << 16) | ((vx | 0) & 0xffff)) || null;
     }
 
     function drawActorImage(img, sx, sy, sw, sh, cx, cy, dw, dh, flip, pose) {
@@ -260,6 +272,7 @@ const MapRenderer = (function () {
         const th = Math.max(1, state.tileH);
         const fog = state.lastFog;
         const entities = state.lastEntities || [];
+        const entityIndex = buildEntityIndex(entities);
         const sliceY = Number.isFinite(state.mapOriginY) ? (state.mapOriginY | 0) : (state.cameraY | 0);
         const sliceX = Number.isFinite(state.mapOriginX) ? (state.mapOriginX | 0) : (state.cameraX | 0);
         // Paint the slice we have. Scrolling drawCam off this origin leaves a black strip.
@@ -302,7 +315,7 @@ const MapRenderer = (function () {
 
                 let drewEntitySprite = false;
                 if (useGraphics) {
-                    const ent = entityAt(entities, y, x);
+                    const ent = entityAtIndex(entityIndex, y, x);
                     const terrainCh = (ent && ent.under) ? ent.under : ch;
                     const underlayKey = TileAssets.underlayKeyForCell(terrainCh);
                     if (underlayKey) {

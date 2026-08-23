@@ -3,15 +3,11 @@ const MapView = (function () {
     // Zoom = tiles across the shorter pane axis. Longer axis shows more tiles.
     const ZOOM_SPANS = [40, 36, 32, 28, 24, 20, 16, 14, 12, 10, 5];
     const DEFAULT_ZOOM_INDEX = 5; // 20×20 — matches camera.DEFAULT_VIEW_SPAN
-    const MIN_VISIBLE = 5; // furthest zoom-in
     const MARGIN_REF_SPAN = 20; // matches camera.DEFAULT_VIEW_SPAN
     const EDGE_MARGIN_REF = 4; // matches camera.EDGE_MARGIN at default span
     // Keep payload size bounded (mirrors camera.MAX_VIEWPORT and ~3200 cells).
     const MAX_VIEWPORT_AXIS = 120;
     const MAX_VIEWPORT_CELLS = 3200;
-
-    // Back-compat alias for any callers still reading ZOOM_LEVELS
-    const ZOOM_LEVELS = ZOOM_SPANS;
 
     const state = {
         zoomIndex: DEFAULT_ZOOM_INDEX,
@@ -131,44 +127,6 @@ const MapView = (function () {
         state.drawCamY = state.mapOriginY;
         state.drawCamX = state.mapOriginX;
         drawCamReady = true;
-    }
-
-    function followDrawCam() {
-        const vh = state.visibleRows;
-        const vw = state.visibleCols;
-        const vis = (typeof PlayerPresentation !== 'undefined' && PlayerPresentation.visualPos)
-            ? PlayerPresentation.visualPos(state.playerId)
-            : null;
-        const py = vis ? vis.y : state.playerY;
-        const px = vis ? vis.x : state.playerX;
-        const my = effectiveMargin(vh, marginForSpan(vh));
-        const mx = effectiveMargin(vw, marginForSpan(vw));
-
-        if (!drawCamReady) {
-            snapDrawCam();
-        }
-
-        if (state.mapH > 0 && vh >= state.mapH) {
-            state.drawCamY = (state.mapH - vh) / 2;
-        } else {
-            let cy = state.drawCamY;
-            const sy = py - cy;
-            if (sy < my) cy = py - my;
-            else if (sy > vh - 1 - my) cy = py - (vh - 1 - my);
-            cy = Math.max(py - (vh - 1), Math.min(cy, py));
-            state.drawCamY = cy;
-        }
-
-        if (state.mapW > 0 && vw >= state.mapW) {
-            state.drawCamX = (state.mapW - vw) / 2;
-        } else {
-            let cx = state.drawCamX;
-            const sx = px - cx;
-            if (sx < mx) cx = px - mx;
-            else if (sx > vw - 1 - mx) cx = px - (vw - 1 - mx);
-            cx = Math.max(px - (vw - 1), Math.min(cx, px));
-            state.drawCamX = cx;
-        }
     }
 
     function localPlayerMoving() {
@@ -543,9 +501,7 @@ const MapView = (function () {
 
     return {
         ZOOM_SPANS,
-        ZOOM_LEVELS,
         DEFAULT_ZOOM_INDEX,
-        MIN_VISIBLE,
         state,
         getState,
         init,

@@ -45,6 +45,49 @@ class OpponentPickTests(unittest.TestCase):
         self.assertEqual(closest_ladder_index(ladder, 100), 0)
         self.assertEqual(closest_ladder_index(ladder, 2000), 3)
 
+    def test_closest_index_matches_linear_scan(self):
+        """Bisect path must agree with a plain scan everywhere."""
+        ladder = [_fighter(i * 100) for i in range(20)]
+        elos = [f.elo for f in ladder]
+        ratings = [-500, -1, 0, 1, 49, 50, 51, 149, 150, 151,
+                   949, 950, 951, 1900, 1901, 2000, 99999]
+        for rating in ratings:
+            with self.subTest(rating=rating):
+                self.assertEqual(
+                    closest_ladder_index(ladder, rating),
+                    monster_elo_mod._closest_ladder_index_linear(elos, rating),
+                )
+
+    def test_closest_index_tie_prefers_lower_index(self):
+        ladder = [_fighter(100), _fighter(300), _fighter(500)]
+        # 200 is equidistant from 100 and 300; keep the lower index.
+        self.assertEqual(closest_ladder_index(ladder, 200), 0)
+
+    def test_closest_index_unsorted_ladder(self):
+        """A ladder that is not ascending still finds the true nearest."""
+        ladder = [_fighter(900), _fighter(100), _fighter(1500), _fighter(500)]
+        self.assertEqual(closest_ladder_index(ladder, 880), 0)
+        self.assertEqual(closest_ladder_index(ladder, 120), 1)
+        self.assertEqual(closest_ladder_index(ladder, 1400), 2)
+        self.assertEqual(closest_ladder_index(ladder, 520), 3)
+
+    def test_closest_index_duplicate_elos(self):
+        ladder = [_fighter(100), _fighter(500), _fighter(500), _fighter(900)]
+        # Exact match on a duplicated value resolves to the first of them.
+        self.assertEqual(closest_ladder_index(ladder, 500), 1)
+
+    def test_closest_index_single_entry(self):
+        self.assertEqual(closest_ladder_index([_fighter(700)], 0), 0)
+        self.assertIsNone(closest_ladder_index([], 700))
+
+    def test_elos_memo_follows_ladder_identity(self):
+        """Switching ladders must not reuse the previous ladder's elos."""
+        asc = [_fighter(100), _fighter(200), _fighter(300)]
+        self.assertEqual(closest_ladder_index(asc, 290), 2)
+        other = [_fighter(1000), _fighter(2000)]
+        self.assertEqual(closest_ladder_index(other, 290), 0)
+        self.assertEqual(closest_ladder_index(asc, 290), 2)
+
     def test_midpoint_elo(self):
         ladder = [_fighter(100), _fighter(500), _fighter(900), _fighter(1500), _fighter(2000)]
         self.assertEqual(ladder_midpoint_elo(ladder), 900.0)

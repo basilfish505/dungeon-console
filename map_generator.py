@@ -540,10 +540,6 @@ class MapGenerator:
         h, w = len(check_map), len(check_map[0])
         return [h // 2, w // 2]
 
-    def get_random_position(self, game_map=None):
-        h, w = self._dims(game_map)
-        return random.randint(1, max(1, w - 2)), random.randint(1, max(1, h - 2))
-
     def is_position_free(self, x, y, players, existing_monsters, game_map=None):
         check_map = game_map if game_map is not None else self.game_map
         h, w = len(check_map), len(check_map[0])

@@ -1,5 +1,3 @@
-@import url('https://fonts.googleapis.com/css2?family=VT323&display=swap');
-
 * {
     box-sizing: border-box;
 }
@@ -54,7 +52,6 @@ body {
 }
 
 .game-header {
-    flex-shrink: 0;
     text-align: center;
     font-size: clamp(1.35rem, 5vw, 2.25rem);
     letter-spacing: 0.08em;
@@ -63,7 +60,6 @@ body {
 }
 
 .message-pane {
-    flex-shrink: 0;
     overflow: hidden;
     border-bottom: 1px solid #003300;
 }
@@ -626,18 +622,6 @@ body {
     cursor: not-allowed;
     opacity: 0.55;
     background: #050a08;
-}
-
-.death-message {
-    color: #ff0000;
-    text-align: center;
-    font-size: 1.5em;
-    margin: 20px 0;
-}
-
-.monster-attack {
-    color: #ff4040;
-    font-style: italic;
 }
 
 @media (max-width: 420px) {

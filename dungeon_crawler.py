@@ -8,12 +8,10 @@ import os
 import uuid
 from player import Player
 from combat import CombatSystem
-import ssl
 from map_generator import MapGenerator
 from camera import (
     update_camera,
     pan_camera,
-    slice_map,
     clamp_viewport_size,
     clamp_pan_extents,
     VIEWPORT_H,
@@ -115,10 +113,6 @@ class GameState:
                 self.town_doors[(int(door[0]), int(door[1]))] = shop_id
             if road:
                 self.town_exits[shop_id] = [int(road[0]), int(road[1])]
-
-    def _register_items_shop(self):
-        """Compat: register all town shops."""
-        self._register_town_shops()
 
     def view_for(self, player):
         """(game_map, monsters, npcs) for the player's current location."""
@@ -1276,5 +1270,3 @@ if __name__ == '__main__':
                     port=port,
                     debug=True,
                     use_reloader=False)
-
-print(ssl.OPENSSL_VERSION) 

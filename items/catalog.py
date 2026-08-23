@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from armour_types.registry import ARMOUR_TYPES, get_armour_type
-from item_types.registry import ITEM_TYPES, get_item_type
-from weapon_types.registry import WEAPON_TYPES, get_weapon_type
+from armour_types.registry import get_armour_type
+from item_types.registry import get_item_type
+from weapon_types.registry import get_weapon_type
 
 CATEGORY_ITEM = 'item'
 CATEGORY_WEAPON = 'weapon'
@@ -87,7 +87,3 @@ def shop_catalog(shop_id):
         if type_def is not None:
             out.append(type_def.to_client_dict())
     return out
-
-
-def type_exists(category, type_id):
-    return resolve_owned_type(category, type_id) is not None

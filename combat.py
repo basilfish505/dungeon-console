@@ -5,6 +5,7 @@ from monster import Monster
 from combat_damage import resolve_attack
 from combat_elo import apply_elo_outcome
 from player_xp import calculate_pqg_from_xp, calculate_xp_from_elo
+from player_persistence import save_player
 import uuid
 
 TURN_TIMEOUT_SECONDS = 20
@@ -1011,6 +1012,7 @@ class CombatSystem:
             killer_id,
             f"Elo {delta_txt} (now {new_elo:.0f}).",
         )
+        save_player(killer)
         
         # Remove monster from battle
         battle['monsters'].remove(monster)
@@ -1079,6 +1081,7 @@ class CombatSystem:
                 killer_id,
                 f"Elo {delta_txt} (now {new_elo:.0f}).",
             )
+            save_player(killer)
         elif killer_monster is not None:
             apply_elo_outcome(killer_monster, player)
         

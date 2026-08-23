@@ -107,19 +107,6 @@ class Monster:
         self.memory_player_id = None
         self.memory_pos = None
 
-    def move(self, direction):
-        """Return proposed position for a cardinal wasd key (player-compatible)."""
-        new_pos = self.pos.copy()
-        if direction == 'w':
-            new_pos[0] -= 1
-        elif direction == 's':
-            new_pos[0] += 1
-        elif direction == 'a':
-            new_pos[1] -= 1
-        elif direction == 'd':
-            new_pos[1] += 1
-        return new_pos
-
     def sprite_url(self):
         type_def = get_monster_type(self.type_id)
         return type_def.sprite if type_def else None

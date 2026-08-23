@@ -116,20 +116,6 @@ const UI = (function() {
         return viewport;
     }
 
-    // Show game elements after login (legacy path without pre-measure)
-    function showGameElements() {
-        prepareJoinViewport();
-    }
-
-    // Update map display via MapView + MapRenderer
-    function updateMap(mapData, fogData) {
-        // Legacy entry point — prefer ingestGameState from socket
-        if (!mapData) {
-            return;
-        }
-        MapView.ingestGameState({ map: mapData, fog: fogData });
-    }
-
     function applyGameState(data) {
         MapView.ingestGameState(data);
     }
@@ -225,9 +211,7 @@ const UI = (function() {
     return {
         elements,
         hideGameElements,
-        showGameElements,
         prepareJoinViewport,
-        updateMap,
         applyGameState,
         updateMessages,
         updatePlayerProperties,

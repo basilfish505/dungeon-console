@@ -14,6 +14,7 @@ Does not touch the map, UI, XP, loot, or game sessions.
 from __future__ import annotations
 
 import argparse
+import bisect
 import json
 import random
 from dataclasses import dataclass, field
@@ -41,6 +42,11 @@ SPAWN_ELO_RANK_WINDOW = 5
 _ladder_cache = None
 _ladder_cache_path = None
 _ladder_load_warned = False
+
+# Single-slot memo for closest_ladder_index (see ladder_elos).
+_ladder_elos_owner = None
+_ladder_elos = None
+_ladder_elos_ascending = True
 
 
 @dataclass
@@ -161,24 +167,65 @@ def load_elo_ladder(path=None, force=False):
 def reload_elo_ladder(path=None):
     """Clear cache and reload (for tests / after regenerating JSON)."""
     global _ladder_cache, _ladder_cache_path, _ladder_load_warned
+    global _ladder_elos_owner, _ladder_elos, _ladder_elos_ascending
     _ladder_cache = None
     _ladder_cache_path = None
     _ladder_load_warned = False
+    _ladder_elos_owner = None
+    _ladder_elos = None
+    _ladder_elos_ascending = True
     return load_elo_ladder(path=path, force=True)
 
 
-def closest_ladder_index(ladder, rating):
-    """Index of the ladder entry whose Elo is closest to rating."""
-    if not ladder:
-        return None
+def ladder_elos(ladder):
+    """Elo values in ladder order, plus whether they ascend.
+
+    Single-slot memo: gameplay reuses one shared ladder for every spawn, so
+    caching just the most recent one avoids rebuilding this list per fight
+    without holding onto ladders the caller has finished with.
+    """
+    global _ladder_elos_owner, _ladder_elos, _ladder_elos_ascending
+    if _ladder_elos_owner is ladder:
+        return _ladder_elos, _ladder_elos_ascending
+    elos = [float(fighter.elo) for fighter in ladder]
+    ascending = all(elos[i] <= elos[i + 1] for i in range(len(elos) - 1))
+    _ladder_elos_owner = ladder
+    _ladder_elos = elos
+    _ladder_elos_ascending = ascending
+    return elos, ascending
+
+
+def _closest_ladder_index_linear(elos, rating):
+    """Nearest index by linear scan; ties keep the lowest index."""
     best_i = 0
-    best_dist = abs(ladder[0].elo - rating)
-    for i in range(1, len(ladder)):
-        dist = abs(ladder[i].elo - rating)
+    best_dist = abs(elos[0] - rating)
+    for i in range(1, len(elos)):
+        dist = abs(elos[i] - rating)
         if dist < best_dist:
             best_dist = dist
             best_i = i
     return best_i
+
+
+def closest_ladder_index(ladder, rating):
+    """Index of the ladder entry whose Elo is closest to rating.
+
+    Binary search when the ladder is ascending (the normal case), else a
+    linear scan. Ties resolve to the lower index either way.
+    """
+    if not ladder:
+        return None
+    elos, ascending = ladder_elos(ladder)
+    if not ascending:
+        return _closest_ladder_index_linear(elos, rating)
+
+    i = bisect.bisect_left(elos, rating)
+    if i == 0:
+        return 0
+    if i >= len(elos):
+        return len(elos) - 1
+    # bisect_left puts equal values at i, so elos[i-1] < rating <= elos[i].
+    return i - 1 if (rating - elos[i - 1]) <= (elos[i] - rating) else i
 
 
 def pick_ladder_opponent(
