@@ -47,6 +47,11 @@ def player_to_save_dict(player):
         'hp': int(getattr(player, 'hp', 1) or 1),
         'mmp': int(getattr(player, 'mmp', 0) or 0),
         'mp': int(getattr(player, 'mp', 0) or 0),
+        'pos': list(getattr(player, 'pos', [0, 0])),
+        'dungeon_level': int(getattr(player, 'dungeon_level', 0) or 0),
+        'interior_id': getattr(player, 'interior_id', None),
+        'in_combat': bool(getattr(player, 'in_combat', False)),
+        'appearance_id': getattr(player, 'appearance_id', 'peasant'),
     }
 
 
@@ -80,6 +85,19 @@ def apply_save_dict(player, data):
     sync_equipment(player)
     from items.light import sync_light_sight
     sync_light_sight(player)
+    if 'pos' in data and isinstance(data['pos'], (list, tuple)):
+        player.pos = list(data['pos'])
+    if 'dungeon_level' in data:
+        try:
+            player.dungeon_level = int(data['dungeon_level'])
+        except (TypeError, ValueError):
+            pass
+    if 'interior_id' in data:
+        player.interior_id = data.get('interior_id')
+    if 'in_combat' in data:
+        player.in_combat = bool(data['in_combat'])
+    if 'appearance_id' in data:
+        player.appearance_id = data['appearance_id']
     if hasattr(player, 'sync_level_from_xp'):
         player.sync_level_from_xp()
     return True

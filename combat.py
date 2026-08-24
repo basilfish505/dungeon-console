@@ -71,6 +71,11 @@ class CombatSystem:
             self.socketio.emit(event, room=room)
         else:
             self.socketio.emit(event, data, room=room)
+
+    def _persist_combat_state(self):
+        gs = self.game_state
+        if hasattr(gs, 'mark_world_meta_dirty'):
+            gs.mark_world_meta_dirty()
     
     def start_combat(self, attacker_id, defender_id, emit_game_state=True):
         """Initialize combat between two entities (players or monsters)"""
@@ -250,6 +255,8 @@ class CombatSystem:
         
         if emit_game_state:
             self._update_all_players()
+
+        self._persist_combat_state()
         
         return battle_id
     
@@ -1174,6 +1181,9 @@ class CombatSystem:
             f"Elo {delta_txt} (now {elo_after:.0f}).",
         )
         save_player(killer)
+        wp = getattr(self.game_state, 'world_persistence', None)
+        if wp:
+            wp.save_character(player_id)
 
         summary_lines = [
             f"You defeated {kills} {enemy_word}.",
@@ -1249,10 +1259,14 @@ class CombatSystem:
         player_position = tuple(player.pos)
         dead_name = player.id
 
+        killer_name = None
+        killer_kind = None
+
         # Elo: PvP kill or monster kill (before the dead player is removed)
         if killer_id and killer_id in self.game_state.players:
             killer = self.game_state.players[killer_id]
             killer_name = killer.id
+            killer_kind = 'player'
             self.game_state.add_global_message(f"{killer_name} slayed {dead_name}")
             new_elo, _dead_elo, elo_delta = apply_elo_outcome(killer, player)
             delta_txt = f"+{elo_delta:.0f}" if elo_delta >= 0 else f"{elo_delta:.0f}"
@@ -1261,8 +1275,30 @@ class CombatSystem:
                 f"Elo {delta_txt} (now {new_elo:.0f}).",
             )
             save_player(killer)
+            wp = getattr(self.game_state, 'world_persistence', None)
+            if wp:
+                wp.save_character(killer_id)
         elif killer_monster is not None:
+            killer_name = getattr(killer_monster, 'name', killer_monster.id)
+            killer_kind = 'monster'
             apply_elo_outcome(killer_monster, player)
+
+        wp = getattr(self.game_state, 'world_persistence', None)
+        if wp:
+            from world_serial import player_to_world_dict
+            player_data = player_to_world_dict(
+                player,
+                messages=self.game_state.player_messages.get(player_id, []),
+            )
+            wp.write_tombstone(
+                player_id,
+                killer_name=killer_name,
+                killer_kind=killer_kind,
+                dungeon_level=player.dungeon_level,
+                message='.... Thou art dead.',
+                player_data=player_data,
+            )
+            wp.mark_level_dirty(player.dungeon_level)
         
         # Zero out HP and mark player as dead
         player.hp = 0
@@ -1340,6 +1376,7 @@ class CombatSystem:
             self._update_all_players()
 
         self.socketio.start_background_task(finish_after_pause)
+        self._persist_combat_state()
     
     def _check_battle_end(self, battle, victory=False):
         """End battle if only one (or zero) combatants remain. Returns True if ended."""
@@ -1353,6 +1390,7 @@ class CombatSystem:
             battle['monsters'] = []
             battle['turn_order'] = []
             self.battles.pop(battle['battle_id'], None)
+            self._persist_combat_state()
             return True
 
         # End if no monsters and only one or zero players
@@ -1391,8 +1429,9 @@ class CombatSystem:
             
             # Remove battle
             self.battles.pop(battle['battle_id'], None)
+            self._persist_combat_state()
             return True
-        return False    
+        return False
     def _update_all_players(self):
         """Update game state for all active players"""
         for pid in self.game_state.active_players:

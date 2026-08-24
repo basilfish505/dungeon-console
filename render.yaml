@@ -12,3 +12,14 @@ services:
         value: 3.11
       - key: RENDER
         value: "true"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: permaquest-db
+          property: connectionString
+      # Optional: ADMIN_TOKEN for POST /admin/new_world, NEW_WORLD=1 to force fresh world at boot.
+
+databases:
+  - name: permaquest-db
+    plan: free
+    databaseName: permaquest
+    user: permaquest

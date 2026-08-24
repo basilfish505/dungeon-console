@@ -163,6 +163,16 @@ const SocketHandler = (function () {
             socket.disconnect();
         });
 
+        socket.on('character_dead', function (data) {
+            clearJoinedSession();
+            UI.handlePlayerDeath(data);
+            if (typeof UI !== 'undefined' && UI.showLoginScreen) {
+                setTimeout(function () {
+                    UI.showLoginScreen();
+                }, 4000);
+            }
+        });
+
         document.addEventListener('visibilitychange', function () {
             if (!document.hidden && getJoinedPlayerId()) {
                 tryResumeSession();

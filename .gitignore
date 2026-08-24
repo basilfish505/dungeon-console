@@ -1,4 +1,5 @@
 player_saves/
+world_saves/
 __pycache__/
 *.pyc
 .env

@@ -1,7 +1,13 @@
 import eventlet
 eventlet.monkey_patch()
 
-from flask import Flask, render_template, session, request
+try:
+    import psycogreen.eventlet
+    psycogreen.eventlet.patch_psycopg()
+except ImportError:
+    pass
+
+from flask import Flask, render_template, session, request, jsonify
 from flask_socketio import SocketIO, emit, join_room
 import random
 import os
@@ -37,6 +43,7 @@ from items.service import (
 from items.equipment import equip_item, unequip_item
 from items.catalog import SHOP_TO_CATEGORY
 from player_persistence import load_player, save_player
+from world_persistence import WorldPersistence
 from interiors.items_shop import (
     ITEMS_SHOP_ID,
     build_items_shop,
@@ -54,8 +61,8 @@ SHOP_BUILDERS = {
 
 # Constants (map spawn rates live in map_generator.py)
 SECRET_KEY = 'your-secret-key-here'
-# New process ⇒ new id. Stale tabs must not silently recreate old characters.
-SERVER_BOOT_ID = uuid.uuid4().hex
+# Persisted world id exposed to clients as boot_id (see WorldPersistence.initialize).
+SERVER_BOOT_ID = None
 # Keep each game_state payload small (full log was resent on every step).
 MAX_PLAYER_MESSAGES = 50
 
@@ -70,8 +77,10 @@ app.config['SECRET_KEY'] = SECRET_KEY
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')
 
 class GameState:
-    def __init__(self):
+    def __init__(self, skip_generate=False):
         self.map_generator = MapGenerator()
+        self.world_id = None
+        self.world_persistence = None
         self.players = {}
         self.active_players = {}
         self.player_sids = {}  # player_id -> current socket sid (for reconnect races)
@@ -89,7 +98,27 @@ class GameState:
         self.town_doors = {}  # (y, x) -> interior_id
         self.town_exits = {}  # interior_id -> [y, x] road tile
         self.pending_inspect = {}
-        self.generate_top_level()
+        if not skip_generate:
+            self.generate_top_level()
+
+    def _persist_hook(self):
+        wp = getattr(self, 'world_persistence', None)
+        return wp
+
+    def mark_level_dirty(self, level_number):
+        wp = self._persist_hook()
+        if wp:
+            wp.mark_level_dirty(level_number)
+
+    def mark_character_dirty(self, player_id):
+        wp = self._persist_hook()
+        if wp:
+            wp.mark_character_dirty(player_id)
+
+    def mark_world_meta_dirty(self):
+        wp = self._persist_hook()
+        if wp:
+            wp.mark_world_meta_dirty()
 
     def generate_top_level(self):
         """Generate the top level using the MapGenerator"""
@@ -143,6 +172,7 @@ class GameState:
                     stairs_up_pos=stairs_up_pos
                 )
                 self.levels[level_number] = (game_map, monsters)
+            self.mark_level_dirty(level_number)
         return self.levels[level_number]
 
     def players_on_level(self, level_number):
@@ -357,12 +387,14 @@ class GameState:
 
         Only clear a `&` marker. Stairs under the monster must stay.
         """
-        for game_map, monsters in self.levels.values():
+        for level_number, (game_map, monsters) in self.levels.items():
             if position in monsters:
                 del monsters[position]
                 y, x = position[0], position[1]
                 if game_map[y][x] == '&':
                     game_map[y][x] = '.'
+                self.mark_level_dirty(level_number)
+                self.mark_world_meta_dirty()
                 return True
         for _iid, (_game_map, npcs) in (getattr(self, 'interiors', None) or {}).items():
             if position in npcs:
@@ -401,6 +433,7 @@ class GameState:
         cell = game_map[dest[0]][dest[1]]
         if cell not in ('↓', '↑'):
             game_map[dest[0]][dest[1]] = '&'
+        self.mark_level_dirty(level_number)
         return True
 
     def broadcast_active_players(self, socketio_ref):
@@ -410,17 +443,31 @@ class GameState:
 
     def add_player(self, player_id):
         if player_id not in self.players:
-            # New players always join on the top level
-            position = self.find_random_start(0)
-            new_player = Player(player_id, position)
-            new_player.dungeon_level = 0
-            load_player(new_player)
-            self.players[player_id] = new_player
-            # Initialize player's message list
-            self.player_messages[player_id] = []
-            # Add welcome message only to this player's messages
-            self.add_player_message(player_id, f"Welcome, {player_id}, to the realm of PermaQuest. Thy quest begins, and glory or ruin lies ahead.")
-            self.recompute_visibility(new_player)
+            wp = self._persist_hook()
+            restored = False
+            if wp and wp.world_id:
+                row = wp.store.get_character(wp.world_id, player_id)
+                if row and row.get('status') == 'alive':
+                    from world_serial import player_from_world_dict
+                    data = row.get('data') or {}
+                    new_player = player_from_world_dict(player_id, data)
+                    self.players[player_id] = new_player
+                    self.player_messages[player_id] = list(data.get('messages') or [])
+                    restored = True
+            if not restored:
+                position = self.find_random_start(0)
+                new_player = Player(player_id, position)
+                new_player.dungeon_level = 0
+                load_player(new_player)
+                self.players[player_id] = new_player
+                self.player_messages[player_id] = []
+                self.add_player_message(
+                    player_id,
+                    f"Welcome, {player_id}, to the realm of PermaQuest. "
+                    f"Thy quest begins, and glory or ruin lies ahead.",
+                )
+            self.recompute_visibility(self.players[player_id])
+            self.mark_character_dirty(player_id)
 
         # Mark player as active
         self.active_players[player_id] = self.players[player_id]
@@ -505,6 +552,8 @@ class GameState:
                     return False
                 self._record_stair_step(player_id, new_pos)
                 self.add_player_message(player_id, "You descend deeper into the dungeon...")
+                self.mark_character_dirty(player_id)
+                self.mark_level_dirty(player.dungeon_level)
                 return True
 
             if tile == '↑':
@@ -518,6 +567,8 @@ class GameState:
                     return False
                 self._record_stair_step(player_id, new_pos)
                 self.add_player_message(player_id, "You climb back toward the surface...")
+                self.mark_character_dirty(player_id)
+                self.mark_level_dirty(player.dungeon_level)
                 return True
 
             if tile == '+':
@@ -543,6 +594,9 @@ class GameState:
 
             player.pos = new_pos
             self.recompute_visibility(player)
+            self.mark_character_dirty(player_id)
+            if not getattr(player, 'interior_id', None):
+                self.mark_level_dirty(player.dungeon_level)
             return True
         return False
 
@@ -609,6 +663,7 @@ class GameState:
             del self.cameras[player.id]
         self.manual_pan.pop(player.id, None)
         self.recompute_visibility(player)
+        self.mark_character_dirty(player.id)
         return True
 
     def exit_interior(self, player):
@@ -631,6 +686,7 @@ class GameState:
             del self.cameras[player.id]
         self.manual_pan.pop(player.id, None)
         self.recompute_visibility(player)
+        self.mark_character_dirty(player.id)
         return True
 
     def is_valid_move(self, from_pos, new_pos, game_map):
@@ -884,9 +940,21 @@ class GameState:
             payload['stair_step'] = {'y': step[0], 'x': step[1]}
         return payload
 
-# Create game state and combat system
-game_state = GameState()
+# Create game state, combat system, and persistence
+game_state = GameState(skip_generate=True)
 combat_system = CombatSystem(game_state, socketio)
+
+if os.environ.get('PERMAQUEST_SKIP_WORLD_BOOT', '').lower() in ('1', 'true', 'yes'):
+    world_persistence = WorldPersistence(game_state, combat_system, socketio=None)
+    game_state.world_persistence = world_persistence
+    SERVER_BOOT_ID = uuid.uuid4().hex
+else:
+    world_persistence = WorldPersistence(game_state, combat_system, socketio)
+    game_state.world_persistence = world_persistence
+    SERVER_BOOT_ID = world_persistence.initialize()
+    world_persistence.resume_battle_timers()
+    world_persistence.register_shutdown_handlers()
+    world_persistence.start_autosave()
 
 
 class GameStateDisplay:
@@ -904,18 +972,44 @@ class GameStateDisplay:
 def home():
     return render_template('index.html')
 
+
+@app.route('/admin/new_world', methods=['POST'])
+def admin_new_world():
+    """Explicit new world generation (requires ADMIN_TOKEN header or ?token=)."""
+    expected = os.environ.get('ADMIN_TOKEN', '').strip()
+    if not expected:
+        return jsonify({'ok': False, 'error': 'ADMIN_TOKEN not configured'}), 403
+    token = (
+        request.headers.get('X-Admin-Token')
+        or request.args.get('token')
+        or ''
+    ).strip()
+    if token != expected:
+        return jsonify({'ok': False, 'error': 'Forbidden'}), 403
+    global SERVER_BOOT_ID
+    new_id = world_persistence.start_new_world()
+    SERVER_BOOT_ID = new_id
+    return jsonify({'ok': True, 'world_id': new_id})
+
 @socketio.on('connect')
 def handle_connect():
     """Resume an existing session if possible; otherwise send spectator map."""
     emit('server_hello', {'boot_id': SERVER_BOOT_ID})
     player_id = session.get('player_id')
-    if player_id and player_id in game_state.players:
-        game_state.add_player(player_id)
-        game_state.bind_socket(player_id, request.sid)
-        join_room(player_id)
-        emit('game_state', game_state.get_game_state(player_id))
-        print(f"Player {player_id} resumed on connect (sid={request.sid}).")
-        return
+    if player_id:
+        status = world_persistence.get_character_status(player_id)
+        if status == 'dead':
+            tomb = world_persistence.get_tombstone(player_id)
+            if tomb:
+                emit('character_dead', tomb)
+            return
+        if player_id in game_state.players:
+            game_state.add_player(player_id)
+            game_state.bind_socket(player_id, request.sid)
+            join_room(player_id)
+            emit('game_state', game_state.get_game_state(player_id))
+            print(f"Player {player_id} resumed on connect (sid={request.sid}).")
+            return
     emit('game_state', game_state.get_game_state(None))
 
 
@@ -940,6 +1034,16 @@ def handle_select_id(data):
     if not client_boot or str(client_boot) != SERVER_BOOT_ID:
         emit('world_reset', {'boot_id': SERVER_BOOT_ID})
         print(f"Rejected select_id for {player_id!r} (stale or missing boot_id).")
+        return
+
+    char_status = world_persistence.get_character_status(player_id)
+    if char_status == 'dead':
+        tomb = world_persistence.get_tombstone(player_id)
+        emit('character_dead', tomb or {
+            'player_id': player_id,
+            'message': '.... Thou art dead.',
+        })
+        print(f"Rejected select_id for {player_id!r} (character is dead).")
         return
 
     already_active = player_id in game_state.active_players
@@ -988,6 +1092,11 @@ def handle_disconnect():
         removed = game_state.remove_player(player_id, sid=request.sid)
         if removed:
             print(f"Player {player_id} disconnected.")
+            if player_id in game_state.players:
+                try:
+                    world_persistence.save_character(player_id)
+                except Exception as exc:
+                    print(f"Disconnect save error for {player_id}: {exc}")
             # If they disconnected on their turn, forfeit immediately (stay in battle offline)
             if was_their_turn:
                 print(f"Player {player_id} disconnected during their turn. Forfeiting turn.")
@@ -1206,6 +1315,7 @@ def handle_inventory_action(data):
 
     if persist:
         save_player(player)
+        world_persistence.save_character(player_id)
 
     emit('item_action_result', {
         'ok': bool(result.get('ok')),
@@ -1239,6 +1349,7 @@ def handle_buy_item(data):
     result = purchase_item(player, data.get('item_id'), shop_id=shop_id)
     if result.get('ok'):
         save_player(player)
+        world_persistence.save_character(player_id)
     emit('game_state', game_state.get_game_state(player_id), room=player_id)
     emit('buy_item_result', {
         'ok': bool(result.get('ok')),

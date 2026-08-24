@@ -127,6 +127,9 @@ def register_player_turn_action(game_state, player_id, combat_system=None, socke
     from player_persistence import save_player
     if tick_player_light(player, game_state=game_state):
         save_player(player)
+        wp = getattr(game_state, 'world_persistence', None)
+        if wp:
+            wp.mark_character_dirty(player_id)
 
     rounds_fired = 0
     while turn_state.turn_progress >= required:

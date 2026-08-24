@@ -195,7 +195,7 @@ const UI = (function() {
     }
 
     // Handle player death
-    function handlePlayerDeath() {
+    function handlePlayerDeath(deathInfo) {
         if (elements.combatBox) {
             elements.combatBox.hidden = true;
             elements.combatBox.setAttribute('aria-hidden', 'true');
@@ -213,7 +213,14 @@ const UI = (function() {
         if (elements.gameShell) {
             elements.gameShell.hidden = false;
         }
-        elements.messageLog.innerHTML = '<div>Thou art dead.</div>';
+        const msg = (deathInfo && deathInfo.message) || 'Thou art dead.';
+        let html = '<div>' + msg + '</div>';
+        if (deathInfo && deathInfo.killer_name) {
+            const kind = deathInfo.killer_kind === 'player' ? 'player' : 'foe';
+            html += '<div>Slain by ' + deathInfo.killer_name + ' (' + kind + ').</div>';
+        }
+        html += '<div style="margin-top:1em;opacity:0.85;">Choose a new name to begin again.</div>';
+        elements.messageLog.innerHTML = html;
     }
 
     // Return public API
