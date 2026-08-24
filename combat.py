@@ -14,9 +14,13 @@ KILLING_BLOW_PAUSE_SECONDS = 1  # pause so killer can read damage before combat 
 
 
 def _monster_combatant(monster, is_current_turn=False):
-    """Client-facing monster entry for combat UI payloads."""
+    """Client-facing monster entry for combat UI payloads.
+
+    ``id`` is the unique instance id so two of the same species stay distinct
+    in selection, inspect, and death updates. ``name`` is the display label.
+    """
     return {
-        'id': monster.type,
+        'id': monster.id,
         'monster_id': monster.id,
         'type_id': monster.type_id,
         'name': monster.name,
@@ -493,6 +497,21 @@ class CombatSystem:
 
         self._emit('combat_update', target_request, room=player_id)
     
+    def _find_monster_in_battle(self, battle, target_id):
+        """Resolve a combat target id to a monster instance, preferring unique ids."""
+        if not target_id:
+            return None
+        for monster in battle['monsters']:
+            if monster.id == target_id:
+                return monster
+        type_matches = [
+            m for m in battle['monsters']
+            if m.type == target_id or getattr(m, 'type_id', None) == target_id
+        ]
+        if len(type_matches) == 1:
+            return type_matches[0]
+        return None
+
     def _handle_attack(self, attacker_id, target_id, battle):
         """Handle an attack action"""
         attacker = self.game_state.players[attacker_id]
@@ -505,12 +524,9 @@ class CombatSystem:
         if target_id in self.game_state.players:
             target = self.game_state.players[target_id]
         else:
-            # Try to find the target among monsters
-            for monster in battle['monsters']:
-                if monster.id == target_id or monster.type == target_id:
-                    target = monster
-                    target_is_monster = True
-                    break
+            target = self._find_monster_in_battle(battle, target_id)
+            if target is not None:
+                target_is_monster = True
         
         if not target:
             # Stale client selection (e.g. eliminated foe) — use sole remaining opponent
@@ -521,11 +537,9 @@ class CombatSystem:
                     target = self.game_state.players[target_id]
                     target_is_monster = False
                 else:
-                    for monster in battle['monsters']:
-                        if monster.id == target_id or monster.type == target_id:
-                            target = monster
-                            target_is_monster = True
-                            break
+                    target = self._find_monster_in_battle(battle, target_id)
+                    if target is not None:
+                        target_is_monster = True
             if not target:
                 self._send_target_request(attacker_id, battle)
                 return
@@ -708,6 +722,19 @@ class CombatSystem:
 
     def _schedule_monster_turn(self, monster_id, battle):
         """Wait briefly before the monster acts so the prior action can be read"""
+        # Notify clients the turn advanced (roster / buttons) without a status
+        # line — the prior action message should stay readable during the delay.
+        for pid in list(battle['participants']):
+            note = self._create_combat_update(
+                pid,
+                battle,
+                'turn_notification',
+                '',
+                your_turn=False,
+                active_player=monster_id,
+            )
+            self._emit('combat_update', note, room=pid)
+
         token = str(uuid.uuid4())
         battle['monster_turn_delay_token'] = token
         battle_id = battle['battle_id']
@@ -810,16 +837,14 @@ class CombatSystem:
         return update
 
     def _get_current_active_player(self, battle):
-        """Helper method to get the currently active player or monster in a battle"""
+        """Return the unique id of the actor whose turn it is (player or monster)."""
         current_turn_id = battle['turn_order'][battle['current_turn_index']]
         
         if current_turn_id in self.game_state.players:
             return self.game_state.players[current_turn_id].id
-        else:
-            # It's a monster's turn
-            for monster in battle['monsters']:
-                if monster.id == current_turn_id:
-                    return monster.type
+        for monster in battle['monsters']:
+            if monster.id == current_turn_id:
+                return monster.id
         return None
 
     def _create_combat_update(self, player_id, battle, update_type, message, **kwargs):
@@ -848,9 +873,9 @@ class CombatSystem:
 
     def _resolve_target(self, battle, target_id):
         """Return (entity, is_monster) or (None, False)"""
-        for monster in battle['monsters']:
-            if monster.id == target_id or monster.type == target_id:
-                return monster, True
+        monster = self._find_monster_in_battle(battle, target_id)
+        if monster is not None:
+            return monster, True
         if target_id in self.game_state.players:
             return self.game_state.players[target_id], False
         return None, False
@@ -896,6 +921,9 @@ class CombatSystem:
         for p_id in participants:
             is_attacker = p_id == attacker_id
             is_target = (not is_monster) and p_id == target_key
+            miss_sound = None
+            if not blocked and not hit and is_attacker:
+                miss_sound = 'playerMiss'
             update = {
                 'type': 'combat_action',
                 'battle_id': battle['battle_id'],
@@ -910,6 +938,7 @@ class CombatSystem:
                 'combatants': combatants,
                 'your_turn': False,
                 'play_hit_sound': (hit and damage > 0 and (is_attacker or is_target)),
+                'play_miss_sound': miss_sound,
                 'shake_combat': (hit and damage > 0 and is_target),
             }
             if hit and damage > 0:
@@ -958,6 +987,7 @@ class CombatSystem:
                 'combatants': combatants,
                 'your_turn': False,
                 'play_hit_sound': (hit and damage > 0 and is_target),
+                'play_miss_sound': 'monsterMiss' if (not hit and is_target) else None,
                 'shake_combat': (hit and damage > 0 and is_target),
             }
             if hit and damage > 0 and is_target:
@@ -1039,13 +1069,26 @@ class CombatSystem:
             return {'ok': False}
 
         for monster in battle.get('monsters', []):
-            if monster.id == tid or monster.type == tid or getattr(monster, 'type_id', None) == tid:
+            if monster.id == tid:
                 payload = monster.to_inspect_dict()
                 return {
                     'ok': True,
                     'kind': payload.get('kind', 'monster'),
                     'data': payload,
                 }
+
+        # Legacy clients may send type/type_id — only resolve when unique.
+        type_matches = [
+            m for m in battle.get('monsters', [])
+            if m.type == tid or getattr(m, 'type_id', None) == tid
+        ]
+        if len(type_matches) == 1:
+            payload = type_matches[0].to_inspect_dict()
+            return {
+                'ok': True,
+                'kind': payload.get('kind', 'monster'),
+                'data': payload,
+            }
 
         for p_id in battle.get('participants', []):
             if p_id == tid:
@@ -1168,7 +1211,7 @@ class CombatSystem:
         self.game_state.remove_monster_at(tuple(monster.pos))
         
         battle_id = battle['battle_id']
-        monster_type = monster.type
+        dead_monster_id = monster.id
         killer_name = killer.id
         participants = list(battle['participants'])
 
@@ -1183,7 +1226,7 @@ class CombatSystem:
                 self._emit('combat_update', {
                     'type': 'monster_death',
                     'battle_id': battle_id,
-                    'monster_id': monster_type,
+                    'monster_id': dead_monster_id,
                     'killer_id': killer_name,
                     'silent': True,
                 }, room=p_id)

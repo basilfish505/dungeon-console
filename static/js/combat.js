@@ -254,7 +254,7 @@ const Combat = (function () {
             setStatus(`Your turn <span class="combat-countdown">(${secs}s)</span>`);
         } else {
             setStatus(
-                `Waiting for ${escapeHtml(countdownActivePlayer || 'opponent')} ` +
+                `Waiting for ${escapeHtml(displayNameForActorId(countdownActivePlayer))} ` +
                 `<span class="combat-countdown">(${secs}s)</span>`
             );
         }
@@ -348,9 +348,28 @@ const Combat = (function () {
         return c.id;
     }
 
+    function sameCombatant(a, b) {
+        const ka = typeof a === 'string' ? a : combatantKey(a);
+        const kb = typeof b === 'string' ? b : combatantKey(b);
+        return !!ka && ka === kb;
+    }
+
     function displayName(c) {
         if (!c) return 'Unknown';
         return c.name || c.id || 'Unknown';
+    }
+
+    function displayNameForActorId(actorId) {
+        if (!actorId) return 'opponent';
+        const fromCombatants = (currentBattle.combatants || []).find(
+            c => sameCombatant(c, actorId)
+        );
+        if (fromCombatants) return displayName(fromCombatants);
+        const fromOpponents = (currentBattle.opponents || []).find(
+            o => sameCombatant(o, actorId)
+        );
+        if (fromOpponents) return displayName(fromOpponents);
+        return String(actorId);
     }
 
     function portraitUrl(c) {
@@ -429,9 +448,7 @@ const Combat = (function () {
             ev.stopPropagation();
         }
         if (!combatant) return;
-        const tid = combatant.is_monster
-            ? (combatant.monster_id || combatant.id)
-            : combatant.id;
+        const tid = combatantKey(combatant);
         if (typeof SocketHandler !== 'undefined' && SocketHandler.inspectCombatant) {
             SocketHandler.inspectCombatant(tid);
         }
@@ -439,7 +456,7 @@ const Combat = (function () {
 
     function selectTarget(combatant) {
         if (!combatant) return;
-        currentBattle.selectedTarget = combatant.id;
+        currentBattle.selectedTarget = combatantKey(combatant);
         renderRoster();
     }
 
@@ -447,8 +464,8 @@ const Combat = (function () {
         const name = displayName(opponent);
         const level = opponent.level != null ? opponent.level : '?';
         const turn = opponent.is_current_turn ? '→ ' : '';
-        const selected = currentBattle.selectedTarget === opponent.id;
         const key = combatantKey(opponent);
+        const selected = sameCombatant(currentBattle.selectedTarget, opponent);
         const url = portraitUrl(opponent);
         let classes = 'combat-card';
         if (opponent.is_monster) classes += ' combat-card-enemy';
@@ -458,18 +475,22 @@ const Combat = (function () {
         if (opponent.defending) classes += ' defending';
 
         const portrait = url
-            ? `<button type="button" class="combat-card-portrait-btn" data-inspect="1" aria-label="Inspect ${escapeHtml(name)}">` +
-              `<img class="combat-card-portrait" src="${escapeHtml(url)}" alt="">` +
+            ? `<div class="combat-card-portrait-wrap" data-select-area="1">` +
+              `<img class="combat-card-portrait" src="${escapeHtml(url)}" alt="" draggable="false">` +
+              `<span class="combat-card-info-btn" role="button" tabindex="0" aria-label="Inspect ${escapeHtml(name)}">` +
               `<span class="combat-card-info" aria-hidden="true">i</span>` +
-              `</button>`
-            : `<button type="button" class="combat-card-portrait-btn combat-card-portrait-empty" data-inspect="1" aria-label="Inspect ${escapeHtml(name)}">` +
+              `</span>` +
+              `</div>`
+            : `<div class="combat-card-portrait-wrap combat-card-portrait-empty" data-select-area="1">` +
+              `<span class="combat-card-info-btn" role="button" tabindex="0" aria-label="Inspect ${escapeHtml(name)}">` +
               `<span class="combat-card-info" aria-hidden="true">i</span>` +
-              `</button>`;
+              `</span>` +
+              `</div>`;
 
         return (
-            `<div class="${classes}" data-id="${escapeHtml(opponent.id)}" data-key="${escapeHtml(key || '')}" role="button" tabindex="0">` +
+            `<div class="${classes}" data-id="${escapeHtml(key || '')}" data-key="${escapeHtml(key || '')}" tabindex="0">` +
             portrait +
-            `<div class="combat-card-body">` +
+            `<div class="combat-card-body" data-select-area="1">` +
             `<div class="combat-card-header">` +
             `<span class="combat-card-name">${turn}${escapeHtml(name)}</span>` +
             `<span class="combat-level-badge">Lv ${escapeHtml(level)}</span>` +
@@ -481,20 +502,54 @@ const Combat = (function () {
         );
     }
 
+    function isInfoButtonTarget(target) {
+        return !!(target && target.closest && target.closest('.combat-card-info-btn'));
+    }
+
     function bindRosterEvents() {
         if (!elements.roster) return;
         elements.roster.querySelectorAll('.combat-card').forEach(function (el) {
-            const id = el.getAttribute('data-id');
-            const opponent = currentBattle.opponents.find(o => o.id === id);
-            el.addEventListener('click', function (e) {
-                if (e.target && e.target.closest && e.target.closest('[data-inspect]')) {
-                    inspectTarget(opponent, e);
+            const key = el.getAttribute('data-key') || el.getAttribute('data-id');
+            const opponent = currentBattle.opponents.find(o => sameCombatant(o, key));
+            const infoBtn = el.querySelector('.combat-card-info-btn');
+
+            function onSelect(ev) {
+                if (isInfoButtonTarget(ev.target)) {
                     return;
                 }
+                if (ev) {
+                    ev.preventDefault();
+                    ev.stopPropagation();
+                }
                 selectTarget(opponent);
+            }
+
+            function onInspect(ev) {
+                if (ev) {
+                    ev.preventDefault();
+                    ev.stopPropagation();
+                }
+                inspectTarget(opponent, ev);
+            }
+
+            if (infoBtn) {
+                infoBtn.addEventListener('pointerup', onInspect);
+                infoBtn.addEventListener('keydown', function (e) {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                        onInspect(e);
+                    }
+                });
+            }
+
+            el.querySelectorAll('[data-select-area]').forEach(function (area) {
+                area.addEventListener('pointerup', onSelect);
             });
+
             el.addEventListener('keydown', function (e) {
                 if (e.key === 'Enter' || e.key === ' ') {
+                    if (isInfoButtonTarget(e.target)) {
+                        return;
+                    }
                     e.preventDefault();
                     selectTarget(opponent);
                 }
@@ -507,13 +562,13 @@ const Combat = (function () {
 
         // Drop selection if that combatant left; default to whoever remains
         const selectionValid = currentBattle.opponents.some(
-            o => o.id === currentBattle.selectedTarget
+            o => sameCombatant(o, currentBattle.selectedTarget)
         );
         if (!selectionValid) {
             currentBattle.selectedTarget = null;
         }
         if (!currentBattle.selectedTarget && currentBattle.opponents.length > 0) {
-            currentBattle.selectedTarget = currentBattle.opponents[0].id;
+            currentBattle.selectedTarget = combatantKey(currentBattle.opponents[0]);
         }
 
         if (!currentBattle.opponents.length) {
@@ -524,7 +579,7 @@ const Combat = (function () {
         }
 
         const selected = currentBattle.opponents.find(
-            o => o.id === currentBattle.selectedTarget
+            o => sameCombatant(o, currentBattle.selectedTarget)
         );
         if (selected && selected.is_monster && selected.type_id && typeof MonsterAssets !== 'undefined') {
             MonsterAssets.ensureType(selected.type_id, null, selected.portrait || null);
@@ -586,7 +641,11 @@ const Combat = (function () {
     }
 
     function handleCombatAction(data) {
+        // Action consumed the prior turn — drop its countdown so "Your turn"
+        // cannot resurface after the status-hold while a monster acts.
+        stopCountdown();
         if (data.play_hit_sound) Sound.play('hit');
+        if (data.play_miss_sound) Sound.play(data.play_miss_sound);
         if (data.shake_combat) shakeCombatWindow();
 
         updateButtonStates(data.your_turn);
@@ -624,11 +683,7 @@ const Combat = (function () {
             appendCombatLog(data.message);
         }
         currentBattle.opponents = currentBattle.opponents.filter(
-            o => !(o.is_monster && (
-                o.id === data.monster_id
-                || o.monster_id === data.monster_id
-                || o.type_id === data.monster_id
-            ))
+            o => !(o.is_monster && sameCombatant(o, data.monster_id))
         );
         renderRoster();
     }
@@ -669,6 +724,23 @@ const Combat = (function () {
         if (elements.roster) elements.roster.innerHTML = '';
         if (elements.selfCard) elements.selfCard.innerHTML = '';
         if (elements.status) elements.status.innerHTML = '';
+        // Restoring the mobile pad changes the map pane size; force a fresh
+        // viewport sync + paint so monsters aren't left blank until the next move.
+        refreshMapAfterCombat();
+    }
+
+    function refreshMapAfterCombat() {
+        if (typeof MapView !== 'undefined' && MapView.measureViewportNow) {
+            const vp = MapView.measureViewportNow();
+            if (vp && typeof SocketHandler !== 'undefined' && SocketHandler.setViewport) {
+                SocketHandler.setViewport(vp.h, vp.w);
+            }
+        } else if (typeof UI !== 'undefined' && UI.requestMapUpdate) {
+            UI.requestMapUpdate('combat-end');
+        }
+        if (typeof MapView !== 'undefined' && MapView.paint) {
+            MapView.paint();
+        }
     }
 
     function handleTurnNotification(data) {
@@ -685,6 +757,9 @@ const Combat = (function () {
             if (elements.opponentThinking) {
                 elements.opponentThinking.style.display = 'none';
             }
+        } else if (!data.your_turn) {
+            // Monster (or other) turn with no status text — kill stale "Your turn" timer.
+            stopCountdown();
         }
 
         updateButtonStates(data.your_turn);
@@ -696,11 +771,10 @@ const Combat = (function () {
             );
         } else if (data.active_player && currentBattle.opponents) {
             currentBattle.opponents.forEach(o => {
-                o.is_current_turn = (o.id === data.active_player);
+                o.is_current_turn = sameCombatant(o, data.active_player);
             });
             (currentBattle.combatants || []).forEach(c => {
-                c.is_current_turn = (c.id === data.active_player)
-                    || (c.monster_id && c.monster_id === data.active_player);
+                c.is_current_turn = sameCombatant(c, data.active_player);
             });
         }
         renderRoster();
