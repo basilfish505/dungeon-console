@@ -304,6 +304,8 @@ body {
     cursor: pointer;
     position: relative;
     outline: none;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
 }
 
 .combat-card-player {
@@ -359,7 +361,7 @@ body {
     50% { box-shadow: 0 0 20px rgba(255, 170, 0, 0.55); }
 }
 
-.combat-card-portrait-btn {
+.combat-card-portrait-wrap {
     position: relative;
     display: block;
     width: 100%;
@@ -367,13 +369,37 @@ body {
     padding: 0;
     border: 1px solid #844;
     background: #120408;
-    cursor: pointer;
     min-height: 88px;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+    cursor: pointer;
 }
 
-.combat-card-player .combat-card-portrait-btn {
+.combat-card-player .combat-card-portrait-wrap {
     border-color: #278;
     background: #041018;
+}
+
+.combat-card-info-btn {
+    position: absolute;
+    right: 6px;
+    bottom: 6px;
+    width: 22px;
+    height: 22px;
+    min-width: 22px;
+    min-height: 22px;
+    max-width: 22px;
+    max-height: 22px;
+    margin: 0;
+    padding: 0;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    z-index: 2;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+    box-sizing: border-box;
+    overflow: hidden;
 }
 
 .combat-card-portrait {
@@ -383,6 +409,9 @@ body {
     object-fit: contain;
     image-rendering: pixelated;
     background: #080204;
+    pointer-events: none;
+    -webkit-user-select: none;
+    user-select: none;
 }
 
 .combat-card-portrait-empty {
@@ -390,9 +419,7 @@ body {
 }
 
 .combat-card-info {
-    position: absolute;
-    right: 6px;
-    bottom: 6px;
+    display: block;
     width: 22px;
     height: 22px;
     border-radius: 50%;
@@ -410,6 +437,8 @@ body {
     flex-direction: column;
     gap: 6px;
     min-width: 0;
+    touch-action: manipulation;
+    cursor: pointer;
 }
 
 .combat-card-header {

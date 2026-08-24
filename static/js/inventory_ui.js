@@ -564,37 +564,27 @@ const InventoryUI = (function () {
         if (typeof window.socket === 'undefined' || !window.socket) {
             return;
         }
-        if (actionId === 'equip' || actionId === 'unequip') {
-            confirmEquipAction(actionId, item);
+        if (actionId === 'unequip') {
+            confirmUnequipAction(item);
             return;
         }
         emitInventoryAction(actionId, item);
     }
 
-    function confirmEquipAction(actionId, item) {
+    function confirmUnequipAction(item) {
         const cat = String(item.category || 'item').toLowerCase();
         const kind = cat === 'armour' ? 'armour' : 'weapon';
-        const name = item.name || item.type_id || kind;
-        let message;
-        let confirmLabel;
-        if (actionId === 'unequip') {
-            message = 'This ' + kind + ' is currently equipped.';
-            confirmLabel = 'Unequip';
-        } else {
-            message = 'Equip this ' + kind + '?';
-            confirmLabel = 'Equip';
-        }
         if (typeof InspectUI !== 'undefined' && InspectUI.showConfirm) {
-            InspectUI.showConfirm(message, {
-                confirmLabel: confirmLabel,
+            InspectUI.showConfirm('This ' + kind + ' is currently equipped.', {
+                confirmLabel: 'Unequip',
                 cancelLabel: 'Cancel',
                 onConfirm: function () {
-                    emitInventoryAction(actionId, item);
+                    emitInventoryAction('unequip', item);
                 },
             });
             return;
         }
-        emitInventoryAction(actionId, item);
+        emitInventoryAction('unequip', item);
     }
 
     function emitInventoryAction(actionId, item) {

@@ -333,6 +333,25 @@ const MapRenderer = (function () {
                     if (TileAssets.isTerrainOnly(ch) && drewTerrain) {
                         continue;
                     }
+                    if (ch === '&' && overlayActors && ent && ent.kind === 'monster') {
+                        // Only skip the tile sprite when the overlay will actually
+                        // draw this monster; otherwise we leave a blank hole until
+                        // the next move (common right after combat closes).
+                        const mid = 'm:' + String(ent.id);
+                        let overlayWillDraw = false;
+                        if (typeof PlayerPresentation !== 'undefined'
+                                && PlayerPresentation.isPresent
+                                && PlayerPresentation.isPresent(mid)
+                                && typeof MonsterAssets !== 'undefined') {
+                            MonsterAssets.ensureType(ent.type_id, ent.sprite, null);
+                            overlayWillDraw = !!MonsterAssets.getSprite(
+                                ent.type_id, ent.sprite
+                            );
+                        }
+                        if (overlayWillDraw) {
+                            continue;
+                        }
+                    }
                     if (ch === '&') {
                         if (ent && ent.kind === 'monster') {
                             if (typeof MonsterAssets !== 'undefined') {
@@ -342,12 +361,12 @@ const MapRenderer = (function () {
                                 ent.type_id, ent.sprite, px, py, dw, dh, fogState
                             );
                         }
+                        if (drewEntitySprite) {
+                            continue;
+                        }
                         if (useGraphics) {
                             // Terrain is already drawn; never paint ASCII '&' while
                             // sprites load or entity data catches up after a floor change.
-                            continue;
-                        }
-                        if (drewEntitySprite) {
                             continue;
                         }
                     }

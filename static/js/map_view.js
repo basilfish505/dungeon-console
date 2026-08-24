@@ -267,7 +267,7 @@ const MapView = (function () {
         }
 
         const forceViewport = reasons.some(function (r) {
-            return r === 'level-change' || r === 'combat-map-peek';
+            return r === 'level-change' || r === 'combat-map-peek' || r === 'combat-end';
         });
         emitIfNeeded(zoomFocused, forceViewport);
         if (initialViewportSynced || !state.lastMap) {
@@ -448,6 +448,9 @@ const MapView = (function () {
             : null;
         const levelChanged = state.dungeonLevel != null && newLevel != null
             && newLevel !== state.dungeonLevel;
+        if (levelChanged && typeof Sound !== 'undefined') {
+            Sound.play('stairs');
+        }
         const step = data.stair_step;
         const canApproach = levelChanged && step && state.lastMap
             && typeof PlayerPresentation !== 'undefined'

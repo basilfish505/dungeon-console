@@ -17,6 +17,7 @@ const UI = (function() {
 
     let mapSystemReady = false;
     let ignoreResizeUntil = 0;
+    let lastKnownLevel = null;
 
     // Hide all game elements initially
     function hideGameElements() {
@@ -101,6 +102,7 @@ const UI = (function() {
         initMapSystem();
         // Ignore keyboard/layout resize noise right after join
         ignoreResizeUntil = Date.now() + 500;
+        lastKnownLevel = null;
         // Force layout, then measure once
         if (elements.gameShell) {
             void elements.gameShell.offsetHeight;
@@ -131,8 +133,14 @@ const UI = (function() {
     // Update player properties
     function updatePlayerProperties(player) {
         if (player) {
+            const level = player.level | 0;
+            if (lastKnownLevel !== null && level > lastKnownLevel
+                && typeof Sound !== 'undefined') {
+                Sound.play('levelUp');
+            }
+            lastKnownLevel = level;
             document.getElementById('player-name-display').textContent = player.id;
-            document.getElementById('player-level').textContent = player.level;
+            document.getElementById('player-level').textContent = level;
             document.getElementById('player-elo').textContent =
                 player.elo != null ? Math.round(Number(player.elo)) : 0;
             document.getElementById('player-xp').textContent = player.total_xp ?? player.xp ?? 0;
@@ -182,6 +190,7 @@ const UI = (function() {
         if (elements.messageLog) {
             elements.messageLog.innerHTML = '';
         }
+        lastKnownLevel = null;
         elements.loginForm.style.display = 'flex';
     }
 

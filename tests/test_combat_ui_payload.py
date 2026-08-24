@@ -40,6 +40,7 @@ class CombatantPayloadHelpersTests(unittest.TestCase):
         mon.elo = 1234.56
         payload = _monster_combatant(mon, is_current_turn=True)
         self.assertEqual(payload['monster_id'], 'm1')
+        self.assertEqual(payload['id'], 'm1')
         self.assertEqual(payload['name'], mon.name)
         self.assertEqual(payload['level'], 3)
         self.assertEqual(payload['hp'], mon.hp)
@@ -154,6 +155,33 @@ class InspectCombatantTests(unittest.TestCase):
 
     def test_inspect_rejects_unknown_target(self):
         self.assertEqual(self.cs.inspect_combatant('hero', 'nope'), {'ok': False})
+
+    def test_duplicate_type_monsters_have_distinct_ids(self):
+        mon2 = Monster.from_type('troll', [3, 3], monster_id='m2', level=2)
+        self.battle['monsters'].append(mon2)
+        self.battle['turn_order'].append(mon2.id)
+        rows = self.cs._get_combatants_status(self.battle)
+        monster_rows = [r for r in rows if r.get('is_monster')]
+        self.assertEqual(len(monster_rows), 2)
+        ids = sorted(r['id'] for r in monster_rows)
+        self.assertEqual(ids, ['m1', 'm2'])
+        self.assertEqual(ids, sorted(r['monster_id'] for r in monster_rows))
+
+    def test_inspect_picks_specific_duplicate_type_monster(self):
+        mon2 = Monster.from_type('troll', [3, 3], monster_id='m2', level=7)
+        mon2.hp = 3
+        self.battle['monsters'].append(mon2)
+        with patch('monster_elo.elo_percentile', return_value=50.0):
+            result = self.cs.inspect_combatant('hero', 'm2')
+        self.assertTrue(result.get('ok'))
+        self.assertEqual(result['data']['level'], 7)
+        self.assertEqual(result['data']['hp'], 3)
+
+    def test_inspect_by_type_ambiguous_when_duplicates(self):
+        mon2 = Monster.from_type('troll', [3, 3], monster_id='m2', level=2)
+        self.battle['monsters'].append(mon2)
+        self.assertEqual(self.cs.inspect_combatant('hero', self.mon.type), {'ok': False})
+        self.assertEqual(self.cs.inspect_combatant('hero', self.mon.type_id), {'ok': False})
 
 
 class MonsterInspectStatsTests(unittest.TestCase):

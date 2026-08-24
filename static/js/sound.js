@@ -5,7 +5,11 @@ const Sound = (function () {
     const loading = {};
     const PATHS = {
         hit: '/static/sounds/damage.mp3',
-        victory: '/static/sounds/victory.mp3'
+        victory: '/static/sounds/victory.mp3',
+        stairs: '/static/sounds/stairs.mp3',
+        playerMiss: '/static/sounds/playerMiss.mp3',
+        monsterMiss: '/static/sounds/monsterMiss.mp3',
+        levelUp: '/static/sounds/levelUp.mp3',
     };
 
     function audioContext() {

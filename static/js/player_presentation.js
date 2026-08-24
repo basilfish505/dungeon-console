@@ -363,6 +363,14 @@ const PlayerPresentation = (function () {
         });
     }
 
+    function isPresent(id) {
+        if (id == null || id === '') {
+            return false;
+        }
+        const actor = actors[String(id)];
+        return !!(actor && actor.present);
+    }
+
     return {
         MOVE_MS,
         PIPELINE_T,
@@ -371,6 +379,7 @@ const PlayerPresentation = (function () {
         sample,
         isBusy,
         isMoving,
+        isPresent,
         progress,
         visualPos,
         tilePos,
