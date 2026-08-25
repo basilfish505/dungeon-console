@@ -14,7 +14,6 @@ const Combat = (function () {
         roster: document.getElementById('combat-roster'),
         selfCard: document.getElementById('combat-self'),
         combatLog: document.getElementById('combat-log'),
-        combatMessage: document.getElementById('combat-message'),
         opponentThinking: document.getElementById('opponent-thinking'),
         attackBtn: document.getElementById('attack-btn'),
         defendBtn: document.getElementById('defend-btn'),
@@ -175,12 +174,7 @@ const Combat = (function () {
     function renderCombatLog() {
         if (!elements.combatLog) return;
         elements.combatLog.innerHTML = combatLogLines
-            .map(line => {
-                const cls = /damage|hit|slay|defeat|miss/i.test(line)
-                    ? 'combat-log-line combat-log-damage'
-                    : 'combat-log-line';
-                return `<div class="${cls}">${escapeHtml(line)}</div>`;
-            })
+            .map(line => `<div class="combat-log-line">${escapeHtml(line)}</div>`)
             .join('');
         elements.combatLog.scrollTop = elements.combatLog.scrollHeight;
     }
@@ -386,9 +380,6 @@ const Combat = (function () {
     function setStatus(html) {
         if (elements.status) {
             elements.status.innerHTML = html;
-        }
-        if (elements.combatMessage) {
-            elements.combatMessage.innerHTML = html;
         }
     }
 

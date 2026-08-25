@@ -642,26 +642,8 @@ body {
 
 .combat-log .combat-log-line,
 #combat-log .combat-log-line {
-    color: #0c0;
-    margin: 0 0 2px 0;
-}
-
-.combat-log .combat-log-line:last-child,
-#combat-log .combat-log-line:last-child {
     color: #0f0;
-}
-
-.combat-log .combat-log-damage,
-#combat-log .combat-log-damage {
-    color: #f66;
-}
-
-.combat-message,
-#combat-message {
-    text-align: center;
-    margin: 2px 0 0 0;
-    color: #9ef;
-    min-height: 1.2em;
+    margin: 0 0 2px 0;
 }
 
 .opponent-thinking {
