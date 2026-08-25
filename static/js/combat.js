@@ -623,7 +623,6 @@ const Combat = (function () {
     function cardHtml(opponent) {
         const name = displayName(opponent);
         const level = opponent.level != null ? opponent.level : '?';
-        const turn = opponent.is_current_turn ? '→ ' : '';
         const key = combatantKey(opponent);
         const selected = sameCombatant(currentBattle.selectedTarget, opponent);
         const url = portraitUrl(opponent);
@@ -647,16 +646,21 @@ const Combat = (function () {
               `</span>` +
               `</div>`;
 
+        const turnLabel = opponent.is_monster ? 'Attacking' : 'Their turn';
+        const badges =
+            (opponent.is_current_turn ? `<span class="combat-badge-turn">${turnLabel}</span>` : '') +
+            (opponent.defending ? '<span class="combat-badge-defend">Defend</span>' : '');
+
         return (
             `<div class="${classes}" data-id="${escapeHtml(key || '')}" data-key="${escapeHtml(key || '')}" tabindex="0">` +
             portrait +
             `<div class="combat-card-body" data-select-area="1">` +
             `<div class="combat-card-header">` +
-            `<span class="combat-card-name">${turn}${escapeHtml(name)}</span>` +
+            `<span class="combat-card-name">${escapeHtml(name)}</span>` +
             `<span class="combat-level-badge">Lv ${escapeHtml(level)}</span>` +
             `</div>` +
             hpBarHtml(opponent.hp, opponent.mhp) +
-            (opponent.defending ? '<span class="combat-badge-defend">Defend</span>' : '') +
+            (badges ? `<div class="combat-card-badges">${badges}</div>` : '') +
             `</div>` +
             `</div>`
         );

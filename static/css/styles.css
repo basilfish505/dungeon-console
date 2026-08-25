@@ -319,15 +319,16 @@ body {
     border-color: #f88;
 }
 
-.combat-card.selected-target {
+/* Target selection is only meaningful while the player can act. */
+.combat-overlay.combat-your-turn .combat-card.selected-target {
     border-color: #ff6;
     box-shadow:
         0 0 0 1px #ff6,
         0 0 18px rgba(255, 220, 80, 0.35);
 }
 
-.combat-card.selected-target::before,
-.combat-card.selected-target::after {
+.combat-overlay.combat-your-turn .combat-card.selected-target::before,
+.combat-overlay.combat-your-turn .combat-card.selected-target::after {
     content: '';
     position: absolute;
     width: 10px;
@@ -336,14 +337,14 @@ body {
     pointer-events: none;
 }
 
-.combat-card.selected-target::before {
+.combat-overlay.combat-your-turn .combat-card.selected-target::before {
     top: 4px;
     left: 4px;
     border-right: none;
     border-bottom: none;
 }
 
-.combat-card.selected-target::after {
+.combat-overlay.combat-your-turn .combat-card.selected-target::after {
     bottom: 4px;
     right: 4px;
     border-left: none;
@@ -352,13 +353,29 @@ body {
 
 .combat-card.current-turn {
     border-color: #fa0;
-    box-shadow: 0 0 16px rgba(255, 170, 0, 0.35);
-    animation: combat-turn-pulse 1.6s ease-in-out infinite;
+    outline: 2px solid rgba(255, 170, 0, 0.85);
+    outline-offset: -2px;
+    animation: combat-turn-pulse 1.4s ease-in-out infinite;
+}
+
+.combat-card.current-turn .combat-card-portrait-wrap {
+    border-color: #fa0;
+    box-shadow: inset 0 0 14px rgba(255, 150, 0, 0.5);
+}
+
+.combat-card.current-turn .combat-card-name {
+    color: #ffd27f;
 }
 
 @keyframes combat-turn-pulse {
-    0%, 100% { box-shadow: 0 0 10px rgba(255, 170, 0, 0.25); }
-    50% { box-shadow: 0 0 20px rgba(255, 170, 0, 0.55); }
+    0%, 100% { box-shadow: 0 0 12px rgba(255, 170, 0, 0.35); }
+    50% { box-shadow: 0 0 26px rgba(255, 170, 0, 0.75); }
+}
+
+.combat-card-badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
 }
 
 .combat-card-portrait-wrap {

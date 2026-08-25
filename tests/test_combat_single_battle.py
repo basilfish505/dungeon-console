@@ -1,6 +1,7 @@
 """A player or monster must never be in two battles at once."""
 
 import unittest
+from unittest.mock import patch
 
 from combat import CombatSystem
 from monster import Monster
@@ -176,6 +177,41 @@ class SingleBattleInvariantTests(unittest.TestCase):
         self.assertNotEqual(second, first)
         self.assertEqual(len(cs.battles), 1)
         self.assertEqual(cs.battles[second]['participants'], ['B'])
+
+
+class DefendStanceTests(unittest.TestCase):
+    def test_defend_stance_survives_failed_block(self):
+        _, cs = _system()
+        battle = {'defend_status': {'hero': True}}
+        with patch('combat.random.random', return_value=0.9):
+            blocked = cs._check_block('m1', 'hero', 'hero', battle)
+        self.assertFalse(blocked)
+        self.assertTrue(battle['defend_status']['hero'])
+
+    def test_defend_stance_survives_successful_block(self):
+        _, cs = _system()
+        battle = {'defend_status': {'hero': True}}
+        with patch('combat.random.random', return_value=0.1):
+            blocked = cs._check_block('m1', 'hero', 'hero', battle)
+        self.assertTrue(blocked)
+        self.assertTrue(battle['defend_status']['hero'])
+
+    def test_defend_stance_cleared_when_player_turn_begins(self):
+        gs, cs = _system()
+        hero = Player('hero', [1, 1])
+        gs.players = {'hero': hero}
+        battle = {
+            'battle_id': 'b1',
+            'participants': ['hero'],
+            'monsters': [],
+            'turn_order': ['hero'],
+            'current_turn_index': 0,
+            'status': 'active',
+            'defend_status': {'hero': True},
+            'turn_token': None,
+        }
+        cs._handle_player_turn('hero', battle)
+        self.assertFalse(battle['defend_status']['hero'])
 
 
 if __name__ == '__main__':

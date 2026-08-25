@@ -623,15 +623,10 @@ class CombatSystem:
             )
     
     def _check_block(self, attacker_id, defender_id, defender_display, battle):
-        """Check if attack is blocked"""
+        """50% block while the defender's stance is active for the round."""
         if 'defend_status' not in battle or not battle['defend_status'].get(defender_id, False):
             return False
-            
-        if random.random() < 0.5:  # 50% chance to block
-            # Reset defend status
-            battle['defend_status'][defender_id] = False
-            return True
-        return False
+        return random.random() < 0.5
     
     def _handle_defend(self, player_id, battle):
         """Handle a defend action"""
@@ -805,6 +800,8 @@ class CombatSystem:
 
     def _handle_player_turn(self, player_id, battle):
         """Send turn notification to a player and start the forfeit timer"""
+        # Defend lasts one full round; clear when this player's turn comes again.
+        battle.setdefault('defend_status', {})[player_id] = False
         current_player = self.game_state.players[player_id]
         
         # Send notifications to all players in the battle
@@ -855,12 +852,18 @@ class CombatSystem:
             # Choose a target
             target_id = random.choice(battle['participants'])
             target = self.game_state.players[target_id]
-            
-            attack_result = resolve_attack(monster, target)
-            if attack_result['hit']:
-                target.hp -= attack_result['damage']
 
-            self._broadcast_monster_hit(battle, monster, target_id, attack_result)
+            blocked = self._check_block(monster.id, target_id, target.id, battle)
+            attack_result = {'hit': False, 'damage': 0, 'hit_chance': 0.0}
+
+            if not blocked:
+                attack_result = resolve_attack(monster, target)
+                if attack_result['hit']:
+                    target.hp -= attack_result['damage']
+
+            self._broadcast_monster_hit(
+                battle, monster, target_id, attack_result, blocked=blocked,
+            )
             
             # Check for player death
             if target.hp <= 0:
@@ -1000,7 +1003,7 @@ class CombatSystem:
         for p_id in participants:
             self._emit('game_state', self.game_state.get_game_state(p_id), room=p_id)
 
-    def _broadcast_monster_hit(self, battle, monster, target_id, attack_result):
+    def _broadcast_monster_hit(self, battle, monster, target_id, attack_result, blocked=False):
         """Emit monster hit FX to all participants, then game_state."""
         participants = list(battle['participants'])
         combatants = self._get_combatants_status(battle)
@@ -1009,11 +1012,17 @@ class CombatSystem:
             return
 
         damage = attack_result['damage']
-        hit = attack_result.get('hit', False)
+        hit = attack_result.get('hit', False) and not blocked
 
         for p_id in participants:
             is_target = p_id == target_id
-            if not hit:
+            if blocked:
+                message = (
+                    ".... You blocked the attack with your skillful guard!"
+                    if is_target else
+                    f".... {target.id} blocked the {monster.type}'s attack!"
+                )
+            elif not hit:
                 message = (
                     f".... The {monster.type} misses you."
                     if is_target else
