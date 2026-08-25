@@ -111,6 +111,42 @@ class CombatUiPayloadTests(unittest.TestCase):
         self.assertIn('combatants', payload)
         self.assertTrue(any(c.get('is_monster') for c in payload['combatants']))
         self.assertTrue(any(o.get('level') == 3 for o in payload['opponents']))
+        self.assertNotIn('message', payload)
+        self.assertFalse(payload.get('is_join_refresh'))
+
+    def test_combat_start_join_refresh_includes_message(self):
+        msg = 'Level 3 Troll has joined the battle.'
+        self.cs._send_combat_start(
+            'hero', self.battle, message=msg, is_join_refresh=True
+        )
+        payload = self.emitted[0][0][1]
+        self.assertEqual(payload['message'], msg)
+        self.assertTrue(payload['is_join_refresh'])
+
+    def test_monster_join_label_includes_level(self):
+        mon = Monster.from_type('troll', [2, 2], monster_id='m1', level=4)
+        label = CombatSystem._combatant_join_label(mon, is_monster=True)
+        self.assertEqual(label, f'Level 4 {mon.name}')
+
+    def _last_combat_start(self):
+        starts = [
+            a[1] for a, _ in self.emitted
+            if a[0] == 'combat_update' and a[1].get('type') == 'combat_start'
+        ]
+        return starts[-1] if starts else None
+
+    def test_monster_joining_existing_battle_announces_the_monster(self):
+        self.killer.in_combat = True
+        self.mon.in_combat = True
+        newcomer = Monster.from_type('troll', [3, 3], monster_id='m2', level=4)
+        self.emitted.clear()
+
+        self.cs.start_combat('hero', newcomer, emit_game_state=False)
+
+        payload = self._last_combat_start()
+        self.assertIsNotNone(payload)
+        self.assertTrue(payload['is_join_refresh'])
+        self.assertEqual(payload['message'], f'Level 4 {newcomer.name} has joined the battle.')
 
 
 class InspectCombatantTests(unittest.TestCase):

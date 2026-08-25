@@ -612,22 +612,32 @@ const Combat = (function () {
 
     function handleCombatStart(data) {
         Sound.warm();
-        clearCombatLog();
+        const isJoinRefresh = !!data.is_join_refresh;
+        if (!isJoinRefresh) {
+            clearCombatLog();
+        }
         currentBattle.battleId = data.battle_id;
         currentBattle.viewerId = data.viewer_id || currentBattle.viewerId;
         ingestCombatants(data.combatants, data.viewer_id);
         currentBattle.opponents = data.opponents || opponentsFromCombatants(
             data.combatants, currentBattle.viewerId
         );
-        currentBattle.selectedTarget = null;
+        if (!isJoinRefresh) {
+            currentBattle.selectedTarget = null;
+        }
         showOverlay();
         renderRoster();
         updateButtonStates(data.your_turn);
-        const startMsg = data.your_turn
-            ? "Combat has begun! It's your turn to act!"
-            : 'Combat has begun! Select your target and action.';
-        appendCombatLog(data.message || startMsg);
-        showStatusMessage(data.message || startMsg);
+        let startMsg;
+        if (data.message) {
+            startMsg = data.message;
+        } else if (data.your_turn) {
+            startMsg = "Combat has begun! It's your turn to act!";
+        } else {
+            startMsg = 'Combat has begun! Select your target and action.';
+        }
+        appendCombatLog(startMsg);
+        showStatusMessage(startMsg);
         if (data.turn_timeout) {
             startCountdown(data.turn_timeout, data.your_turn, data.active_player);
         }

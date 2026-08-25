@@ -7,7 +7,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=VT323&display=swap">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+    <link rel="stylesheet" href="{{ asset_url('css/styles.css') }}">
 </head>
 <body>
     <div id="player-login">
@@ -170,22 +170,22 @@
     <link rel="preload" as="image" href="{{ url_for('static', filename='player/sprites/player_walk1.png') }}">
     <link rel="preload" as="image" href="{{ url_for('static', filename='player/sprites/player_walk2.png') }}">
     <link rel="preload" as="image" href="{{ url_for('static', filename='player/sprites/player_walk3.png') }}">
-    <script src="{{ url_for('static', filename='js/sound.js') }}"></script>
-    <script src="{{ url_for('static', filename='js/map_view.js') }}"></script>
-    <script src="{{ url_for('static', filename='js/tile_assets.js') }}"></script>
-    <script src="{{ url_for('static', filename='js/monster_assets.js') }}"></script>
-    <script src="{{ url_for('static', filename='js/item_assets.js') }}"></script>
-    <script src="{{ url_for('static', filename='js/player_assets.js') }}"></script>
-    <script src="{{ url_for('static', filename='js/player_presentation.js') }}"></script>
-    <script src="{{ url_for('static', filename='js/map_renderer.js') }}"></script>
-    <script src="{{ url_for('static', filename='js/inspect_ui.js') }}"></script>
-    <script src="{{ url_for('static', filename='js/inventory_ui.js') }}"></script>
-    <script src="{{ url_for('static', filename='js/map_inspect.js') }}"></script>
-    <script src="{{ url_for('static', filename='js/map_gestures.js') }}"></script>
-    <script src="{{ url_for('static', filename='js/ui.js') }}"></script>
-    <script src="{{ url_for('static', filename='js/combat.js') }}"></script>
-    <script src="{{ url_for('static', filename='js/socket.js') }}"></script>
-    <script src="{{ url_for('static', filename='js/movement_controller.js') }}"></script>
-    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+    <script src="{{ asset_url('js/sound.js') }}"></script>
+    <script src="{{ asset_url('js/map_view.js') }}"></script>
+    <script src="{{ asset_url('js/tile_assets.js') }}"></script>
+    <script src="{{ asset_url('js/monster_assets.js') }}"></script>
+    <script src="{{ asset_url('js/item_assets.js') }}"></script>
+    <script src="{{ asset_url('js/player_assets.js') }}"></script>
+    <script src="{{ asset_url('js/player_presentation.js') }}"></script>
+    <script src="{{ asset_url('js/map_renderer.js') }}"></script>
+    <script src="{{ asset_url('js/inspect_ui.js') }}"></script>
+    <script src="{{ asset_url('js/inventory_ui.js') }}"></script>
+    <script src="{{ asset_url('js/map_inspect.js') }}"></script>
+    <script src="{{ asset_url('js/map_gestures.js') }}"></script>
+    <script src="{{ asset_url('js/ui.js') }}"></script>
+    <script src="{{ asset_url('js/combat.js') }}"></script>
+    <script src="{{ asset_url('js/socket.js') }}"></script>
+    <script src="{{ asset_url('js/movement_controller.js') }}"></script>
+    <script src="{{ asset_url('js/main.js') }}"></script>
 </body>
 </html>

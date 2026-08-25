@@ -7,7 +7,7 @@ try:
 except ImportError:
     pass
 
-from flask import Flask, render_template, session, request, jsonify
+from flask import Flask, render_template, session, request, jsonify, url_for
 from flask_socketio import SocketIO, emit, join_room
 import random
 import os
@@ -75,6 +75,19 @@ _STAIR_ADJACENT_DIRS = (
 app = Flask(__name__)
 app.config['SECRET_KEY'] = SECRET_KEY
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')
+
+
+@app.context_processor
+def _asset_helpers():
+    """`asset_url` appends the file mtime so browsers refetch edited JS/CSS."""
+    def asset_url(filename):
+        try:
+            mtime = int(os.path.getmtime(os.path.join(app.static_folder, filename)))
+        except OSError:
+            mtime = 0
+        return url_for('static', filename=filename, v=mtime)
+
+    return {'asset_url': asset_url}
 
 class GameState:
     def __init__(self, skip_generate=False):

@@ -278,46 +278,83 @@ class CombatSystem:
             battle, new_player_id, new_player, False
         )
         
-        self._announce_join(
+        join_message = self._announce_join(
             battle, new_player, player_joined, defender, defender_joined,
             is_monster_combat,
         )
         
-        # Send updated battle info to all participants
+        # Refresh roster for everyone; join_message replaces "Combat has begun"
         for participant_id in battle['participants']:
-            self._send_combat_start(participant_id, battle)
+            self._send_combat_start(
+                participant_id, battle,
+                message=join_message,
+                is_join_refresh=True,
+            )
         
         if emit_game_state:
             self._update_all_players()
         
         return battle_id
+
+    @staticmethod
+    def _combatant_join_label(entity, is_monster=False):
+        """Display name for join announcements, e.g. 'Level 4 Imp'."""
+        if is_monster:
+            level = int(getattr(entity, 'level', 1) or 1)
+            name = (
+                getattr(entity, 'name', None)
+                or getattr(entity, 'type', None)
+                or 'monster'
+            )
+            return f'Level {level} {name}'
+        return getattr(entity, 'id', str(entity))
     
     def _announce_join(
         self, battle, new_player, player_joined, defender, defender_joined,
         is_monster_combat,
     ):
-        """Tell everyone in a running battle who just piled in."""
+        """Tell everyone who just piled in. Returns combat-window status text."""
+        parts = []
+        if player_joined:
+            parts.append(
+                f"{self._combatant_join_label(new_player)} has joined the battle"
+            )
+        if defender_joined and is_monster_combat:
+            parts.append(
+                f"{self._combatant_join_label(defender, is_monster=True)} "
+                f"has joined the battle"
+            )
+        elif defender_joined and not player_joined:
+            parts.append(
+                f"{self._combatant_join_label(defender)} has joined the battle"
+            )
+
         for p_id in battle['participants']:
             if player_joined:
                 self.game_state.add_player_message(
                     p_id,
                     "You join a battle already in progress."
                     if p_id == new_player.id else
-                    f"{new_player.id} joins the battle!"
+                    f"{self._combatant_join_label(new_player)} has joined the battle."
                 )
             if defender_joined and is_monster_combat:
+                label = self._combatant_join_label(defender, is_monster=True)
                 self.game_state.add_player_message(
-                    p_id, f"A {defender.type} joins the battle!"
+                    p_id, f"{label} has joined the battle."
                 )
             elif defender_joined and not player_joined:
                 self.game_state.add_player_message(
                     p_id,
                     "You join a battle already in progress."
                     if p_id == defender.id else
-                    f"{defender.id} joins the battle!"
+                    f"{self._combatant_join_label(defender)} has joined the battle."
                 )
+
+        if not parts:
+            return None
+        return '. '.join(parts) + '.'
     
-    def _send_combat_start(self, player_id, battle):
+    def _send_combat_start(self, player_id, battle, message=None, is_join_refresh=False):
         """Send battle information to a player"""
         player = self.game_state.players[player_id]
         
@@ -351,8 +388,11 @@ class CombatSystem:
             'viewer_id': player_id,
             'opponents': opponents,
             'combatants': self._get_combatants_status(battle),
-            'turn_timeout': TURN_TIMEOUT_SECONDS
+            'turn_timeout': TURN_TIMEOUT_SECONDS,
+            'is_join_refresh': bool(is_join_refresh),
         }
+        if message:
+            combat_info['message'] = message
 
         # Add accurate turn information
         self._update_combat_turn_info(combat_info, player_id, battle)
