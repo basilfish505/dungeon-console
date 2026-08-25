@@ -1,5 +1,6 @@
 """Tests for world serialization round-trips."""
 
+import json
 import unittest
 
 import monster_types  # noqa: F401
@@ -9,6 +10,8 @@ from monster import Monster
 from monster_types.registry import MONSTER_TYPES
 from player import Player
 from world_serial import (
+    battle_from_dict,
+    battle_to_dict,
     decode_explored_key,
     encode_explored_key,
     level_turn_state_from_dict,
@@ -105,6 +108,42 @@ class PlayerSerialTests(unittest.TestCase):
         self.assertEqual(encode_explored_key(('interior', 'items_shop')), 'interior:items_shop')
         self.assertEqual(decode_explored_key('interior:items_shop'), ('interior', 'items_shop'))
         self.assertEqual(decode_explored_key('3'), 3)
+
+
+class BattleSerialTests(unittest.TestCase):
+    def _battle_with_kill(self):
+        slain = Monster.from_type('troll', [2, 2], monster_id='m1', level=3)
+        slain.elo = 1234.0
+        alive = Monster.from_type('troll', [3, 3], monster_id='m2', level=1)
+        return {
+            'battle_id': 'b1',
+            'participants': ['hero'],
+            'monsters': [alive],
+            'turn_order': ['hero', 'm2'],
+            'current_turn_index': 0,
+            'status': 'active',
+            'defend_status': {},
+            'pending_rewards': {
+                'hero': {
+                    'kills': 1, 'xp': 10, 'pqg': 2, 'elo_opponents': [slain],
+                },
+            },
+        }
+
+    def test_pending_rewards_are_json_serializable(self):
+        data = battle_to_dict(self._battle_with_kill())
+        json.dumps(data)
+        self.assertEqual(
+            data['pending_rewards']['hero']['elo_opponents'], [1234.0]
+        )
+
+    def test_pending_reward_opponents_restore_with_elo(self):
+        data = json.loads(json.dumps(battle_to_dict(self._battle_with_kill())))
+        alive = Monster.from_type('troll', [3, 3], monster_id='m2', level=1)
+        restored = battle_from_dict(data, {'m2': alive})
+        bucket = restored['pending_rewards']['hero']
+        self.assertEqual(bucket['kills'], 1)
+        self.assertEqual([o.elo for o in bucket['elo_opponents']], [1234.0])
 
 
 class LevelTurnSerialTests(unittest.TestCase):

@@ -3,6 +3,9 @@ const Combat = (function () {
     const MAX_COMBAT_LOG_LINES = 12;
     /** Every battle message stays on the status bar at least this long. */
     const STATUS_HOLD_MS = 1000;
+    /** Brief beat so the killing blow's 0 HP registers before the card breaks. */
+    const DEFEAT_HOLD_MS = 140;
+    const DEFEAT_SMASH_MS = 650;
 
     const elements = {
         overlay: document.getElementById('combat-overlay'),
@@ -46,6 +49,14 @@ const Combat = (function () {
     let open = false;
     let mobileWasVisible = false;
     let mapPeekActive = false;
+    /** Monster ids currently playing the smash FX. */
+    const dyingMonsters = new Set();
+    /** key -> { card, placeholder, index } for cards frozen mid-smash. */
+    const dyingCards = new Map();
+    /** Keys of monsters that joined mid-smash; revealed once it finishes. */
+    const deferredJoins = new Set();
+    /** Display order of opponent keys, so cards keep their slots. */
+    let rosterOrder = [];
 
     function endMapPeek() {
         if (!mapPeekActive) {
@@ -200,6 +211,164 @@ const Combat = (function () {
         void target.offsetWidth;
         target.classList.add('combat-shake');
         setTimeout(() => target.classList.remove('combat-shake'), 500);
+    }
+
+    function findCardEl(key) {
+        if (!elements.roster || !key) return null;
+        const cards = elements.roster.querySelectorAll('.combat-card[data-key]');
+        for (let i = 0; i < cards.length; i++) {
+            if (cards[i].getAttribute('data-key') === String(key)) {
+                return cards[i];
+            }
+        }
+        return null;
+    }
+
+    function removeOpponentByKey(key) {
+        currentBattle.opponents = currentBattle.opponents.filter(
+            o => !sameCombatant(o, key)
+        );
+        if (currentBattle.combatants) {
+            currentBattle.combatants = currentBattle.combatants.filter(
+                c => !sameCombatant(c, key)
+            );
+        }
+        if (sameCombatant(currentBattle.selectedTarget, key)) {
+            currentBattle.selectedTarget = null;
+        }
+    }
+
+    function spawnSmashShards(card) {
+        const rect = card.getBoundingClientRect();
+        if (rect.width < 4 || rect.height < 4) return;
+
+        const portrait = card.querySelector('.combat-card-portrait');
+        const src = portrait && portrait.getAttribute('src');
+        const layer = document.createElement('div');
+        layer.className = 'combat-smash-layer';
+        layer.style.left = rect.left + 'px';
+        layer.style.top = rect.top + 'px';
+        layer.style.width = rect.width + 'px';
+        layer.style.height = rect.height + 'px';
+
+        const cols = 3;
+        const rows = 3;
+        const sw = rect.width / cols;
+        const sh = rect.height / rows;
+
+        for (let r = 0; r < rows; r++) {
+            for (let c = 0; c < cols; c++) {
+                const shard = document.createElement('div');
+                shard.className = 'combat-smash-shard';
+                shard.style.width = sw + 'px';
+                shard.style.height = sh + 'px';
+                shard.style.left = (c * sw) + 'px';
+                shard.style.top = (r * sh) + 'px';
+                if (src) {
+                    shard.style.backgroundImage = 'url("' + src.replace(/"/g, '\\"') + '")';
+                    shard.style.backgroundSize = rect.width + 'px ' + rect.height + 'px';
+                    shard.style.backgroundPosition = (-c * sw) + 'px ' + (-r * sh) + 'px';
+                }
+                const angle = Math.atan2(
+                    (r + 0.5) / rows - 0.5,
+                    (c + 0.5) / cols - 0.5
+                );
+                const dist = 48 + Math.random() * 72;
+                const dx = Math.cos(angle) * dist + (Math.random() * 20 - 10);
+                const dy = Math.sin(angle) * dist + 24 + Math.random() * 40;
+                const rot = (Math.random() * 280 - 140) + 'deg';
+                shard.style.setProperty('--dx', dx.toFixed(1) + 'px');
+                shard.style.setProperty('--dy', dy.toFixed(1) + 'px');
+                shard.style.setProperty('--rot', rot);
+                shard.style.animationDelay = (Math.random() * 0.05).toFixed(3) + 's';
+                layer.appendChild(shard);
+            }
+        }
+
+        document.body.appendChild(layer);
+        setTimeout(function () {
+            if (layer.parentNode) layer.parentNode.removeChild(layer);
+        }, DEFEAT_SMASH_MS + 80);
+    }
+
+    function detachDyingCard(key) {
+        const entry = dyingCards.get(key);
+        if (!entry) return;
+        dyingCards.delete(key);
+        if (entry.card.parentNode) entry.card.parentNode.removeChild(entry.card);
+        if (entry.placeholder.parentNode) {
+            entry.placeholder.parentNode.removeChild(entry.placeholder);
+        }
+    }
+
+    function finishMonsterDefeat(key) {
+        const entry = dyingCards.get(key);
+        const slot = entry ? entry.index : rosterOrder.length;
+        dyingMonsters.delete(key);
+        detachDyingCard(key);
+        removeOpponentByKey(key);
+        // Monsters that arrived mid-smash take the slot just vacated.
+        if (deferredJoins.size && !dyingMonsters.size) {
+            const revealed = Array.from(deferredJoins);
+            deferredJoins.clear();
+            rosterOrder = rosterOrder.filter(k => revealed.indexOf(k) === -1);
+            rosterOrder.splice(Math.min(slot, rosterOrder.length), 0, ...revealed);
+        }
+        renderRoster();
+    }
+
+    /**
+     * Lift the card out of the grid and fix it at the coordinates it occupied
+     * on death, so a monster joining mid-FX cannot reflow the smash elsewhere.
+     * A same-size placeholder keeps the surrounding cards still.
+     */
+    function pinDyingCard(key, card) {
+        const rect = card.getBoundingClientRect();
+        const siblings = Array.prototype.slice.call(
+            elements.roster.querySelectorAll('.combat-card')
+        );
+        const index = Math.max(0, siblings.indexOf(card));
+
+        const placeholder = document.createElement('div');
+        placeholder.className = 'combat-card-placeholder';
+        placeholder.style.height = rect.height + 'px';
+        placeholder.setAttribute('aria-hidden', 'true');
+        card.parentNode.insertBefore(placeholder, card);
+
+        card.classList.add('combat-card-pinned');
+        card.style.left = rect.left + 'px';
+        card.style.top = rect.top + 'px';
+        card.style.width = rect.width + 'px';
+        card.style.height = rect.height + 'px';
+        document.body.appendChild(card);
+
+        dyingCards.set(key, { card, placeholder, index });
+    }
+
+    function playMonsterDefeat(key) {
+        if (!key || dyingMonsters.has(key)) return;
+        dyingMonsters.add(key);
+
+        const card = findCardEl(key);
+        if (!card) {
+            finishMonsterDefeat(key);
+            return;
+        }
+
+        card.classList.add('combat-card-defeated');
+        pinDyingCard(key, card);
+        // The roster no longer owns this card; the placeholder holds its slot.
+        removeOpponentByKey(key);
+        renderRoster();
+
+        setTimeout(function () {
+            if (!dyingMonsters.has(key)) return;
+            spawnSmashShards(card);
+            card.classList.add('combat-card-smashing');
+            setTimeout(function () {
+                finishMonsterDefeat(key);
+            }, DEFEAT_SMASH_MS);
+        }, DEFEAT_HOLD_MS);
     }
 
     function stopCountdown() {
@@ -557,28 +726,65 @@ const Combat = (function () {
         });
     }
 
+    /**
+     * Opponents to draw right now, in stable display order. Monsters that
+     * joined while a card is smashing are held back until it finishes.
+     */
+    function visibleOpponents() {
+        const list = currentBattle.opponents.filter(
+            o => !deferredJoins.has(combatantKey(o))
+        );
+        list.sort(function (a, b) {
+            const ia = rosterOrder.indexOf(combatantKey(a));
+            const ib = rosterOrder.indexOf(combatantKey(b));
+            if (ia === ib) return 0;
+            if (ia === -1) return 1;
+            if (ib === -1) return -1;
+            return ia - ib;
+        });
+        return list;
+    }
+
     function renderRoster() {
         if (!elements.roster) return;
 
+        const visible = visibleOpponents();
+
         // Drop selection if that combatant left; default to whoever remains
-        const selectionValid = currentBattle.opponents.some(
+        const selectionValid = visible.some(
             o => sameCombatant(o, currentBattle.selectedTarget)
         );
         if (!selectionValid) {
             currentBattle.selectedTarget = null;
         }
-        if (!currentBattle.selectedTarget && currentBattle.opponents.length > 0) {
-            currentBattle.selectedTarget = combatantKey(currentBattle.opponents[0]);
+        if (!currentBattle.selectedTarget && visible.length > 0) {
+            currentBattle.selectedTarget = combatantKey(visible[0]);
         }
 
-        if (!currentBattle.opponents.length) {
+        if (!visible.length && !dyingCards.size) {
             elements.roster.innerHTML = '<div class="combat-roster-empty">No opponents</div>';
         } else {
-            elements.roster.innerHTML = currentBattle.opponents.map(cardHtml).join('');
+            const frag = document.createDocumentFragment();
+            visible.forEach(function (opponent) {
+                const wrap = document.createElement('div');
+                wrap.innerHTML = cardHtml(opponent);
+                if (wrap.firstChild) frag.appendChild(wrap.firstChild);
+            });
+            elements.roster.innerHTML = '';
+            elements.roster.appendChild(frag);
+            // Re-hold each smashing card's slot so live cards keep their spots.
+            dyingCards.forEach(function (entry) {
+                const at = Math.min(entry.index, elements.roster.children.length);
+                elements.roster.insertBefore(
+                    entry.placeholder, elements.roster.children[at] || null
+                );
+            });
             bindRosterEvents();
         }
 
-        const selected = currentBattle.opponents.find(
+        rosterOrder = visible.map(combatantKey);
+
+        const selected = visible.find(
             o => sameCombatant(o, currentBattle.selectedTarget)
         );
         if (selected && selected.is_monster && selected.type_id && typeof MonsterAssets !== 'undefined') {
@@ -602,6 +808,28 @@ const Combat = (function () {
         syncSelfFromCombatants();
     }
 
+    /**
+     * Adopt a server opponent list. While a card is smashing, anyone new is
+     * held back so the roster never grows past the slot count it had at death.
+     */
+    function applyOpponents(list) {
+        const incoming = list || [];
+        if (dyingMonsters.size) {
+            incoming.forEach(function (o) {
+                const key = combatantKey(o);
+                if (key && rosterOrder.indexOf(key) === -1) {
+                    deferredJoins.add(key);
+                }
+            });
+        }
+        deferredJoins.forEach(function (key) {
+            if (!incoming.some(o => sameCombatant(o, key))) {
+                deferredJoins.delete(key);
+            }
+        });
+        currentBattle.opponents = incoming;
+    }
+
     function opponentsFromCombatants(list, viewerId) {
         const me = viewerId || currentBattle.viewerId;
         return (list || []).filter(c => {
@@ -619,9 +847,9 @@ const Combat = (function () {
         currentBattle.battleId = data.battle_id;
         currentBattle.viewerId = data.viewer_id || currentBattle.viewerId;
         ingestCombatants(data.combatants, data.viewer_id);
-        currentBattle.opponents = data.opponents || opponentsFromCombatants(
+        applyOpponents(data.opponents || opponentsFromCombatants(
             data.combatants, currentBattle.viewerId
-        );
+        ));
         if (!isJoinRefresh) {
             currentBattle.selectedTarget = null;
         }
@@ -644,7 +872,7 @@ const Combat = (function () {
     }
 
     function handleTargetRequest(data) {
-        currentBattle.opponents = data.targets || [];
+        applyOpponents(data.targets || []);
         renderRoster();
         showStatusMessage('Select a target for your action.');
         appendCombatLog('Select a target for your action.');
@@ -672,8 +900,14 @@ const Combat = (function () {
             const me = currentBattle.viewerId
                 || (document.getElementById('player-id') || {}).value;
             ingestCombatants(data.combatants, me);
-            currentBattle.opponents = opponentsFromCombatants(data.combatants, me);
+            applyOpponents(opponentsFromCombatants(data.combatants, me));
             renderRoster();
+            // Killing blow: HP paints at 0, then blood → smash during the pause.
+            (data.combatants || []).forEach(function (c) {
+                if (c && c.is_monster && Number(c.hp) <= 0) {
+                    playMonsterDefeat(combatantKey(c));
+                }
+            });
         }
         if (data.your_hp) {
             const parsed = parseHpString(data.your_hp);
@@ -692,9 +926,15 @@ const Combat = (function () {
             showStatusMessage(data.message);
             appendCombatLog(data.message);
         }
-        currentBattle.opponents = currentBattle.opponents.filter(
-            o => !(o.is_monster && sameCombatant(o, data.monster_id))
-        );
+        const key = data.monster_id;
+        // FX already running from the 0-HP combat_action — let smash finish.
+        if (dyingMonsters.has(key)) return;
+        // Still on roster (no prior FX) — play defeat, or drop immediately.
+        if (currentBattle.opponents.some(o => sameCombatant(o, key))) {
+            playMonsterDefeat(key);
+            return;
+        }
+        removeOpponentByKey(key);
         renderRoster();
     }
 
@@ -717,6 +957,10 @@ const Combat = (function () {
             appendCombatLog(data.message);
         }
         hideOverlay();
+        Array.from(dyingCards.keys()).forEach(detachDyingCard);
+        dyingMonsters.clear();
+        deferredJoins.clear();
+        rosterOrder = [];
         currentBattle = {
             battleId: null,
             opponents: [],
@@ -776,9 +1020,9 @@ const Combat = (function () {
 
         if (data.combatants) {
             ingestCombatants(data.combatants, currentBattle.viewerId);
-            currentBattle.opponents = opponentsFromCombatants(
+            applyOpponents(opponentsFromCombatants(
                 data.combatants, currentBattle.viewerId
-            );
+            ));
         } else if (data.active_player && currentBattle.opponents) {
             currentBattle.opponents.forEach(o => {
                 o.is_current_turn = sameCombatant(o, data.active_player);
@@ -832,5 +1076,14 @@ const Combat = (function () {
     bindScreenGuards();
     bindMapPeek();
 
-    return { processCombatUpdate, sendAction, isOpen };
+    /** Dev helper: play the defeat FX on a card without needing a real kill. */
+    function previewDefeat(monsterId) {
+        const key = monsterId || (currentBattle.opponents.find(o => o.is_monster)
+            && combatantKey(currentBattle.opponents.find(o => o.is_monster)));
+        if (!key) return false;
+        playMonsterDefeat(key);
+        return true;
+    }
+
+    return { processCombatUpdate, sendAction, isOpen, previewDefeat };
 })();

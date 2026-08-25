@@ -199,6 +199,40 @@ def player_from_world_dict(player_id: str, data: dict) -> Player:
     return player
 
 
+class DefeatedOpponent:
+    """Stand-in for a slain monster whose only remaining use is its Elo."""
+
+    __slots__ = ('elo',)
+
+    def __init__(self, elo: float = 0.0):
+        self.elo = float(elo or 0.0)
+
+
+def pending_rewards_to_dict(pending: dict | None) -> dict:
+    """Kill buckets hold live Monster objects; store only their Elo."""
+    out = {}
+    for player_id, bucket in (pending or {}).items():
+        row = dict(bucket or {})
+        row['elo_opponents'] = [
+            float(getattr(opponent, 'elo', 0) or 0)
+            for opponent in (bucket or {}).get('elo_opponents') or []
+        ]
+        out[player_id] = row
+    return out
+
+
+def pending_rewards_from_dict(data: dict | None) -> dict:
+    out = {}
+    for player_id, bucket in (data or {}).items():
+        row = dict(bucket or {})
+        row['elo_opponents'] = [
+            DefeatedOpponent(elo)
+            for elo in (bucket or {}).get('elo_opponents') or []
+        ]
+        out[player_id] = row
+    return out
+
+
 def battle_to_dict(battle: dict) -> dict:
     return {
         'battle_id': battle.get('battle_id'),
@@ -208,7 +242,7 @@ def battle_to_dict(battle: dict) -> dict:
         'current_turn_index': int(battle.get('current_turn_index', 0) or 0),
         'status': battle.get('status', 'active'),
         'defend_status': dict(battle.get('defend_status') or {}),
-        'pending_rewards': dict(battle.get('pending_rewards') or {}),
+        'pending_rewards': pending_rewards_to_dict(battle.get('pending_rewards')),
     }
 
 
@@ -250,7 +284,7 @@ def battle_from_dict(data: dict, monster_index: dict[str, Monster]) -> dict | No
         'current_turn_index': int(data.get('current_turn_index', 0) or 0),
         'status': status,
         'defend_status': dict(data.get('defend_status') or {}),
-        'pending_rewards': dict(data.get('pending_rewards') or {}),
+        'pending_rewards': pending_rewards_from_dict(data.get('pending_rewards')),
         'turn_token': None,
         'monster_turn_delay_token': None,
     }
