@@ -9,7 +9,7 @@ ATTRIBUTE_LABELS = {
     'chr': 'Charisma',
     'dex': 'Dexterity',
     'agi': 'Agility',
-    'acc': 'ACC',
+    'acc': 'Accuracy',
 }
 
 
