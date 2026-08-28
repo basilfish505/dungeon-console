@@ -164,6 +164,9 @@ const Combat = (function () {
         elements.overlay.setAttribute('aria-hidden', 'true');
         elements.overlay.style.display = 'none';
         open = false;
+        if (typeof CombatSocial !== 'undefined' && CombatSocial.hide) {
+            CombatSocial.hide();
+        }
         if (elements.mobileControls) {
             const shell = document.getElementById('game-shell');
             if (shell && !shell.hidden) {
@@ -657,9 +660,12 @@ const Combat = (function () {
               `</div>`;
 
         const turnLabel = opponent.is_monster ? 'Attacking' : 'Their turn';
+        const isAlly = !opponent.is_monster && Array.isArray(opponent.ally_of)
+            && opponent.ally_of.indexOf(currentBattle.viewerId) !== -1;
         const badges =
             (opponent.is_current_turn ? `<span class="combat-badge-turn">${turnLabel}</span>` : '') +
-            (opponent.defending ? '<span class="combat-badge-defend">Defend</span>' : '');
+            (opponent.defending ? '<span class="combat-badge-defend">Defend</span>' : '') +
+            (isAlly ? '<span class="combat-card-ally-badge">Ally</span>' : '');
 
         return (
             `<div class="${classes}" data-id="${escapeHtml(key || '')}" data-key="${escapeHtml(key || '')}" tabindex="0">` +
@@ -811,6 +817,12 @@ const Combat = (function () {
             if (el && el.value) currentBattle.viewerId = el.value;
         }
         syncSelfFromCombatants();
+        if (typeof CombatSocial !== 'undefined' && CombatSocial.updateAvailability) {
+            CombatSocial.updateAvailability(
+                currentBattle.combatants,
+                currentBattle.viewerId
+            );
+        }
     }
 
     /**
@@ -1118,5 +1130,5 @@ const Combat = (function () {
         return true;
     }
 
-    return { processCombatUpdate, sendAction, isOpen, previewDefeat };
+    return { processCombatUpdate, sendAction, isOpen, previewDefeat, appendLog: appendCombatLog };
 })();

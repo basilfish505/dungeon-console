@@ -726,7 +726,18 @@ class GameState:
                 other_player.dungeon_level == player.dungeon_level and
                 getattr(other_player, 'interior_id', None) == getattr(player, 'interior_id', None) and
                 other_player.pos == new_pos):
-                interaction_system.start_interaction(player_id, other_id)
+                target_battle = combat_system.battles.get(
+                    self.active_combats.get(other_id)
+                )
+                if target_battle is not None:
+                    # Already fighting: join their battle. A combatant cannot be
+                    # frozen for an interaction prompt, so bumping them in is the
+                    # only way for a third player to enter an ongoing fight.
+                    combat_system.start_combat(
+                        player_id, other_id, emit_game_state=False
+                    )
+                else:
+                    interaction_system.start_interaction(player_id, other_id)
                 # Always consume the bump so players never stack on one tile.
                 return True
         
@@ -958,11 +969,21 @@ class GameState:
 game_state = GameState(skip_generate=True)
 combat_system = CombatSystem(game_state, socketio)
 from player_interactions import PlayerInteractionSystem
+from combat_social import CombatSocialSystem
 interaction_system = PlayerInteractionSystem(
     game_state, socketio, combat_system=combat_system
 )
+combat_social = CombatSocialSystem(
+    game_state,
+    socketio,
+    combat_system=combat_system,
+    interaction_system=interaction_system,
+)
 game_state.interaction_system = interaction_system
+game_state.combat_social = combat_social
 combat_system.interaction_system = interaction_system
+combat_system.combat_social = combat_social
+interaction_system.bind_combat_system(combat_system)
 
 if os.environ.get('PERMAQUEST_SKIP_WORLD_BOOT', '').lower() in ('1', 'true', 'yes'):
     world_persistence = WorldPersistence(game_state, combat_system, socketio=None)
@@ -1113,6 +1134,7 @@ def handle_disconnect():
         if removed:
             print(f"Player {player_id} disconnected.")
             interaction_system.handle_disconnect(player_id)
+            combat_social.handle_disconnect(player_id)
             if player_id in game_state.players:
                 try:
                     world_persistence.save_character(player_id)
@@ -1266,6 +1288,18 @@ def handle_interaction_choice(data):
         data.get('interaction_id'),
         data.get('choice'),
     )
+    for pid in list(game_state.active_players.keys()):
+        emit('game_state', game_state.get_game_state(pid), room=pid)
+
+
+@socketio.on('combat_social')
+def handle_combat_social(data):
+    player_id = session.get('player_id')
+    if not player_id or player_id not in game_state.players:
+        return
+    if not isinstance(data, dict):
+        return
+    combat_social.handle_action(player_id, data)
     for pid in list(game_state.active_players.keys()):
         emit('game_state', game_state.get_game_state(pid), room=pid)
 

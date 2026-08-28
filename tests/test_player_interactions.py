@@ -283,6 +283,50 @@ class BumpIntegrationTests(unittest.TestCase):
             if prev_cs is not None:
                 dc.combat_system = prev_cs
 
+    def test_bump_into_fighting_player_joins_their_battle(self):
+        from dungeon_crawler import GameState
+
+        gs = GameState(skip_generate=True)
+        gs.generate_top_level()
+        sock = _SocketIOStub()
+        cs = CombatSystem(gs, sock)
+        ix = PlayerInteractionSystem(gs, sock, combat_system=cs)
+        gs.interaction_system = ix
+        cs.interaction_system = ix
+
+        a = Player('A', [5, 5])
+        b = Player('B', [5, 6])
+        c = Player('C', [5, 7])
+        for p in (a, b, c):
+            p.dungeon_level = 0
+        gs.players = {'A': a, 'B': b, 'C': c}
+        gs.active_players = dict(gs.players)
+        gs.levels[0] = (gs.game_map, gs.monsters)
+
+        import dungeon_crawler as dc
+        prev_ix = getattr(dc, 'interaction_system', None)
+        prev_cs = getattr(dc, 'combat_system', None)
+        dc.interaction_system = ix
+        dc.combat_system = cs
+        try:
+            battle_id = cs.start_combat('A', 'B', emit_game_state=False)
+            # C walks into B, who is mid-battle: C should join that battle
+            # rather than get a prompt that can never be answered.
+            result = gs.is_combat_scenario('C', [5, 6], gs.monsters)
+            self.assertTrue(result)
+            self.assertFalse(ix.is_busy('C'))
+            self.assertEqual(len(cs.battles), 1)
+            self.assertEqual(
+                sorted(cs.battles[battle_id]['participants']),
+                ['A', 'B', 'C'],
+            )
+            self.assertEqual(gs.active_combats['C'], battle_id)
+        finally:
+            if prev_ix is not None:
+                dc.interaction_system = prev_ix
+            if prev_cs is not None:
+                dc.combat_system = prev_cs
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -243,6 +243,10 @@ def battle_to_dict(battle: dict) -> dict:
         'status': battle.get('status', 'active'),
         'defend_status': dict(battle.get('defend_status') or {}),
         'pending_rewards': pending_rewards_to_dict(battle.get('pending_rewards')),
+        'alliances': [
+            list(bond) for bond in (battle.get('alliances') or [])
+            if isinstance(bond, (list, tuple)) and len(bond) >= 2
+        ],
     }
 
 
@@ -285,6 +289,11 @@ def battle_from_dict(data: dict, monster_index: dict[str, Monster]) -> dict | No
         'status': status,
         'defend_status': dict(data.get('defend_status') or {}),
         'pending_rewards': pending_rewards_from_dict(data.get('pending_rewards')),
+        'alliances': [
+            [str(bond[0]), str(bond[1])]
+            for bond in (data.get('alliances') or [])
+            if isinstance(bond, (list, tuple)) and len(bond) >= 2
+        ],
         'turn_token': None,
         'monster_turn_delay_token': None,
         'queued_joins': [],

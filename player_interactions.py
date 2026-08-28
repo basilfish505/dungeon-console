@@ -29,6 +29,9 @@ ONLINE_CHOICES = (CHOICE_ATTACK, CHOICE_DEMAND, CHOICE_CHAT, CHOICE_LEAVE)
 OFFLINE_CHOICES = (CHOICE_ATTACK, CHOICE_LEAVE)
 
 
+COMBAT_CHAT_CHOICES = (CHOICE_CHAT, CHOICE_LEAVE)
+
+
 class PlayerInteractionSystem:
     def __init__(self, game_state, socketio, combat_system=None):
         self.game_state = game_state
@@ -36,12 +39,19 @@ class PlayerInteractionSystem:
         self.combat_system = combat_system
         self.interactions = {}
         self.by_player = {}
+        # Initiator may have several pending combat-chat invites (targets decide);
+        # first accept opens chat and cancels siblings.
+        self.pending_by_initiator = {}
 
     def bind_combat_system(self, combat_system):
         self.combat_system = combat_system
 
     def is_busy(self, player_id):
-        return player_id in self.by_player
+        if player_id in self.by_player:
+            return True
+        # Active chat or map bump interaction occupies by_player. Pending
+        # combat-chat invites do not freeze the initiator (targets decide).
+        return False
 
     def get_interaction(self, player_id):
         iid = self.by_player.get(player_id)
@@ -173,11 +183,14 @@ class PlayerInteractionSystem:
             return False
 
         choice = str(choice or '').strip().lower()
-        allowed = self._choices_for(
-            record.get('target_online', True)
-            if record['state'] == STATE_AWAITING_INITIATOR
-            else True
-        )
+        if record.get('from_combat'):
+            allowed = list(COMBAT_CHAT_CHOICES)
+        else:
+            allowed = self._choices_for(
+                record.get('target_online', True)
+                if record['state'] == STATE_AWAITING_INITIATOR
+                else True
+            )
         if choice not in allowed:
             return False
 
@@ -192,6 +205,82 @@ class PlayerInteractionSystem:
         if choice == CHOICE_CHAT:
             return self._resolve_chat_choice(record, player_id)
         return False
+
+    def start_combat_chat(self, initiator_id, target_id, battle_id, group_id=None):
+        """Invite a battle participant to chat (accept/reject).
+
+        Skips the in-combat guard. The target decides; the initiator is not
+        placed in ``by_player`` until a chat opens so multiple invites can be
+        outstanding (first accept wins).
+        """
+        if not initiator_id or not target_id or initiator_id == target_id:
+            return False
+        if initiator_id not in self.game_state.players:
+            return False
+        if target_id not in self.game_state.players:
+            return False
+        # Initiator already in an active chat / map interaction.
+        if initiator_id in self.by_player:
+            return False
+        if self.is_busy(target_id):
+            return False
+
+        interaction_id = str(uuid.uuid4())
+        group = group_id or str(uuid.uuid4())
+        record = {
+            'interaction_id': interaction_id,
+            'participants': [initiator_id, target_id],
+            'initiator_id': initiator_id,
+            'target_id': target_id,
+            'state': STATE_AWAITING_RESPONDER,
+            'deciding_id': target_id,
+            'decision_token': None,
+            'target_online': True,
+            'chat_log': [],
+            'from_attack_choice': False,
+            'from_combat': True,
+            'battle_id': battle_id,
+            'combat_chat_group': group,
+        }
+        self.interactions[interaction_id] = record
+        # Only the deciding target is indexed in by_player until chat opens.
+        self.by_player[target_id] = interaction_id
+        self.pending_by_initiator.setdefault(initiator_id, set()).add(
+            interaction_id
+        )
+
+        self._emit(target_id, {
+            'type': 'interaction_prompt',
+            'interaction_id': interaction_id,
+            'other_id': initiator_id,
+            'role': 'responder',
+            'message': f'{initiator_id} wants to chat. Accept or leave?',
+            'choices': list(COMBAT_CHAT_CHOICES),
+            'timeout': INTERACTION_TIMEOUT_SECONDS,
+            'target_online': True,
+            'from_combat': True,
+        })
+        self._emit(initiator_id, {
+            'type': 'interaction_waiting',
+            'interaction_id': interaction_id,
+            'other_id': target_id,
+            'message': f'Waiting for {target_id} to respond to your chat invite...',
+            'timeout': INTERACTION_TIMEOUT_SECONDS,
+            'from_combat': True,
+        })
+        self._start_decision_timer(record)
+        return True
+
+    def _cancel_sibling_combat_chats(self, record, keep_id):
+        group = record.get('combat_chat_group')
+        if not group:
+            return
+        siblings = [
+            iid for iid, other in list(self.interactions.items())
+            if other.get('combat_chat_group') == group and iid != keep_id
+        ]
+        for iid in siblings:
+            self.end_interaction(iid, reason='sibling_accepted', silent=False)
 
     def _resolve_attack(self, record, player_id):
         initiator = record['initiator_id']
@@ -261,15 +350,28 @@ class PlayerInteractionSystem:
         return self._open_chat(record)
 
     def _open_chat(self, record):
+        # First accept wins for multi-invite combat chats.
+        if record.get('from_combat'):
+            self._cancel_sibling_combat_chats(
+                record, keep_id=record['interaction_id']
+            )
         record['state'] = STATE_CHAT
         record['deciding_id'] = None
         self._cancel_decision_timer(record)
         a = record['initiator_id']
         b = record['target_id']
+        interaction_id = record['interaction_id']
+        self.by_player[a] = interaction_id
+        self.by_player[b] = interaction_id
+        pending = self.pending_by_initiator.get(a)
+        if pending is not None:
+            pending.discard(interaction_id)
+            if not pending:
+                self.pending_by_initiator.pop(a, None)
         for pid, other in ((a, b), (b, a)):
             self._emit(pid, {
                 'type': 'chat_start',
-                'interaction_id': record['interaction_id'],
+                'interaction_id': interaction_id,
                 'other_id': other,
             })
         return True
@@ -322,6 +424,13 @@ class PlayerInteractionSystem:
         for pid in participants:
             if self.by_player.get(pid) == interaction_id:
                 del self.by_player[pid]
+        initiator = record.get('initiator_id')
+        if initiator:
+            pending = self.pending_by_initiator.get(initiator)
+            if pending is not None:
+                pending.discard(interaction_id)
+                if not pending:
+                    self.pending_by_initiator.pop(initiator, None)
         if not silent:
             payload = {
                 'type': 'interaction_end',
@@ -363,15 +472,14 @@ class PlayerInteractionSystem:
 
     def handle_disconnect(self, player_id):
         """Cancel pending decisions / end chat when a player goes offline."""
+        # Cancel any pending combat-chat invites this player started.
+        pending_ids = list(self.pending_by_initiator.get(player_id) or ())
+        for iid in pending_ids:
+            self.end_interaction(iid, reason='disconnect')
+
         record = self.get_interaction(player_id)
         if record is None:
-            return False
-        state = record.get('state')
-        if state == STATE_CHAT:
-            return self.end_interaction(
-                record['interaction_id'], reason='disconnect'
-            )
-        # Pending decision — release everyone.
+            return bool(pending_ids)
         return self.end_interaction(
             record['interaction_id'], reason='disconnect'
         )

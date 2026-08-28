@@ -364,7 +364,12 @@ const InteractionUI = (function () {
                 showWaiting(data);
                 break;
             case 'interaction_end':
-                hideAll();
+                if (
+                    !data.interaction_id
+                    || data.interaction_id === currentInteractionId
+                ) {
+                    hideAll();
+                }
                 break;
             case 'chat_start':
                 showChat(data);
@@ -373,16 +378,168 @@ const InteractionUI = (function () {
                 appendChatMessage(data);
                 break;
             case 'chat_end':
-                hideAll();
+                if (
+                    !data.interaction_id
+                    || data.interaction_id === currentInteractionId
+                ) {
+                    hideAll();
+                }
                 break;
             default:
                 break;
         }
     }
 
+    /**
+     * Generic Accept/Reject (or similar) prompt reusing the interaction overlay.
+     * opts: {title, message, choices:[{id,label}], timeout, onChoice(id)}
+     */
+    function showGenericPrompt(opts) {
+        if (!ensureEls()) {
+            return;
+        }
+        opts = opts || {};
+        hideChat();
+        currentInteractionId = opts.id || null;
+        currentOtherId = opts.otherId || null;
+        if (promptTitle) {
+            promptTitle.textContent = opts.title || 'Decision';
+        }
+        if (promptMessage) {
+            promptMessage.textContent = opts.message || '';
+        }
+        if (promptChoices) {
+            promptChoices.innerHTML = '';
+            const choices = opts.choices || [];
+            choices.forEach(function (choice) {
+                const id = typeof choice === 'string' ? choice : choice.id;
+                const label = typeof choice === 'string'
+                    ? (CHOICE_LABELS[choice] || choice)
+                    : (choice.label || choice.id);
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'interaction-choice-btn';
+                btn.dataset.choice = id;
+                btn.textContent = label;
+                btn.addEventListener('click', function (e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    hidePrompt();
+                    if (typeof opts.onChoice === 'function') {
+                        opts.onChoice(id);
+                    }
+                });
+                promptChoices.appendChild(btn);
+            });
+        }
+        promptOpen = true;
+        promptOverlay.hidden = false;
+        promptOverlay.setAttribute('aria-hidden', 'false');
+        startCountdown(opts.timeout);
+    }
+
+    /**
+     * Multi-select recipient picker.
+     * opts: {title, message, options:[{id,label}], onConfirm(ids), onCancel()}
+     */
+    function showPicker(opts) {
+        if (!ensureEls()) {
+            return;
+        }
+        opts = opts || {};
+        hideChat();
+        currentInteractionId = null;
+        currentOtherId = null;
+        if (promptTitle) {
+            promptTitle.textContent = opts.title || 'Select';
+        }
+        if (promptMessage) {
+            promptMessage.textContent = opts.message || '';
+        }
+        if (promptChoices) {
+            promptChoices.innerHTML = '';
+            promptChoices.classList.add('interaction-picker-mode');
+            const list = document.createElement('div');
+            list.className = 'interaction-picker-list';
+            const selected = {};
+            (opts.options || []).forEach(function (opt) {
+                const row = document.createElement('button');
+                row.type = 'button';
+                row.className = 'interaction-picker-option';
+                row.dataset.id = opt.id;
+                const box = document.createElement('input');
+                box.type = 'checkbox';
+                box.tabIndex = -1;
+                const label = document.createElement('span');
+                label.textContent = opt.label || opt.id;
+                row.appendChild(box);
+                row.appendChild(label);
+                row.addEventListener('click', function (e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    selected[opt.id] = !selected[opt.id];
+                    box.checked = !!selected[opt.id];
+                    row.classList.toggle('selected', !!selected[opt.id]);
+                });
+                list.appendChild(row);
+            });
+            promptChoices.appendChild(list);
+
+            const confirmBtn = document.createElement('button');
+            confirmBtn.type = 'button';
+            confirmBtn.className = 'interaction-choice-btn';
+            confirmBtn.textContent = 'Confirm';
+            confirmBtn.addEventListener('click', function (e) {
+                e.preventDefault();
+                e.stopPropagation();
+                const ids = Object.keys(selected).filter(function (k) {
+                    return selected[k];
+                });
+                hidePrompt();
+                if (promptChoices) {
+                    promptChoices.classList.remove('interaction-picker-mode');
+                }
+                if (typeof opts.onConfirm === 'function') {
+                    opts.onConfirm(ids);
+                }
+            });
+            const cancelBtn = document.createElement('button');
+            cancelBtn.type = 'button';
+            cancelBtn.className = 'interaction-choice-btn';
+            cancelBtn.textContent = 'Cancel';
+            cancelBtn.addEventListener('click', function (e) {
+                e.preventDefault();
+                e.stopPropagation();
+                hidePrompt();
+                if (promptChoices) {
+                    promptChoices.classList.remove('interaction-picker-mode');
+                }
+                if (typeof opts.onCancel === 'function') {
+                    opts.onCancel();
+                }
+            });
+            promptChoices.appendChild(confirmBtn);
+            promptChoices.appendChild(cancelBtn);
+        }
+        promptOpen = true;
+        promptOverlay.hidden = false;
+        promptOverlay.setAttribute('aria-hidden', 'false');
+        stopCountdown();
+    }
+
+    function hidePromptAndClearPicker() {
+        if (promptChoices) {
+            promptChoices.classList.remove('interaction-picker-mode');
+        }
+        hidePrompt();
+    }
+
     return {
         isOpen: isOpen,
         processUpdate: processUpdate,
         hide: hideAll,
+        showGenericPrompt: showGenericPrompt,
+        showPicker: showPicker,
+        hidePrompt: hidePromptAndClearPicker,
     };
 })();

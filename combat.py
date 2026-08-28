@@ -7,6 +7,8 @@ from combat_elo import apply_elo_outcome
 from player_xp import calculate_pqg_from_xp, calculate_xp_from_elo
 from player_persistence import save_player
 from player_growth import format_level_up_messages
+import combat_alliances as alliances
+from combat_alliances import REWARD_POLICY
 import uuid
 
 TURN_TIMEOUT_SECONDS = 20
@@ -89,6 +91,16 @@ class CombatSystem:
             defender_id = defender.id
         else:
             defender = self.game_state.players[defender_id]
+
+        # Cancel any open player interaction involving these combatants.
+        ix = getattr(self, 'interaction_system', None) or getattr(
+            self.game_state, 'interaction_system', None
+        )
+        if ix is not None and hasattr(ix, 'cancel_for_combatants'):
+            ids = [attacker_id]
+            if not is_monster_combat:
+                ids.append(defender_id)
+            ix.cancel_for_combatants(*ids)
         
         # Check if either participant is already in a battle
         existing_battle_id = self._find_existing_battle(attacker_id, defender_id)
@@ -171,8 +183,39 @@ class CombatSystem:
             existing['pqg'] += bucket.get('pqg', 0)
             existing['elo_opponents'].extend(bucket.get('elo_opponents', []))
 
+        alliances.merge_alliances(target, source)
+
     def _add_entity_to_battle(self, battle, entity_id, entity, is_monster=False):
         """Add an entity (player or monster) to a battle. True if newly added."""
+        # During the killing-blow pause, queue newcomers so death FX can finish.
+        if battle.get('status') == 'ending':
+            queue = battle.setdefault('queued_joins', [])
+            for entry in queue:
+                if entry.get('entity_id') == entity_id:
+                    return False
+            if is_monster:
+                for m in battle['monsters']:
+                    if m.id == entity.id:
+                        return False
+                if self._battle_for_combatant(entity.id) is not None:
+                    # Already committed elsewhere — but ending battle may still
+                    # hold them; allow queue if not already in this battle.
+                    pass
+            else:
+                if entity_id in battle['participants']:
+                    return False
+            queue.append({
+                'entity_id': entity_id,
+                'entity': entity,
+                'is_monster': bool(is_monster),
+            })
+            if is_monster:
+                entity.in_combat = True
+            else:
+                entity.in_combat = True
+                self.game_state.active_combats[entity_id] = battle['battle_id']
+            return False
+
         if is_monster:
             # Already in this battle, or committed to another one
             for m in battle['monsters']:
@@ -200,6 +243,47 @@ class CombatSystem:
         entity.in_combat = True
         self.game_state.active_combats[entity_id] = battle['battle_id']
         return True
+
+    def _flush_queued_joins(self, battle):
+        """Admit entities that joined during the kill pause."""
+        queue = list(battle.pop('queued_joins', None) or [])
+        battle['queued_joins'] = []
+        if not queue:
+            return False
+        # Temporarily mark active so _add_entity_to_battle admits them.
+        was_status = battle.get('status')
+        if was_status == 'ending':
+            battle['status'] = 'active'
+        admitted = False
+        for entry in queue:
+            entity = entry.get('entity')
+            entity_id = entry.get('entity_id')
+            is_monster = bool(entry.get('is_monster'))
+            if entity is None or entity_id is None:
+                continue
+            if self._add_entity_to_battle(battle, entity_id, entity, is_monster):
+                admitted = True
+        if was_status == 'ending':
+            battle['status'] = 'ending'
+        if admitted:
+            # Queued newcomers never received a combat_start, so refresh everyone.
+            for participant_id in list(battle['participants']):
+                self._send_combat_start(
+                    participant_id, battle, is_join_refresh=True
+                )
+        return admitted
+
+    def _release_queued_joins(self, battle):
+        """Free anyone still waiting in the kill-pause queue when a battle ends."""
+        for entry in list(battle.get('queued_joins') or []):
+            entity = entry.get('entity')
+            entity_id = entry.get('entity_id')
+            if entity is not None:
+                entity.in_combat = False
+            if not entry.get('is_monster') and entity_id:
+                if self.game_state.active_combats.get(entity_id) == battle['battle_id']:
+                    del self.game_state.active_combats[entity_id]
+        battle['queued_joins'] = []
     
     def _create_new_battle(
         self, attacker_id, defender_id, defender, is_monster_combat, emit_game_state=True
@@ -235,6 +319,8 @@ class CombatSystem:
             'turn_token': None,
             'monster_turn_delay_token': None,
             'pending_rewards': {},
+            'alliances': [],
+            'queued_joins': [],
         }
         
         # Store the battle
@@ -1081,11 +1167,13 @@ class CombatSystem:
         # Add players
         for p_id in battle['participants']:
             player = self.game_state.players[p_id]
-            combatants.append(_player_combatant(
+            entry = _player_combatant(
                 player,
                 is_current_turn=(p_id == current_turn_id),
                 defending=battle.get('defend_status', {}).get(p_id, False),
-            ))
+            )
+            entry['ally_of'] = alliances.allies_of(battle, p_id)
+            combatants.append(entry)
 
         # Add monsters
         for monster in battle['monsters']:
@@ -1185,61 +1273,159 @@ class CombatSystem:
         """
         pending = battle.get('pending_rewards', {})
         bucket = pending.pop(player_id, None)
-        if not bucket or bucket.get('kills', 0) <= 0:
+        if not bucket or int(bucket.get('kills', 0) or 0) <= 0:
             return None
+        return self._grant_rewards(player_id, bucket, allied=False)
 
+    def _grant_rewards(self, player_id, bucket, allied=False):
+        """Apply a reward bucket to a player. Returns a summary string or None."""
+        if not bucket:
+            return None
         killer = self.game_state.players.get(player_id)
         if killer is None:
             return None
 
-        kills = bucket['kills']
-        xp_total = bucket['xp']
-        pqg_total = bucket['pqg']
-        killer.award_xp(xp_total)
+        kills = int(bucket.get('kills', 0) or 0)
+        alliance_kills = int(bucket.get('alliance_kills', kills) or kills)
+        xp_total = int(bucket.get('xp', 0) or 0)
+        pqg_total = int(bucket.get('pqg', 0) or 0)
+
+        if xp_total <= 0 and pqg_total <= 0 and kills <= 0 and not allied:
+            return None
+
+        if xp_total > 0:
+            killer.award_xp(xp_total)
         if pqg_total > 0:
             killer.pqg = int(getattr(killer, 'pqg', 0) or 0) + pqg_total
 
-        elo_before = float(getattr(killer, 'elo', 0) or 0)
-        for opponent in bucket.get('elo_opponents', []):
-            apply_elo_outcome(killer, opponent)
+        elo_delta = 0.0
         elo_after = float(getattr(killer, 'elo', 0) or 0)
-        elo_delta = elo_after - elo_before
+        if not allied:
+            elo_before = float(getattr(killer, 'elo', 0) or 0)
+            for opponent in bucket.get('elo_opponents', []):
+                apply_elo_outcome(killer, opponent)
+            elo_after = float(getattr(killer, 'elo', 0) or 0)
+            elo_delta = elo_after - elo_before
+        else:
+            elo_after = float(getattr(killer, 'elo', 0) or 0)
 
-        enemy_word = 'enemy' if kills == 1 else 'enemies'
-        self.game_state.add_player_message(
-            player_id,
-            f"You defeated {kills} {enemy_word}.",
-        )
-        self.game_state.add_player_message(
-            player_id,
-            f"You gain {xp_total} experience.",
-        )
-        if pqg_total > 0:
+        display_kills = alliance_kills if allied else kills
+        enemy_word = 'enemy' if display_kills == 1 else 'enemies'
+        if allied:
             self.game_state.add_player_message(
                 player_id,
-                f"You gain {pqg_total} PQG.",
+                f"Your alliance defeated {display_kills} {enemy_word}.",
             )
+            self.game_state.add_player_message(
+                player_id,
+                f"You gain {xp_total} experience (alliance split).",
+            )
+            if pqg_total > 0:
+                self.game_state.add_player_message(
+                    player_id,
+                    f"You gain {pqg_total} PQG (alliance split).",
+                )
+        else:
+            self.game_state.add_player_message(
+                player_id,
+                f"You defeated {display_kills} {enemy_word}.",
+            )
+            self.game_state.add_player_message(
+                player_id,
+                f"You gain {xp_total} experience.",
+            )
+            if pqg_total > 0:
+                self.game_state.add_player_message(
+                    player_id,
+                    f"You gain {pqg_total} PQG.",
+                )
         for text in format_level_up_messages(
             getattr(killer, 'last_level_up_results', None)
         ):
             self.game_state.add_player_message(player_id, text)
-        delta_txt = f"+{elo_delta:.0f}" if elo_delta >= 0 else f"{elo_delta:.0f}"
-        self.game_state.add_player_message(
-            player_id,
-            f"Elo {delta_txt} (now {elo_after:.0f}).",
-        )
+        if not allied:
+            delta_txt = f"+{elo_delta:.0f}" if elo_delta >= 0 else f"{elo_delta:.0f}"
+            self.game_state.add_player_message(
+                player_id,
+                f"Elo {delta_txt} (now {elo_after:.0f}).",
+            )
+        else:
+            self.game_state.add_player_message(
+                player_id,
+                "No Elo awarded (alliance).",
+            )
         save_player(killer)
         wp = getattr(self.game_state, 'world_persistence', None)
         if wp:
             wp.save_character(player_id)
 
-        summary_lines = [
-            f"You defeated {kills} {enemy_word}.",
-            f"You gain {xp_total} experience.",
-        ]
+        if allied:
+            summary_lines = [
+                f"Alliance defeated {display_kills} {enemy_word}.",
+                f"You gain {xp_total} experience.",
+            ]
+        else:
+            summary_lines = [
+                f"You defeated {display_kills} {enemy_word}.",
+                f"You gain {xp_total} experience.",
+            ]
         if pqg_total > 0:
             summary_lines.append(f"You gain {pqg_total} PQG.")
         return ' '.join(summary_lines)
+
+    def _apply_alliance_rewards(self, battle, survivors):
+        """Pool pending rewards for allied survivors and split via REWARD_POLICY."""
+        pending = battle.setdefault('pending_rewards', {})
+        buckets = {}
+        for pid in survivors:
+            bucket = pending.pop(pid, None)
+            if bucket:
+                buckets[pid] = bucket
+        # Include any leftover pending from dead allies? Plan says surviving
+        # allied players — only survivors' buckets. Dead players' pending is
+        # dropped (they already left the battle).
+        if not buckets:
+            # Still notify each survivor with empty? Return empty map.
+            return {pid: None for pid in survivors}
+
+        split = REWARD_POLICY.split(buckets)
+        summaries = {}
+        for pid in survivors:
+            part = split.get(pid) or split.get(str(pid))
+            if part is None:
+                summaries[pid] = None
+                continue
+            # Ensure kills informational field exists even if they had no bucket.
+            if pid not in buckets and str(pid) not in buckets:
+                part = dict(part)
+                part['kills'] = 0
+            summaries[pid] = self._grant_rewards(pid, part, allied=True)
+        return summaries
+
+    def notify_alliance_changed(self, battle):
+        """Refresh combatant payloads and re-check whether the battle can end."""
+        if battle is None or battle.get('status') in ('ended', 'merged'):
+            return False
+        combatants = self._get_combatants_status(battle)
+        for pid in list(battle.get('participants') or []):
+            self._emit('combat_update', {
+                'type': 'turn_notification',
+                'battle_id': battle['battle_id'],
+                'message': 'Alliance status updated.',
+                'combatants': combatants,
+                'your_turn': (
+                    battle['turn_order']
+                    and battle['current_turn_index'] < len(battle['turn_order'])
+                    and battle['turn_order'][battle['current_turn_index']] == pid
+                ),
+                'active_player': (
+                    battle['turn_order'][battle['current_turn_index']]
+                    if battle['turn_order'] else None
+                ),
+            }, room=pid)
+        ended = self._check_battle_end(battle, victory=True)
+        self._persist_combat_state()
+        return ended
     
     def _handle_monster_death(self, killer_id, monster, battle):
         """Handle a monster's death in combat"""
@@ -1290,6 +1476,7 @@ class CombatSystem:
                 }, room=p_id)
 
             if current:
+                self._flush_queued_joins(current)
                 self._check_battle_end(current, victory=True)
                 # Still fighting (e.g. PvP continues after monster) — resume turns
                 if current.get('status') == 'ending':
@@ -1310,22 +1497,29 @@ class CombatSystem:
         killer_name = None
         killer_kind = None
 
-        # Elo: PvP kill or monster kill (before the dead player is removed)
+        # Elo: PvP kill or monster kill (before the dead player is removed).
+        # Allied killers receive no PvP Elo.
         if killer_id and killer_id in self.game_state.players:
             killer = self.game_state.players[killer_id]
             killer_name = killer.id
             killer_kind = 'player'
             self.game_state.add_global_message(f"{killer_name} slayed {dead_name}")
-            new_elo, _dead_elo, elo_delta = apply_elo_outcome(killer, player)
-            delta_txt = f"+{elo_delta:.0f}" if elo_delta >= 0 else f"{elo_delta:.0f}"
-            self.game_state.add_player_message(
-                killer_id,
-                f"Elo {delta_txt} (now {new_elo:.0f}).",
-            )
-            save_player(killer)
-            wp = getattr(self.game_state, 'world_persistence', None)
-            if wp:
-                wp.save_character(killer_id)
+            if alliances.killer_in_alliance(battle, killer_id):
+                self.game_state.add_player_message(
+                    killer_id,
+                    "No Elo awarded (alliance).",
+                )
+            else:
+                new_elo, _dead_elo, elo_delta = apply_elo_outcome(killer, player)
+                delta_txt = f"+{elo_delta:.0f}" if elo_delta >= 0 else f"{elo_delta:.0f}"
+                self.game_state.add_player_message(
+                    killer_id,
+                    f"Elo {delta_txt} (now {new_elo:.0f}).",
+                )
+                save_player(killer)
+                wp = getattr(self.game_state, 'world_persistence', None)
+                if wp:
+                    wp.save_character(killer_id)
         elif killer_monster is not None:
             killer_name = getattr(killer_monster, 'name', killer_monster.id)
             killer_kind = 'monster'
@@ -1361,6 +1555,8 @@ class CombatSystem:
         # Remove player from battle
         if player_id in battle['participants']:
             battle['participants'].remove(player_id)
+
+        alliances.remove_player(battle, player_id)
         
         # Remove player from turn order
         if player_id in battle['turn_order']:
@@ -1416,6 +1612,7 @@ class CombatSystem:
             self._emit('player_died', room=player_id)
 
             if current:
+                self._flush_queued_joins(current)
                 self._check_battle_end(current, victory=is_victory)
                 # Multi-combatant fight continues — unfreeze and give next actor a turn
                 if current.get('status') == 'ending':
@@ -1427,7 +1624,7 @@ class CombatSystem:
         self._persist_combat_state()
     
     def _check_battle_end(self, battle, victory=False):
-        """End battle if only one (or zero) combatants remain. Returns True if ended."""
+        """End battle if no hostiles remain. Returns True if ended."""
         # No players left: release the monsters so they roam instead of staying
         # locked in a battle nobody can finish.
         if not battle['participants']:
@@ -1437,45 +1634,57 @@ class CombatSystem:
                 monster.in_combat = False
             battle['monsters'] = []
             battle['turn_order'] = []
+            self._release_queued_joins(battle)
+            social = getattr(self, 'combat_social', None) or getattr(
+                self.game_state, 'combat_social', None
+            )
+            if social is not None:
+                social.cancel_for_battle(battle['battle_id'])
             self.battles.pop(battle['battle_id'], None)
             self._persist_combat_state()
             return True
 
-        # End if no monsters and only one or zero players
-        if len(battle['monsters']) == 0 and len(battle['participants']) <= 1:
-            # End the battle
+        # End when no monsters remain and surviving players are all allied
+        # (or only one / zero players left).
+        if (
+            len(battle['monsters']) == 0
+            and alliances.participants_can_stop_fighting(battle)
+        ):
             self._cancel_turn_timer(battle)
             battle['status'] = 'ended'
-            
-            # Clear combat flags for remaining player if any
-            if battle['participants']:
-                summary_parts = []
-                if victory:
-                    for pid in battle['participants']:
-                        part_summary = self._apply_pending_rewards(battle, pid)
-                        if part_summary:
-                            summary_parts.append(part_summary)
-                summary = ' '.join(summary_parts) if summary_parts else None
+            self._release_queued_joins(battle)
 
-                last_player_id = battle['participants'][0]
-                if last_player_id in self.game_state.players:
-                    self.game_state.players[last_player_id].in_combat = False
-                
-                # Remove from active combat
-                if last_player_id in self.game_state.active_combats:
-                    del self.game_state.active_combats[last_player_id]
-                
-                # Send battle end message
+            survivors = list(battle['participants'])
+            allied_finish = len(survivors) > 1
+
+            summaries = {}
+            if victory and survivors:
+                if allied_finish:
+                    summaries = self._apply_alliance_rewards(battle, survivors)
+                else:
+                    for pid in survivors:
+                        summaries[pid] = self._apply_pending_rewards(battle, pid)
+
+            social = getattr(self, 'combat_social', None) or getattr(
+                self.game_state, 'combat_social', None
+            )
+            if social is not None:
+                social.cancel_for_battle(battle['battle_id'])
+
+            for pid in survivors:
+                if pid in self.game_state.players:
+                    self.game_state.players[pid].in_combat = False
+                if pid in self.game_state.active_combats:
+                    del self.game_state.active_combats[pid]
+                summary = summaries.get(pid) if summaries else None
                 end_data = {
                     'type': 'combat_end',
-
                     'battle_id': battle['battle_id'],
                     'message': summary or ".... The battle has ended.",
-                    'victory': victory
+                    'victory': victory,
                 }
-                self._emit('combat_update', end_data, room=last_player_id)
-            
-            # Remove battle
+                self._emit('combat_update', end_data, room=pid)
+
             self.battles.pop(battle['battle_id'], None)
             self._persist_combat_state()
             return True

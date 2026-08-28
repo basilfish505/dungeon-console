@@ -168,6 +168,10 @@
                 <button type="button" id="map-peek-btn" class="combat-map-peek-btn"
                     aria-label="Hold to view dungeon map">Map</button>
             </div>
+            <div id="combat-social-controls" class="combat-controls combat-social-controls" hidden aria-hidden="true">
+                <button type="button" id="alliance-btn">Alliance</button>
+                <button type="button" id="chat-btn">Chat</button>
+            </div>
         </div>
     </div>
 
@@ -208,6 +212,7 @@
     <script src="{{ asset_url('js/map_inspect.js') }}"></script>
     <script src="{{ asset_url('js/map_gestures.js') }}"></script>
     <script src="{{ asset_url('js/ui.js') }}"></script>
+    <script src="{{ asset_url('js/combat_social.js') }}"></script>
     <script src="{{ asset_url('js/combat.js') }}"></script>
     <script src="{{ asset_url('js/socket.js') }}"></script>
     <script src="{{ asset_url('js/movement_controller.js') }}"></script>

@@ -151,6 +151,12 @@ const SocketHandler = (function () {
             }
         });
 
+        socket.on('combat_social_update', function (data) {
+            if (typeof CombatSocial !== 'undefined' && CombatSocial.processUpdate) {
+                CombatSocial.processUpdate(data);
+            }
+        });
+
         socket.on('inspect_result', function (data) {
             if (typeof InspectUI !== 'undefined' && InspectUI.show) {
                 InspectUI.show(data);
@@ -279,6 +285,14 @@ const SocketHandler = (function () {
         });
     }
 
+    function sendCombatSocial(action, payload) {
+        if (!action) {
+            return;
+        }
+        const data = Object.assign({}, payload || {}, { action: action });
+        socket.emit('combat_social', data);
+    }
+
     return {
         socket,
         setupSocketEvents,
@@ -292,6 +306,7 @@ const SocketHandler = (function () {
         sendInteractionChoice,
         sendChatMessage,
         endChat,
+        sendCombatSocial,
         tryResumeSession,
         getJoinedPlayerId,
         clearJoinedSession,
