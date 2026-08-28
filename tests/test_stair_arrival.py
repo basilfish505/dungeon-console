@@ -225,12 +225,10 @@ class StairArrivalTests(unittest.TestCase):
         self.gs.active_players['mover'] = mover
         self.gs.player_messages['mover'] = []
 
-        with patch('dungeon_crawler.combat_system') as mock_combat:
-            mock_combat.start_combat.return_value = None
+        with patch('dungeon_crawler.interaction_system') as mock_ix:
+            mock_ix.start_interaction.return_value = True
             self.assertTrue(self.gs.move_player('mover', 'd'))
-            mock_combat.start_combat.assert_called_once_with(
-                'mover', 'guard', emit_game_state=False
-            )
+            mock_ix.start_interaction.assert_called_once_with('mover', 'guard')
 
         self.assertEqual(mover.dungeon_level, 0)
         self.assertEqual(mover.pos, [2, 1])

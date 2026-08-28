@@ -720,13 +720,14 @@ class GameState:
     def is_combat_scenario(self, player_id, new_pos, monsters):
         player = self.players[player_id]
 
-        # Check for player-player combat (same map; includes offline players)
+        # Player bump opens the interaction prompt (Attack / Demand / Chat / Leave).
         for other_id, other_player in self.players.items():
             if (other_id != player_id and
                 other_player.dungeon_level == player.dungeon_level and
                 getattr(other_player, 'interior_id', None) == getattr(player, 'interior_id', None) and
                 other_player.pos == new_pos):
-                combat_system.start_combat(player_id, other_id, emit_game_state=False)
+                interaction_system.start_interaction(player_id, other_id)
+                # Always consume the bump so players never stack on one tile.
                 return True
         
         # Check for player-monster combat
@@ -953,9 +954,15 @@ class GameState:
             payload['stair_step'] = {'y': step[0], 'x': step[1]}
         return payload
 
-# Create game state, combat system, and persistence
+# Create game state, combat system, interaction system, and persistence
 game_state = GameState(skip_generate=True)
 combat_system = CombatSystem(game_state, socketio)
+from player_interactions import PlayerInteractionSystem
+interaction_system = PlayerInteractionSystem(
+    game_state, socketio, combat_system=combat_system
+)
+game_state.interaction_system = interaction_system
+combat_system.interaction_system = interaction_system
 
 if os.environ.get('PERMAQUEST_SKIP_WORLD_BOOT', '').lower() in ('1', 'true', 'yes'):
     world_persistence = WorldPersistence(game_state, combat_system, socketio=None)
@@ -1105,6 +1112,7 @@ def handle_disconnect():
         removed = game_state.remove_player(player_id, sid=request.sid)
         if removed:
             print(f"Player {player_id} disconnected.")
+            interaction_system.handle_disconnect(player_id)
             if player_id in game_state.players:
                 try:
                     world_persistence.save_character(player_id)
@@ -1122,9 +1130,11 @@ def handle_move(direction):
     moving_player_id = session.get('player_id')
     if moving_player_id and moving_player_id in game_state.players:
         player = game_state.players[moving_player_id]
-        # Check if player is in combat
+        # Check if player is in combat or a timed interaction
         if player.in_combat or moving_player_id in game_state.active_combats:
             return  # Ignore movement commands during combat
+        if interaction_system.is_busy(moving_player_id):
+            return  # Frozen while deciding / chatting
         
         if game_state.move_player(moving_player_id, direction):
             # Ack the mover first so walk animation is not blocked by AI / others.
@@ -1243,6 +1253,48 @@ def handle_pan_camera(data):
     game_state.cameras[player_id] = (cam_y, cam_x)
     game_state.manual_pan[player_id] = True
     emit('game_state', game_state.get_game_state(player_id), room=player_id)
+
+@socketio.on('interaction_choice')
+def handle_interaction_choice(data):
+    player_id = session.get('player_id')
+    if not player_id or player_id not in game_state.players:
+        return
+    if not isinstance(data, dict):
+        return
+    interaction_system.handle_choice(
+        player_id,
+        data.get('interaction_id'),
+        data.get('choice'),
+    )
+    for pid in list(game_state.active_players.keys()):
+        emit('game_state', game_state.get_game_state(pid), room=pid)
+
+
+@socketio.on('chat_send')
+def handle_chat_send(data):
+    player_id = session.get('player_id')
+    if not player_id or player_id not in game_state.players:
+        return
+    if not isinstance(data, dict):
+        return
+    interaction_system.send_chat(
+        player_id,
+        data.get('interaction_id'),
+        data.get('text'),
+    )
+
+
+@socketio.on('chat_end')
+def handle_chat_end(data):
+    player_id = session.get('player_id')
+    if not player_id or player_id not in game_state.players:
+        return
+    if not isinstance(data, dict):
+        return
+    interaction_system.end_chat(player_id, data.get('interaction_id'))
+    for pid in list(game_state.active_players.keys()):
+        emit('game_state', game_state.get_game_state(pid), room=pid)
+
 
 @socketio.on('combat_action')
 def handle_combat_action(data):

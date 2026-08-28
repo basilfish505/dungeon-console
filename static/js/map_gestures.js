@@ -55,6 +55,9 @@ const MapGestures = (function () {
         if (typeof InventoryUI !== 'undefined' && InventoryUI.isOpen()) {
             return true;
         }
+        if (typeof InteractionUI !== 'undefined' && InteractionUI.isOpen()) {
+            return true;
+        }
         return false;
     }
 

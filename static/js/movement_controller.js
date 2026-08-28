@@ -259,6 +259,9 @@ const MovementController = (function () {
         if (typeof InventoryUI !== 'undefined' && InventoryUI.isOpen()) {
             return false;
         }
+        if (typeof InteractionUI !== 'undefined' && InteractionUI.isOpen()) {
+            return false;
+        }
         const now = performance.now();
         if (!force && now < nextEmitAt) {
             return false;

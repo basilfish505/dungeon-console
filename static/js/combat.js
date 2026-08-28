@@ -54,6 +54,8 @@ const Combat = (function () {
     const dyingCards = new Map();
     /** Keys of monsters that joined mid-smash; revealed once it finishes. */
     const deferredJoins = new Set();
+    /** Play enterbattle after death FX so it does not overlap killmonster. */
+    let pendingEnterBattleSound = false;
     /** Display order of opponent keys, so cards keep their slots. */
     let rosterOrder = [];
 
@@ -309,6 +311,10 @@ const Combat = (function () {
             rosterOrder.splice(Math.min(slot, rosterOrder.length), 0, ...revealed);
         }
         renderRoster();
+        if (pendingEnterBattleSound && !dyingMonsters.size) {
+            pendingEnterBattleSound = false;
+            if (typeof Sound !== 'undefined') Sound.play('enterbattle');
+        }
     }
 
     /**
@@ -868,7 +874,13 @@ const Combat = (function () {
                 const key = combatantKey(o);
                 return key && !priorMonsterKeys[key];
             });
-            if (newcomers) Sound.play('enterbattle');
+            if (newcomers) {
+                if (dyingMonsters.size) {
+                    pendingEnterBattleSound = true;
+                } else {
+                    Sound.play('enterbattle');
+                }
+            }
         }
         if (!isJoinRefresh) {
             currentBattle.selectedTarget = null;
@@ -980,6 +992,7 @@ const Combat = (function () {
         Array.from(dyingCards.keys()).forEach(detachDyingCard);
         dyingMonsters.clear();
         deferredJoins.clear();
+        pendingEnterBattleSound = false;
         rosterOrder = [];
         currentBattle = {
             battleId: null,

@@ -287,6 +287,7 @@ def battle_from_dict(data: dict, monster_index: dict[str, Monster]) -> dict | No
         'pending_rewards': pending_rewards_from_dict(data.get('pending_rewards')),
         'turn_token': None,
         'monster_turn_delay_token': None,
+        'queued_joins': [],
     }
 
 

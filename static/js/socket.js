@@ -145,6 +145,12 @@ const SocketHandler = (function () {
             Combat.processCombatUpdate(data);
         });
 
+        socket.on('interaction_update', function (data) {
+            if (typeof InteractionUI !== 'undefined' && InteractionUI.processUpdate) {
+                InteractionUI.processUpdate(data);
+            }
+        });
+
         socket.on('inspect_result', function (data) {
             if (typeof InspectUI !== 'undefined' && InspectUI.show) {
                 InspectUI.show(data);
@@ -244,6 +250,35 @@ const SocketHandler = (function () {
         socket.emit('buy_item', { item_id: itemId });
     }
 
+    function sendInteractionChoice(interactionId, choice) {
+        if (!interactionId || !choice) {
+            return;
+        }
+        socket.emit('interaction_choice', {
+            interaction_id: interactionId,
+            choice: choice,
+        });
+    }
+
+    function sendChatMessage(interactionId, text) {
+        if (!interactionId) {
+            return;
+        }
+        socket.emit('chat_send', {
+            interaction_id: interactionId,
+            text: text,
+        });
+    }
+
+    function endChat(interactionId) {
+        if (!interactionId) {
+            return;
+        }
+        socket.emit('chat_end', {
+            interaction_id: interactionId,
+        });
+    }
+
     return {
         socket,
         setupSocketEvents,
@@ -254,6 +289,9 @@ const SocketHandler = (function () {
         inspectMap,
         inspectCombatant,
         buyItem,
+        sendInteractionChoice,
+        sendChatMessage,
+        endChat,
         tryResumeSession,
         getJoinedPlayerId,
         clearJoinedSession,

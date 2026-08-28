@@ -214,5 +214,63 @@ class DefendStanceTests(unittest.TestCase):
         self.assertFalse(battle['defend_status']['hero'])
 
 
+class KillPauseJoinTests(unittest.TestCase):
+    def test_monster_join_during_kill_pause_is_queued(self):
+        gs, cs = _system()
+        gs.players = {'A': Player('A', [1, 1])}
+        m1, m2 = _troll('m1', [1, 3]), _troll('m2', [1, 4])
+        battle_id = cs.start_combat('A', m1, emit_game_state=False)
+        battle = cs.battles[battle_id]
+        battle['status'] = 'ending'
+
+        joined = cs.start_combat('A', m2, emit_game_state=False)
+
+        self.assertEqual(joined, battle_id)
+        self.assertEqual([m.id for m in battle['monsters']], ['m1'])
+        self.assertTrue(m2.in_combat)
+        self.assertEqual(len(battle['queued_joins']), 1)
+
+    def test_queued_join_is_admitted_after_kill_pause(self):
+        gs, cs = _system()
+        gs.players = {'A': Player('A', [1, 1])}
+        m1, m2 = _troll('m1', [1, 3]), _troll('m2', [1, 4])
+        battle_id = cs.start_combat('A', m1, emit_game_state=False)
+        battle = cs.battles[battle_id]
+        battle['status'] = 'ending'
+        cs.start_combat('A', m2, emit_game_state=False)
+
+        cs._flush_queued_joins(battle)
+
+        self.assertEqual([m.id for m in battle['monsters']], ['m1', 'm2'])
+        self.assertFalse(battle.get('queued_joins'))
+        self.assertTrue(m2.in_combat)
+
+    def test_kill_pause_callback_flushes_before_battle_end_check(self):
+        gs = _GameStateStub()
+        pending = []
+
+        class DelayedSocket(_SocketIOStub):
+            def start_background_task(self, fn, *args, **kwargs):
+                pending.append(fn)
+
+        cs = CombatSystem(gs, DelayedSocket())
+        gs.players = {'A': Player('A', [1, 1])}
+        m1, m2 = _troll('m1', [1, 3]), _troll('m2', [1, 4])
+        battle_id = cs.start_combat('A', m1, emit_game_state=False)
+        battle = cs.battles[battle_id]
+        cs._handle_monster_death('A', m1, battle)
+        self.assertEqual(battle['status'], 'ending')
+        cs.start_combat('A', m2, emit_game_state=False)
+        self.assertEqual(battle['monsters'], [])
+        self.assertEqual(len(battle['queued_joins']), 1)
+
+        self.assertGreaterEqual(len(pending), 1)
+        pending[-1]()
+
+        self.assertIn(battle_id, cs.battles)
+        self.assertEqual([m.id for m in cs.battles[battle_id]['monsters']], ['m2'])
+        self.assertEqual(cs.battles[battle_id]['status'], 'active')
+
+
 if __name__ == '__main__':
     unittest.main()

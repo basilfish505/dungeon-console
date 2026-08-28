@@ -275,17 +275,17 @@ class ItemsShopPlayTests(unittest.TestCase):
         self.assertGreater(avg, 5.0)
         self.assertLess(avg, 40.0)
 
-    def test_player_bump_on_town_still_starts_combat(self):
+    def test_player_bump_on_town_starts_interaction(self):
         p = self.gs.players['hero']
         dest, step = _floor_neighbor(self.gs.levels[0][0], p.pos, exclude=[self.door])
         self.assertIsNotNone(dest)
         guard = Player('guard', dest)
         guard.dungeon_level = 0
         self.gs.players['guard'] = guard
-        with patch('dungeon_crawler.combat_system') as mock_combat:
-            mock_combat.start_combat.return_value = None
+        with patch('dungeon_crawler.interaction_system') as mock_ix:
+            mock_ix.start_interaction.return_value = True
             self.assertTrue(self.gs.move_player('hero', step))
-            mock_combat.start_combat.assert_called_once()
+            mock_ix.start_interaction.assert_called_once_with('hero', 'guard')
         self.assertEqual(p.pos, list(self.road))
         self.assertIsNone(p.interior_id)
 

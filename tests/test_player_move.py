@@ -108,7 +108,7 @@ class CombatBumpTests(unittest.TestCase):
             )
         self.assertEqual(p.pos, [2, 2])
 
-    def test_move_onto_player_starts_combat(self):
+    def test_move_onto_player_starts_interaction(self):
         m = _blank_map()
         self._dungeon(m, {})
         p = Player('hero', [2, 2])
@@ -119,10 +119,8 @@ class CombatBumpTests(unittest.TestCase):
         self.gs.players['other'] = other
         self.gs.active_players['hero'] = p
         self.gs.player_messages['hero'] = []
-        with patch('dungeon_crawler.combat_system') as mock_combat:
-            mock_combat.start_combat.return_value = None
+        with patch('dungeon_crawler.interaction_system') as mock_ix:
+            mock_ix.start_interaction.return_value = True
             self.assertTrue(self.gs.move_player('hero', 'e'))
-            mock_combat.start_combat.assert_called_once_with(
-                'hero', 'other', emit_game_state=False
-            )
+            mock_ix.start_interaction.assert_called_once_with('hero', 'other')
         self.assertEqual(p.pos, [2, 2])

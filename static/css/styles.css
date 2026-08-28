@@ -1354,3 +1354,111 @@ body {
         --pad-btn: 44px;
     }
 }
+
+/* Player interaction prompt + chat */
+.interaction-overlay,
+.chat-overlay {
+    z-index: 1680;
+}
+
+.interaction-panel {
+    width: min(100%, 380px);
+}
+
+.interaction-message {
+    margin: 0;
+    padding: 14px 16px 8px;
+    color: #0f0;
+    white-space: pre-wrap;
+}
+
+.interaction-countdown {
+    color: #0a0;
+    font-size: 1rem;
+    flex-shrink: 0;
+}
+
+.interaction-choices {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    padding: 12px 14px 16px;
+}
+
+.interaction-choice-btn {
+    background: #000;
+    color: #0f0;
+    border: 1px solid #0f0;
+    font-family: inherit;
+    font-size: 1.1rem;
+    padding: 10px 8px;
+    cursor: pointer;
+}
+
+.interaction-choice-btn:hover,
+.interaction-choice-btn:focus {
+    background: #003300;
+    outline: none;
+}
+
+/* Anchor to the bottom of the *visual* viewport so an on-screen keyboard
+   pushes the panel down instead of clipping its header. --chat-vh is set
+   from window.visualViewport by interaction_ui.js. */
+.chat-overlay {
+    align-items: flex-end;
+    padding: 8px;
+}
+
+.chat-panel {
+    width: min(100%, 420px);
+    max-height: min(560px, calc(var(--chat-vh, 80dvh) - 16px));
+}
+
+.chat-log {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 10px 14px;
+    border-bottom: 1px solid #004400;
+}
+
+.chat-line {
+    margin: 0 0 6px;
+    line-height: 1.25;
+    word-break: break-word;
+}
+
+.chat-from {
+    color: #0a0;
+    font-weight: bold;
+}
+
+.chat-text {
+    color: #0f0;
+}
+
+.chat-input-row {
+    display: flex;
+    gap: 8px;
+    padding: 10px 12px 12px;
+    flex-shrink: 0;
+}
+
+.chat-input {
+    flex: 1 1 auto;
+    min-width: 0;
+    background: #000;
+    color: #0f0;
+    border: 1px solid #0f0;
+    font-family: inherit;
+    font-size: 1rem;
+    padding: 8px 10px;
+}
+
+.chat-input:focus {
+    outline: 1px solid #0f0;
+}
+
+.chat-send {
+    flex-shrink: 0;
+}
