@@ -1,5 +1,6 @@
 """Player leveling curve and progression."""
 
+import random
 import unittest
 
 from player import Player
@@ -81,10 +82,15 @@ class PlayerLevelingTests(unittest.TestCase):
 
     def test_multi_level_up_from_single_award(self):
         player = Player('hero', [1, 1])
-        levels = player.award_xp(150)
+        start_mhp = player.mhp
+        start_str = player.str
+        levels = player.award_xp(150, rng=random.Random(0))
         self.assertEqual(levels, 2)
         self.assertEqual(player.level, 3)
         self.assertEqual(player.total_xp, 150)
+        self.assertEqual(len(player.last_level_up_results), 2)
+        self.assertGreater(player.mhp, start_mhp)
+        self.assertGreaterEqual(player.str, start_str)
 
     def test_award_zero_or_negative_is_no_op(self):
         player = Player('hero', [1, 1])

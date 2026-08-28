@@ -10,6 +10,8 @@ const Sound = (function () {
         playerMiss: '/static/sounds/playerMiss.mp3',
         monsterMiss: '/static/sounds/monsterMiss.mp3',
         levelUp: '/static/sounds/levelUp.mp3',
+        killmonster: '/static/sounds/killmonster.mp3',
+        enterbattle: '/static/sounds/enterbattle.mp3',
     };
 
     function audioContext() {

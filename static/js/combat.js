@@ -354,9 +354,13 @@ const Combat = (function () {
         // The roster no longer owns this card; the placeholder holds its slot.
         removeOpponentByKey(key);
         renderRoster();
+        if (typeof Sound !== 'undefined' && Sound.warm) {
+            Sound.warm();
+        }
 
         setTimeout(function () {
             if (!dyingMonsters.has(key)) return;
+            if (typeof Sound !== 'undefined') Sound.play('killmonster');
             spawnSmashShards(card);
             card.classList.add('combat-card-smashing');
             setTimeout(function () {
@@ -836,6 +840,19 @@ const Combat = (function () {
     function handleCombatStart(data) {
         Sound.warm();
         const isJoinRefresh = !!data.is_join_refresh;
+        const priorMonsterKeys = {};
+        (currentBattle.opponents || []).forEach(function (o) {
+            if (o && o.is_monster) {
+                const key = combatantKey(o);
+                if (key) priorMonsterKeys[key] = true;
+            }
+        });
+        dyingMonsters.forEach(function (key) {
+            priorMonsterKeys[key] = true;
+        });
+        deferredJoins.forEach(function (key) {
+            priorMonsterKeys[key] = true;
+        });
         if (!isJoinRefresh) {
             clearCombatLog();
         }
@@ -845,6 +862,14 @@ const Combat = (function () {
         applyOpponents(data.opponents || opponentsFromCombatants(
             data.combatants, currentBattle.viewerId
         ));
+        if (isJoinRefresh && open) {
+            const newcomers = (currentBattle.opponents || []).some(function (o) {
+                if (!o || !o.is_monster) return false;
+                const key = combatantKey(o);
+                return key && !priorMonsterKeys[key];
+            });
+            if (newcomers) Sound.play('enterbattle');
+        }
         if (!isJoinRefresh) {
             currentBattle.selectedTarget = null;
         }

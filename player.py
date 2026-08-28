@@ -8,6 +8,10 @@ from items.equipment import (
     mean_damage_for,
 )
 from items.inventory import Inventory
+from player_growth import (
+    apply_pending_growth,
+    capture_new_player_baseline,
+)
 from player_leveling import (
     level_from_total_xp,
     xp_progress,
@@ -72,6 +76,7 @@ class Player:
         self.lit_light_instance_id = None
         from items.service import grant_starting_inventory
         grant_starting_inventory(self)
+        capture_new_player_baseline(self)
 
     def explored_key(self):
         """Fog memory key: dungeon level int, or ('interior', id)."""
@@ -93,28 +98,38 @@ class Player:
     def sprite_url(self):
         return '/static/player/sprites/player_walk1.png'
 
-    def level_up(self):
-        """Increase level by 1; preserve lifetime XP (rewards hook for later)."""
+    def level_up(self, rng=None):
+        """Increase level by 1 and apply one independent growth event."""
         self.level += 1
+        results = apply_pending_growth(self, rng=rng)
+        self.last_level_up_results = results
+        return results
 
-    def sync_level_from_xp(self):
+    def sync_level_from_xp(self, rng=None):
         """Reconcile stored level with total_xp (total_xp is source of truth)."""
         self.level = level_from_total_xp(self.total_xp)
+        results = apply_pending_growth(self, rng=rng)
+        if results:
+            self.last_level_up_results = results
+        return results
 
-    def award_xp(self, amount):
+    def award_xp(self, amount, rng=None):
         """Add lifetime XP, process level-ups, return count of levels gained."""
         try:
             gain = int(amount)
         except (TypeError, ValueError):
             gain = 0
         if gain <= 0:
+            self.last_level_up_results = []
             return 0
 
         self.total_xp += gain
         levels_gained = 0
+        all_results = []
         while self.total_xp >= xp_required_to_reach_level(self.level + 1):
-            self.level_up()
+            all_results.extend(self.level_up(rng=rng))
             levels_gained += 1
+        self.last_level_up_results = all_results
         return levels_gained
 
     def xp_progress_dict(self):

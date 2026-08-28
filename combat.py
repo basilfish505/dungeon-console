@@ -6,6 +6,7 @@ from combat_damage import resolve_attack
 from combat_elo import apply_elo_outcome
 from player_xp import calculate_pqg_from_xp, calculate_xp_from_elo
 from player_persistence import save_player
+from player_growth import format_level_up_messages
 import uuid
 
 TURN_TIMEOUT_SECONDS = 20
@@ -1194,7 +1195,6 @@ class CombatSystem:
         kills = bucket['kills']
         xp_total = bucket['xp']
         pqg_total = bucket['pqg']
-        level_before = killer.level
         killer.award_xp(xp_total)
         if pqg_total > 0:
             killer.pqg = int(getattr(killer, 'pqg', 0) or 0) + pqg_total
@@ -1219,11 +1219,10 @@ class CombatSystem:
                 player_id,
                 f"You gain {pqg_total} PQG.",
             )
-        for new_level in range(level_before + 1, killer.level + 1):
-            self.game_state.add_player_message(
-                player_id,
-                f"You reached level {new_level}!",
-            )
+        for text in format_level_up_messages(
+            getattr(killer, 'last_level_up_results', None)
+        ):
+            self.game_state.add_player_message(player_id, text)
         delta_txt = f"+{elo_delta:.0f}" if elo_delta >= 0 else f"{elo_delta:.0f}"
         self.game_state.add_player_message(
             player_id,

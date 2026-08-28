@@ -5,7 +5,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from character_stats import copy_attrs
 from items.equipment import sync_equipment
+from player_growth import ensure_growth_baseline
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 DEFAULT_SAVE_DIR = PROJECT_ROOT / 'player_saves'
@@ -47,6 +49,11 @@ def player_to_save_dict(player):
         'hp': int(getattr(player, 'hp', 1) or 1),
         'mmp': int(getattr(player, 'mmp', 0) or 0),
         'mp': int(getattr(player, 'mp', 0) or 0),
+        'starting_attributes': copy_attrs(
+            getattr(player, 'starting_attributes', None) or player
+        ),
+        'starting_mhp': int(getattr(player, 'starting_mhp', getattr(player, 'mhp', 1)) or 1),
+        'growth_level': int(getattr(player, 'growth_level', getattr(player, 'level', 1)) or 1),
         'pos': list(getattr(player, 'pos', [0, 0])),
         'dungeon_level': int(getattr(player, 'dungeon_level', 0) or 0),
         'interior_id': getattr(player, 'interior_id', None),
@@ -98,6 +105,28 @@ def apply_save_dict(player, data):
         player.in_combat = bool(data['in_combat'])
     if 'appearance_id' in data:
         player.appearance_id = data['appearance_id']
+
+    starting = data.get('starting_attributes')
+    if isinstance(starting, dict) and starting:
+        player.starting_attributes = copy_attrs(starting)
+    else:
+        player.starting_attributes = None
+    if 'starting_mhp' in data:
+        try:
+            player.starting_mhp = int(data['starting_mhp'])
+        except (TypeError, ValueError):
+            player.starting_mhp = None
+    else:
+        player.starting_mhp = None
+    if 'growth_level' in data:
+        try:
+            player.growth_level = int(data['growth_level'])
+        except (TypeError, ValueError):
+            player.growth_level = None
+    else:
+        player.growth_level = None
+    ensure_growth_baseline(player, snapshot_if_missing=True)
+
     if hasattr(player, 'sync_level_from_xp'):
         player.sync_level_from_xp()
     return True
