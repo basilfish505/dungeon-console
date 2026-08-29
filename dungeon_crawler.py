@@ -35,6 +35,7 @@ from collections import deque
 import item_types  # noqa: F401 — load item_types.xlsx into registry
 import weapon_types  # noqa: F401 — load weapon_types.xlsx
 import armour_types  # noqa: F401 — load armour_types.xlsx
+import spell_types  # noqa: F401 — load spell_types.xlsx into registry
 from items.service import (
     use_item as use_item_service,
     discard_item,
@@ -1341,7 +1342,10 @@ def handle_combat_action(data):
         return
     action = data['action']
     target_id = data.get('target_id')  # Get the target if provided
-    processed = combat_system.process_action(player_id, action, target_id)
+    spell_id = data.get('spell_id')
+    processed = combat_system.process_action(
+        player_id, action, target_id, spell_id=spell_id
+    )
     if not processed:
         return
 

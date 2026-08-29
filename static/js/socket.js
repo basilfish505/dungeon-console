@@ -139,6 +139,9 @@ const SocketHandler = (function () {
             if (typeof InventoryUI !== 'undefined' && InventoryUI.setInventory) {
                 InventoryUI.setInventory(data.player && data.player.inventory);
             }
+            if (typeof SpellUI !== 'undefined' && SpellUI.setSpells) {
+                SpellUI.setSpells(data.player && data.player.spells);
+            }
         });
 
         socket.on('combat_update', function (data) {

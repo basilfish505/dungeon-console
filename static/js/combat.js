@@ -456,7 +456,12 @@ const Combat = (function () {
         const disableAll = isYourTurn === false;
         if (elements.attackBtn) elements.attackBtn.disabled = disableAll;
         if (elements.defendBtn) elements.defendBtn.disabled = disableAll;
-        if (elements.spellBtn) elements.spellBtn.disabled = true;
+        if (elements.spellBtn) {
+            const noSpell = (typeof SpellUI === 'undefined')
+                || !SpellUI.hasCastable
+                || !SpellUI.hasCastable();
+            elements.spellBtn.disabled = disableAll || noSpell;
+        }
         if (elements.itemBtn) elements.itemBtn.disabled = disableAll;
         if (elements.runBtn) elements.runBtn.disabled = true;
         if (elements.opponentThinking) {
@@ -963,6 +968,16 @@ const Combat = (function () {
             const hp = document.getElementById('player-hp');
             if (hp) hp.textContent = data.your_hp;
         }
+        if (data.your_mp) {
+            const parsedMp = parseHpString(data.your_mp);
+            if (parsedMp) {
+                currentBattle.selfMp = parsedMp.hp;
+                currentBattle.selfMmp = parsedMp.mhp;
+                renderSelfCard();
+            }
+            const mp = document.getElementById('player-mp');
+            if (mp) mp.textContent = data.your_mp;
+        }
     }
 
     function handleMonsterDeath(data) {
@@ -1101,6 +1116,23 @@ const Combat = (function () {
                     items: InventoryUI.getInventory(),
                 });
             }
+            return;
+        }
+        if (action === 'spell') {
+            if (typeof SpellUI === 'undefined' || !SpellUI.open) {
+                return;
+            }
+            SpellUI.open({
+                onPick: function (spellId) {
+                    if (window.socket) {
+                        window.socket.emit('combat_action', {
+                            action: 'spell',
+                            spell_id: spellId,
+                            target_id: currentBattle.selectedTarget,
+                        });
+                    }
+                },
+            });
             return;
         }
         if (window.socket) {

@@ -18,6 +18,11 @@ from player_leveling import (
     xp_required_to_reach_level,
 )
 
+
+def _spells_for_client(player):
+    from spell_casting import spells_for_client
+    return spells_for_client(player)
+
 # Compass steps (dy, dx). Legacy WASD: w=n, a=west, s=s, d=e.
 # Token "w" stays north so cached clients do not strafe west on W.
 MOVE_DELTAS = {
@@ -37,6 +42,7 @@ MOVE_DELTAS = {
 # Surface / top level always uses this FOV; dungeon floors use Player.sight_range.
 TOP_LEVEL_SIGHT_RANGE = 30
 INTERIOR_SIGHT_RANGE = 8
+STARTING_MAX_MP = 8
 
 
 class Player:
@@ -52,8 +58,8 @@ class Player:
         # HP/MP properties
         self.mhp = random.randint(300, 500)
         self.hp = self.mhp
-        self.mmp = 0
-        self.mp = 0
+        self.mmp = STARTING_MAX_MP
+        self.mp = self.mmp
         # Stats
         self.str = random.randint(1, 10)
         self.int = random.randint(1, 10)
@@ -74,8 +80,11 @@ class Player:
         self.equipped_weapon_instance_id = None
         self.equipped_armour_instance_id = None
         self.lit_light_instance_id = None
+        self.known_spells = []
         from items.service import grant_starting_inventory
+        from spell_casting import grant_starting_spells
         grant_starting_inventory(self)
+        grant_starting_spells(self)
         capture_new_player_baseline(self)
 
     def explored_key(self):
@@ -200,6 +209,7 @@ class Player:
                 equipped_armour_id=getattr(self, 'equipped_armour_instance_id', None),
                 lit_light_id=getattr(self, 'lit_light_instance_id', None),
             ),
+            'spells': _spells_for_client(self),
         }
 
     def move(self, direction):

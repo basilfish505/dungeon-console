@@ -486,7 +486,7 @@ class CombatSystem:
 
         self._emit('combat_update', combat_info, room=player_id)
     
-    def process_action(self, player_id, action, target_id=None):
+    def process_action(self, player_id, action, target_id=None, spell_id=None):
         """Process a combat action from a player. Returns True if a turn was consumed."""
         # Validate the action can be taken
         if not player_id or player_id not in self.game_state.active_combats:
@@ -516,6 +516,10 @@ class CombatSystem:
         elif action == 'defend':
             self._handle_defend(player_id, battle)
             action_processed = True
+        elif action == 'spell':
+            action_processed = self._handle_spell(
+                player_id, spell_id, target_id, battle
+            )
         
         # Advance to the next turn if an action was processed and the battle is still active
         if action_processed and battle['status'] == 'active':
@@ -729,6 +733,201 @@ class CombatSystem:
         # Send combat updates to all participants (combat window only)
         for p_id in battle['participants']:
             self._send_defend_update(p_id, battle, player_id)
+
+    def _spell_fail(self, player_id, battle, message):
+        """Tell the caster why the spell failed; consume neither turn nor MP."""
+        self._emit('combat_update', {
+            'type': 'combat_action',
+            'battle_id': battle['battle_id'],
+            'action': 'spell',
+            'message': message,
+            'your_turn': True,
+            'combatants': self._get_combatants_status(battle),
+        }, room=player_id)
+        return False
+
+    def _handle_spell(self, player_id, spell_id, target_id, battle):
+        """
+        Cast a known spell. Returns True if the cast succeeded (turn consumed).
+
+        Validation failures emit a caster-only message and return False so the
+        turn and MP are preserved.
+        """
+        from spell_types.registry import get_spell_type
+        from spell_casting import (
+            can_cast,
+            resolve_spell,
+            spend_mp,
+            supported_effect_type,
+            supported_target_mode,
+        )
+
+        caster = self.game_state.players.get(player_id)
+        if caster is None:
+            return False
+
+        spell = get_spell_type(spell_id)
+        if spell is None:
+            return self._spell_fail(
+                player_id, battle, '.... That spell is unknown.'
+            )
+
+        ok, reason = can_cast(caster, spell)
+        if not ok:
+            return self._spell_fail(
+                player_id, battle, f'.... {reason or "Thou cannot cast that."}'
+            )
+
+        if not supported_effect_type(spell):
+            return self._spell_fail(
+                player_id, battle,
+                f'.... That spell ({spell.effect_type}) cannot be cast yet.',
+            )
+        if not supported_target_mode(spell):
+            return self._spell_fail(
+                player_id, battle,
+                f'.... That spell targeting ({spell.target_mode}) '
+                f'cannot be cast yet.',
+            )
+
+        # single_enemy: resolve / infer like attack
+        target = None
+        target_is_monster = False
+        if target_id:
+            target, target_is_monster = self._resolve_target(battle, target_id)
+        if not target:
+            inferred = self._infer_target(player_id, battle)
+            if inferred:
+                target_id = inferred
+                target, target_is_monster = self._resolve_target(battle, target_id)
+        if not target:
+            self._send_target_request(player_id, battle)
+            return False
+
+        # single_enemy must not be the caster
+        if not target_is_monster and getattr(target, 'id', None) == player_id:
+            return self._spell_fail(
+                player_id, battle, '.... Choose an enemy to target.'
+            )
+
+        result = resolve_spell(caster, spell, target)
+        if not result.get('ok'):
+            return self._spell_fail(
+                player_id, battle,
+                f'.... {result.get("message") or "The spell fizzles."}',
+            )
+
+        spend_mp(caster, spell)
+        damage = int(result.get('damage') or 0)
+        hit = bool(result.get('hit'))
+        if hit and damage > 0:
+            target.hp -= damage
+
+        self._broadcast_spell_feedback(
+            battle, player_id, target_id, spell, result,
+            target_is_monster=target_is_monster,
+        )
+
+        if hit and damage > 0 and target.hp <= 0:
+            if target_is_monster:
+                self._handle_monster_death(player_id, target, battle)
+            else:
+                self._handle_player_death(
+                    target_id, battle, killer_id=player_id
+                )
+        return True
+
+    def _spell_message(
+        self, viewer_id, caster_id, target, is_monster, spell, result,
+    ):
+        target_name = target.type if is_monster else target.id
+        caster_name = self.game_state.players[caster_id].id
+        spell_name = getattr(spell, 'name', None) or getattr(spell, 'id', 'a spell')
+        damage = int(result.get('damage') or 0)
+        hit = bool(result.get('hit'))
+        caster = self.game_state.players.get(caster_id)
+        mp_suffix = ''
+        if caster is not None:
+            mp_suffix = f' (MP {int(getattr(caster, "mp", 0))}/{int(getattr(caster, "mmp", 0))})'
+
+        if not hit:
+            if viewer_id == caster_id:
+                return f'.... You cast {spell_name} at {target_name}, but it misses.{mp_suffix}'
+            if not is_monster and viewer_id == target.id:
+                return f'.... {caster_name} casts {spell_name} at you, but it misses.'
+            return f'.... {caster_name} casts {spell_name} at {target_name}, but it misses.'
+
+        if viewer_id == caster_id:
+            return (
+                f'.... You cast {spell_name} at {target_name} '
+                f'for {damage} damage.{mp_suffix}'
+            )
+        if not is_monster and viewer_id == target.id:
+            return (
+                f'.... {caster_name} casts {spell_name} at you '
+                f'for {damage} damage.'
+            )
+        return (
+            f'.... {caster_name} casts {spell_name} at {target_name} '
+            f'for {damage} damage.'
+        )
+
+    def _broadcast_spell_feedback(
+        self, battle, caster_id, target_id, spell, result, target_is_monster=False,
+    ):
+        """Emit spell cast FX to participants, then refresh game_state."""
+        target, is_monster = self._resolve_target(battle, target_id)
+        if not target:
+            return
+        is_monster = bool(target_is_monster or is_monster)
+
+        target_key = target.id if not is_monster else target_id
+        target_name = target.type if is_monster else target.id
+        caster_name = self.game_state.players[caster_id].id
+        caster = self.game_state.players[caster_id]
+        participants = list(battle['participants'])
+        combatants = self._get_combatants_status(battle)
+        damage = int(result.get('damage') or 0)
+        hit = bool(result.get('hit')) and damage > 0
+
+        for p_id in participants:
+            is_caster = p_id == caster_id
+            is_target = (not is_monster) and p_id == target_key
+            update = {
+                'type': 'combat_action',
+                'battle_id': battle['battle_id'],
+                'action': 'spell',
+                'hit': hit,
+                'message': self._spell_message(
+                    p_id, caster_id, target, is_monster, spell, result,
+                ),
+                'attacker_id': caster_name,
+                'target_id': target_name,
+                'spell_id': getattr(spell, 'id', None),
+                'spell_name': getattr(spell, 'name', None),
+                'combatants': combatants,
+                'your_turn': False,
+                'play_hit_sound': (hit and (is_caster or is_target)),
+                'shake_combat': (hit and is_target),
+            }
+            if hit:
+                if is_caster:
+                    update['damage_dealt'] = damage
+                if is_target:
+                    update['damage_taken'] = damage
+                    update['your_hp'] = (
+                        f'{target.hp}/{target.mhp}'
+                        if hasattr(target, 'mhp') else target.hp
+                    )
+            if is_caster:
+                update['your_mp'] = (
+                    f'{int(getattr(caster, "mp", 0))}/'
+                    f'{int(getattr(caster, "mmp", 0))}'
+                )
+            self._emit('combat_update', update, room=p_id)
+
+        for p_id in participants:
+            self._emit('game_state', self.game_state.get_game_state(p_id), room=p_id)
     
     def _cancel_turn_timer(self, battle):
         """Invalidate any pending turn timer for this battle"""

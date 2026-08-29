@@ -49,6 +49,7 @@ def player_to_save_dict(player):
         'hp': int(getattr(player, 'hp', 1) or 1),
         'mmp': int(getattr(player, 'mmp', 0) or 0),
         'mp': int(getattr(player, 'mp', 0) or 0),
+        'known_spells': list(getattr(player, 'known_spells', None) or []),
         'starting_attributes': copy_attrs(
             getattr(player, 'starting_attributes', None) or player
         ),
@@ -105,6 +106,36 @@ def apply_save_dict(player, data):
         player.in_combat = bool(data['in_combat'])
     if 'appearance_id' in data:
         player.appearance_id = data['appearance_id']
+
+    from spell_casting import grant_starting_spells, known_spell_ids
+    from player import STARTING_MAX_MP
+
+    if 'known_spells' in data:
+        raw = data.get('known_spells') or []
+        cleaned = []
+        seen = set()
+        for sid in raw:
+            if sid is None:
+                continue
+            key = str(sid).strip()
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            cleaned.append(key)
+        player.known_spells = cleaned
+    else:
+        # Legacy saves: grant the temporary starting spell once.
+        player.known_spells = known_spell_ids(player)
+        grant_starting_spells(player)
+
+    # Legacy saves persisted mmp=0; backfill so existing characters can cast.
+    try:
+        mmp = int(getattr(player, 'mmp', 0) or 0)
+    except (TypeError, ValueError):
+        mmp = 0
+    if mmp <= 0:
+        player.mmp = STARTING_MAX_MP
+        player.mp = STARTING_MAX_MP
 
     starting = data.get('starting_attributes')
     if isinstance(starting, dict) and starting:

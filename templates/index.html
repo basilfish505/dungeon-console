@@ -31,11 +31,15 @@
         <section class="player-info-pane">
             <div id="player-properties">
                 <div class="properties-grid">
-                    <span class="property-value" id="player-name-display">-</span>
+                    <span class="property-label">HP:</span>
                     <span class="property-value" id="player-hp">-</span>
                     <span class="property-label">MP:</span>
                     <span class="property-value" id="player-mp">-</span>
 
+                    <span class="property-label">Name:</span>
+                    <span class="property-value" id="player-name-display">-</span>
+                    <span class="blank-row"></span>
+                    <span class="blank-row"></span>
                     <span class="property-label">LVL:</span>
                     <span class="property-value" id="player-level">1</span>
                     <span class="property-label">ELO:</span>
@@ -209,6 +213,7 @@
     <script src="{{ asset_url('js/map_renderer.js') }}"></script>
     <script src="{{ asset_url('js/inspect_ui.js') }}"></script>
     <script src="{{ asset_url('js/inventory_ui.js') }}"></script>
+    <script src="{{ asset_url('js/spell_ui.js') }}"></script>
     <script src="{{ asset_url('js/interaction_ui.js') }}"></script>
     <script src="{{ asset_url('js/map_inspect.js') }}"></script>
     <script src="{{ asset_url('js/map_gestures.js') }}"></script>
