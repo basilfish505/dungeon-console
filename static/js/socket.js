@@ -172,6 +172,48 @@ const SocketHandler = (function () {
             }
         });
 
+        socket.on('cast_spell_result', function (data) {
+            if (!data) {
+                return;
+            }
+            if (data.need_target && data.targets && data.targets.length
+                && typeof InteractionUI !== 'undefined'
+                && InteractionUI.showGenericPrompt) {
+                const spellId = data.spell_id;
+                InteractionUI.showGenericPrompt({
+                    title: 'Cast Spell',
+                    message: data.message || 'Choose a target.',
+                    choices: data.targets.map(function (t) {
+                        return { id: t.id, label: t.label || t.id };
+                    }).concat([{ id: '__cancel__', label: 'Cancel' }]),
+                    onChoice: function (choiceId) {
+                        if (!choiceId || choiceId === '__cancel__') {
+                            return;
+                        }
+                        socket.emit('cast_spell', {
+                            spell_id: spellId,
+                            target_id: choiceId,
+                        });
+                    },
+                });
+                return;
+            }
+            if (data.ok && data.play_spell_sound) {
+                if (typeof Sound !== 'undefined' && Sound.warm) {
+                    Sound.warm();
+                }
+                if (typeof Combat !== 'undefined' && Combat.playSpellCastFx) {
+                    Combat.playSpellCastFx();
+                } else if (typeof Sound !== 'undefined' && Sound.play) {
+                    Sound.play('spell');
+                }
+            }
+            if (!data.ok && data.message && typeof InspectUI !== 'undefined'
+                && InspectUI.showAlert) {
+                InspectUI.showAlert(data.message);
+            }
+        });
+
         socket.on('player_died', function () {
             clearJoinedSession();
             UI.handlePlayerDeath();

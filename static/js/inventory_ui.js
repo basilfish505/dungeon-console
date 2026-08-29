@@ -35,6 +35,8 @@ const InventoryUI = (function () {
     let titleEl = null;
     let context = 'exploration';
     let lastInventory = [];
+    let spellsEl = null;
+    let spellsListEl = null;
     let selectable = false;
     let viewingItem = null;
 
@@ -52,6 +54,8 @@ const InventoryUI = (function () {
         gridEl = document.getElementById('inventory-grid');
         detailEl = document.getElementById('inventory-detail');
         titleEl = document.getElementById('inventory-title');
+        spellsEl = document.getElementById('action-spells');
+        spellsListEl = document.getElementById('action-spells-list');
         const closeBtn = document.getElementById('inventory-close');
         if (closeBtn) {
             closeBtn.addEventListener('click', close);
@@ -214,10 +218,147 @@ const InventoryUI = (function () {
     function render() {
         cacheDom();
         if (titleEl) {
-            titleEl.textContent = context === 'combat' ? 'Use Item' : 'Inventory';
+            titleEl.textContent = context === 'combat' ? 'Use Item' : 'Action';
         }
         renderGrid();
         renderDetail(viewingItem);
+        renderSpells();
+    }
+
+    function adjacentSpellTargets() {
+        const selfId = (typeof MapView !== 'undefined' && MapView.state)
+            ? MapView.state.playerId
+            : (document.getElementById('player-id') || {}).value;
+        const py = (typeof MapView !== 'undefined' && MapView.state)
+            ? MapView.state.playerY
+            : null;
+        const px = (typeof MapView !== 'undefined' && MapView.state)
+            ? MapView.state.playerX
+            : null;
+        const camY = (typeof MapView !== 'undefined' && MapView.state)
+            ? MapView.state.cameraY
+            : 0;
+        const camX = (typeof MapView !== 'undefined' && MapView.state)
+            ? MapView.state.cameraX
+            : 0;
+        const entities = (typeof MapView !== 'undefined' && MapView.state)
+            ? (MapView.state.lastEntities || [])
+            : [];
+        const options = [];
+        if (selfId) {
+            options.push({ id: selfId, label: selfId + ' (you)' });
+        }
+        if (py == null || px == null) {
+            return options;
+        }
+        entities.forEach(function (ent) {
+            if (!ent || !ent.id) {
+                return;
+            }
+            if (ent.kind !== 'player' && ent.kind !== 'monster') {
+                return;
+            }
+            if (String(ent.id) === String(selfId)) {
+                return;
+            }
+            const wy = camY + (ent.vy | 0);
+            const wx = camX + (ent.vx | 0);
+            const dist = Math.max(Math.abs(wy - py), Math.abs(wx - px));
+            if (dist <= 1) {
+                const label = ent.kind === 'monster'
+                    ? (ent.type_id || ent.id)
+                    : ent.id;
+                options.push({ id: ent.id, label: label });
+            }
+        });
+        return options;
+    }
+
+    function emitCastSpell(spellId, targetId) {
+        if (!window.socket) {
+            return;
+        }
+        window.socket.emit('cast_spell', {
+            spell_id: spellId,
+            target_id: targetId || null,
+        });
+        close();
+    }
+
+    function castExplorationSpell(spell) {
+        if (!spell || !spell.castable) {
+            return;
+        }
+        const options = adjacentSpellTargets();
+        // Only self → auto-cast; any adjacent entity → picker (includes self).
+        if (options.length <= 1) {
+            emitCastSpell(spell.spell_id, options[0] ? options[0].id : null);
+            return;
+        }
+        if (typeof InteractionUI === 'undefined' || !InteractionUI.showGenericPrompt) {
+            emitCastSpell(spell.spell_id, options[0].id);
+            return;
+        }
+        close();
+        InteractionUI.showGenericPrompt({
+            title: spell.name || 'Cast Spell',
+            message: 'Choose a target.',
+            choices: options.map(function (opt) {
+                return { id: opt.id, label: opt.label };
+            }).concat([{ id: '__cancel__', label: 'Cancel' }]),
+            onChoice: function (choiceId) {
+                if (!choiceId || choiceId === '__cancel__') {
+                    return;
+                }
+                emitCastSpell(spell.spell_id, choiceId);
+            },
+        });
+    }
+
+    function renderSpells() {
+        if (!spellsEl || !spellsListEl) {
+            return;
+        }
+        if (context !== 'exploration') {
+            spellsEl.hidden = true;
+            spellsListEl.innerHTML = '';
+            return;
+        }
+        const spells = (typeof SpellUI !== 'undefined' && SpellUI.getSpells)
+            ? SpellUI.getSpells()
+            : [];
+        spellsListEl.innerHTML = '';
+        if (!spells.length) {
+            spellsEl.hidden = true;
+            return;
+        }
+        spellsEl.hidden = false;
+        spells.forEach(function (spell) {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'action-spell-btn';
+            const cost = (spell.mp_cost != null) ? spell.mp_cost : 0;
+            let label = (spell.name || spell.spell_id || 'Spell') + ' (' + cost + ' MP)';
+            const castable = !!spell.castable;
+            if (!castable) {
+                btn.classList.add('action-spell-disabled');
+                btn.disabled = true;
+                if (!spell.usable_out_of_combat) {
+                    label += ' — combat only';
+                } else {
+                    label += ' — not enough MP';
+                }
+            }
+            btn.textContent = label;
+            if (castable) {
+                btn.addEventListener('click', function (e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    castExplorationSpell(spell);
+                });
+            }
+            spellsListEl.appendChild(btn);
+        });
     }
 
     function renderGrid() {

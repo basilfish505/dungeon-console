@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from spell_types.base import SpellTypeDef
+from spell_types.base import SpellTypeDef, _optional_int, _parse_bool
 from spell_types.registry import register_spell_type
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -20,8 +20,12 @@ COLUMNS = [
     'base_power',
     'scaling_attribute',
     'scaling_factor',
+    'min_power',
+    'max_power',
     'hit_rule',
     'spell_range',
+    'usable_in_combat',
+    'usable_out_of_combat',
 ]
 
 HEADER_COMMENTS = {
@@ -30,21 +34,29 @@ HEADER_COMMENTS = {
     'description': 'Inspect / picker flavor text.',
     'effect_type': (
         'damage | heal | buff | debuff | status | utility. '
-        'Only damage is implemented so far; others load but cannot cast yet.'
+        'damage and heal are implemented; others load but cannot cast yet.'
     ),
     'target_mode': (
-        'single_enemy | self | single_ally | all_enemies | all_allies. '
-        'Only single_enemy is implemented so far.'
+        'single_enemy | single_any | self | single_ally | all_enemies | all_allies. '
+        'single_enemy and single_any are implemented.'
     ),
     'mp_cost': 'Mana points spent when the spell is successfully cast. Default 0.',
-    'base_power': 'Flat power added before attribute scaling. Default 0.',
+    'base_power': 'Flat power added before attribute scaling (damage). Default 0.',
     'scaling_attribute': (
         'Attribute that scales power: int / Intelligence, or any ATTRIBUTE_KEYS label. '
         'Default int.'
     ),
     'scaling_factor': 'Multiplier applied to the scaling attribute. Default 1.0.',
+    'min_power': (
+        'Inclusive low end of a flat roll (e.g. heal). Blank = use base_power scaling.'
+    ),
+    'max_power': (
+        'Inclusive high end of a flat roll. Blank = use base_power scaling.'
+    ),
     'hit_rule': 'always_hit | accuracy. Only always_hit is used so far. Default always_hit.',
     'spell_range': 'Max Chebyshev distance in tiles (informational for now). Default 1.',
+    'usable_in_combat': 'yes/no. Default yes.',
+    'usable_out_of_combat': 'yes/no. Default no.',
 }
 
 TEST_SPELLS = [
@@ -58,8 +70,29 @@ TEST_SPELLS = [
         'base_power': 5,
         'scaling_attribute': 'int',
         'scaling_factor': 1.0,
+        'min_power': '',
+        'max_power': '',
         'hit_rule': 'always_hit',
         'spell_range': 6,
+        'usable_in_combat': 'yes',
+        'usable_out_of_combat': 'no',
+    },
+    {
+        'spell_id': 'heal',
+        'name': 'Heal',
+        'description': 'Restore hit points to any living target.',
+        'effect_type': 'heal',
+        'target_mode': 'single_any',
+        'mp_cost': 2,
+        'base_power': 0,
+        'scaling_attribute': 'int',
+        'scaling_factor': 0,
+        'min_power': 8,
+        'max_power': 15,
+        'hit_rule': 'always_hit',
+        'spell_range': 6,
+        'usable_in_combat': 'yes',
+        'usable_out_of_combat': 'yes',
     },
 ]
 
@@ -112,6 +145,10 @@ def row_to_typedef(row):
         scaling_factor=_float(row.get('scaling_factor'), 1.0),
         hit_rule=_str_or_none(row.get('hit_rule')) or 'always_hit',
         spell_range=_int(row.get('spell_range'), 1),
+        min_power=_optional_int(row.get('min_power')),
+        max_power=_optional_int(row.get('max_power')),
+        usable_in_combat=_parse_bool(row.get('usable_in_combat'), True),
+        usable_out_of_combat=_parse_bool(row.get('usable_out_of_combat'), False),
     )
 
 
@@ -239,8 +276,12 @@ def write_spell_xlsx(path=None, extra_rows=None):
         'base_power': 12,
         'scaling_attribute': 18,
         'scaling_factor': 14,
+        'min_power': 12,
+        'max_power': 12,
         'hit_rule': 12,
         'spell_range': 12,
+        'usable_in_combat': 16,
+        'usable_out_of_combat': 18,
     }
     for col_idx, header in enumerate(COLUMNS, 1):
         ws.column_dimensions[get_column_letter(col_idx)].width = widths.get(header, 12)
@@ -255,13 +296,13 @@ def write_spell_xlsx(path=None, extra_rows=None):
     instructions = [
         '',
         '1. Fill one row per spell on the Spells sheet.',
-        '2. Required: spell_id. Also fill name, effect_type, target_mode, mp_cost, and base_power.',
-        '3. Human-readable values like "Single Enemy" or "Intelligence" are accepted and normalized.',
-        '4. Save this workbook, then restart the game to reload definitions.',
+        '2. Required: spell_id. Also fill name, effect_type, target_mode, mp_cost.',
+        '3. Damage spells use base_power + scaling. Heal uses min_power/max_power roll.',
+        '4. usable_in_combat / usable_out_of_combat: yes or no.',
+        '5. Save this workbook, then restart the game to reload definitions.',
         '',
         'Implemented now',
-        'effect_type=damage + target_mode=single_enemy + hit_rule=always_hit (Magic Bolt).',
-        'Other effect/target/hit values load safely but cannot be cast until their handlers land.',
+        'damage + single_enemy (Magic Bolt); heal + single_any (Heal).',
     ]
     for idx, line in enumerate(instructions, 2):
         ins[f'A{idx}'] = line

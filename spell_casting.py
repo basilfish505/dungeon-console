@@ -7,12 +7,14 @@ targeting against the battle roster.
 
 from __future__ import annotations
 
+import random
+
 from spell_types.base import EFFECT_TYPES, HIT_RULES
 from spell_types.registry import get_spell_type
 
-# Temporary test scaffolding: every new player knows Magic Bolt.
+# Temporary test scaffolding: every new player knows Magic Bolt and Heal.
 # Remove or empty this when spellbooks / shops / loot grant spells instead.
-STARTING_SPELL_IDS = ('magic_bolt',)
+STARTING_SPELL_IDS = ('magic_bolt', 'heal')
 
 
 def known_spell_ids(entity):
@@ -142,6 +144,7 @@ def _resolve_damage(caster, spell, target, rng=None):
             'damage': max(0, power),
             'power': power,
             'healed': 0,
+            'roll': power,
             'message': None,
         }
     # Reserved: accuracy would call combat_damage.roll_to_hit here.
@@ -152,12 +155,58 @@ def _resolve_damage(caster, spell, target, rng=None):
         'damage': max(0, power),
         'power': power,
         'healed': 0,
+        'roll': power,
+        'message': None,
+    }
+
+
+def _resolve_heal(caster, spell, target, rng=None):
+    """Heal effect: roll min_power..max_power, clamp to missing HP (no mutation)."""
+    _ = caster
+    rng = rng or random
+    lo = getattr(spell, 'min_power', None)
+    hi = getattr(spell, 'max_power', None)
+    if lo is None and hi is None:
+        power = max(0, spell_power(caster, spell))
+        roll = power
+    else:
+        try:
+            lo_i = int(lo if lo is not None else hi)
+        except (TypeError, ValueError):
+            lo_i = 0
+        try:
+            hi_i = int(hi if hi is not None else lo)
+        except (TypeError, ValueError):
+            hi_i = lo_i
+        if lo_i > hi_i:
+            lo_i, hi_i = hi_i, lo_i
+        roll = int(rng.randint(lo_i, hi_i))
+
+    try:
+        hp = int(getattr(target, 'hp', 0) or 0)
+    except (TypeError, ValueError):
+        hp = 0
+    try:
+        mhp = int(getattr(target, 'mhp', hp) or hp)
+    except (TypeError, ValueError):
+        mhp = hp
+    missing = max(0, mhp - hp)
+    healed = min(max(0, roll), missing)
+    return {
+        'ok': True,
+        'effect_type': 'heal',
+        'hit': True,
+        'damage': 0,
+        'power': roll,
+        'healed': healed,
+        'roll': roll,
         'message': None,
     }
 
 
 SPELL_EFFECT_HANDLERS = {
     'damage': _resolve_damage,
+    'heal': _resolve_heal,
 }
 
 
@@ -176,6 +225,7 @@ def resolve_spell(caster, spell, target, rng=None):
             'damage': 0,
             'power': 0,
             'healed': 0,
+            'roll': 0,
             'message': 'Unknown spell.',
         }
     effect = getattr(spell, 'effect_type', None) or 'damage'
@@ -188,6 +238,7 @@ def resolve_spell(caster, spell, target, rng=None):
             'damage': 0,
             'power': 0,
             'healed': 0,
+            'roll': 0,
             'message': f'That spell ({effect}) cannot be cast yet.',
         }
     if effect not in EFFECT_TYPES:
@@ -198,6 +249,7 @@ def resolve_spell(caster, spell, target, rng=None):
             'damage': 0,
             'power': 0,
             'healed': 0,
+            'roll': 0,
             'message': f'That spell ({effect}) cannot be cast yet.',
         }
     return handler(caster, spell, target, rng=rng)
@@ -206,7 +258,7 @@ def resolve_spell(caster, spell, target, rng=None):
 def supported_target_mode(spell):
     """True when combat currently knows how to pick targets for this spell."""
     mode = getattr(spell, 'target_mode', None) or ''
-    return mode == 'single_enemy'
+    return mode in ('single_enemy', 'single_any')
 
 
 def supported_effect_type(spell):
@@ -215,8 +267,12 @@ def supported_effect_type(spell):
     return effect in SPELL_EFFECT_HANDLERS
 
 
-def spells_for_client(entity):
-    """Client-facing known-spell list (mirrors inventory.to_client_list)."""
+def spells_for_client(entity, context=None):
+    """Client-facing known-spell list (mirrors inventory.to_client_list).
+
+    context: 'combat' | 'exploration' | None. When set, castable also requires
+    the matching usable_* flag on the spell definition.
+    """
     rows = []
     try:
         mp = int(getattr(entity, 'mp', 0) or 0)
@@ -232,15 +288,27 @@ def spells_for_client(entity):
                 'effect_type': None,
                 'target_mode': None,
                 'description': None,
+                'min_power': None,
+                'max_power': None,
+                'usable_in_combat': False,
+                'usable_out_of_combat': False,
                 'castable': False,
             })
             continue
         cost = int(getattr(spell, 'mp_cost', 0) or 0)
+        in_combat = bool(getattr(spell, 'usable_in_combat', True))
+        out_combat = bool(getattr(spell, 'usable_out_of_combat', False))
+        context_ok = True
+        if context == 'combat':
+            context_ok = in_combat
+        elif context == 'exploration':
+            context_ok = out_combat
         castable = (
             knows_spell(entity, sid)
             and mp >= cost
             and supported_effect_type(spell)
             and supported_target_mode(spell)
+            and context_ok
         )
         rows.append({
             'spell_id': spell.id,
@@ -249,6 +317,117 @@ def spells_for_client(entity):
             'effect_type': spell.effect_type,
             'target_mode': spell.target_mode,
             'description': spell.description,
+            'min_power': getattr(spell, 'min_power', None),
+            'max_power': getattr(spell, 'max_power', None),
+            'usable_in_combat': in_combat,
+            'usable_out_of_combat': out_combat,
             'castable': bool(castable),
         })
     return rows
+
+
+def _entity_alive(entity):
+    try:
+        return int(getattr(entity, 'hp', 0) or 0) > 0
+    except (TypeError, ValueError):
+        return False
+
+
+def _chebyshev_pos(a, b):
+    try:
+        return max(abs(int(a[0]) - int(b[0])), abs(int(a[1]) - int(b[1])))
+    except (TypeError, ValueError, IndexError):
+        return 999
+
+
+def explore_spell_targets(game_state, caster):
+    """
+    Living targets for out-of-combat casting: self plus Chebyshev ≤ 1 on the
+    same map context (players and monsters). Returns list of (id, label, entity).
+    """
+    if caster is None or not _entity_alive(caster):
+        return []
+    caster_id = getattr(caster, 'id', None)
+    rows = [(caster_id, getattr(caster, 'id', 'You') + ' (you)', caster)]
+    seen = {caster_id}
+    _, monsters, _ = game_state.view_for(caster)
+    pos = getattr(caster, 'pos', None)
+    if pos is None:
+        return rows
+
+    for other in game_state.players_in_context(caster).values():
+        oid = getattr(other, 'id', None)
+        if oid in seen or not _entity_alive(other):
+            continue
+        if _chebyshev_pos(pos, other.pos) <= 1:
+            seen.add(oid)
+            rows.append((oid, oid, other))
+
+    for mon in (monsters or {}).values():
+        mid = getattr(mon, 'id', None)
+        if mid in seen or not _entity_alive(mon):
+            continue
+        mpos = getattr(mon, 'pos', None)
+        if mpos is None:
+            continue
+        if _chebyshev_pos(pos, mpos) <= 1:
+            seen.add(mid)
+            label = getattr(mon, 'type', None) or getattr(mon, 'name', None) or mid
+            rows.append((mid, label, mon))
+    return rows
+
+
+def resolve_explore_target(game_state, caster, target_id):
+    """Return (entity, is_monster) for an explore cast target, or (None, False)."""
+    if not target_id or caster is None:
+        return None, False
+    tid = str(target_id).strip()
+    for oid, _label, entity in explore_spell_targets(game_state, caster):
+        if str(oid) == tid:
+            if tid in game_state.players:
+                return game_state.players[tid], False
+            return entity, True
+    return None, False
+
+def apply_heal_result(target, healed):
+    """Clamp heal onto target HP. Returns new hp."""
+    try:
+        hp = int(getattr(target, 'hp', 0) or 0)
+    except (TypeError, ValueError):
+        hp = 0
+    try:
+        mhp = int(getattr(target, 'mhp', hp) or hp)
+    except (TypeError, ValueError):
+        mhp = hp
+    healed = max(0, int(healed or 0))
+    target.hp = min(mhp, hp + healed)
+    return target.hp
+
+
+def explore_heal_message(caster, target, spell, healed, is_self):
+    spell_name = getattr(spell, 'name', None) or getattr(spell, 'id', 'a spell')
+    mp = int(getattr(caster, 'mp', 0) or 0)
+    mmp = int(getattr(caster, 'mmp', 0) or 0)
+    mp_suffix = f' (MP {mp}/{mmp})'
+    target_name = getattr(target, 'id', None)
+    if target_name is None:
+        target_name = getattr(target, 'type', None) or getattr(target, 'name', None) or 'the target'
+    if healed <= 0:
+        if is_self:
+            return (
+                f'.... You cast {spell_name} on yourself, but your '
+                f'hit points were already full.{mp_suffix}'
+            )
+        return (
+            f'.... You cast {spell_name} on {target_name}, but their '
+            f'hit points were already full.{mp_suffix}'
+        )
+    if is_self:
+        return (
+            f'.... You cast {spell_name} on yourself and restore '
+            f'{healed} HP.{mp_suffix}'
+        )
+    return (
+        f'.... You cast {spell_name} on {target_name} and restore '
+        f'{healed} HP.{mp_suffix}'
+    )

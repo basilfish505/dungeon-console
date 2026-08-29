@@ -30,6 +30,7 @@ const Combat = (function () {
         opponents: [],
         combatants: [],
         selectedTarget: null,
+        pendingSpellPick: null,
         viewerId: null,
         selfHp: null,
         selfMhp: null,
@@ -686,7 +687,17 @@ const Combat = (function () {
         const defending = (currentBattle.combatants || []).some(
             c => !c.is_monster && c.id === currentBattle.viewerId && c.defending
         );
-        elements.selfCard.className = 'combat-self' + (turn ? ' current-turn' : '');
+        const pickingSelf = !!(currentBattle.pendingSpellPick
+            && currentBattle.viewerId
+            && sameCombatant(currentBattle.selectedTarget, currentBattle.viewerId));
+        let cls = 'combat-self' + (turn ? ' current-turn' : '');
+        if (currentBattle.pendingSpellPick) {
+            cls += ' combat-self-pickable';
+        }
+        if (pickingSelf) {
+            cls += ' selected-target';
+        }
+        elements.selfCard.className = cls;
         elements.selfCard.innerHTML =
             `<div class="combat-self-meta">` +
             `<span class="combat-self-name">${escapeHtml(name)}</span>` +
@@ -696,6 +707,55 @@ const Combat = (function () {
             `</div>` +
             hpBarHtml(hp, mhp) +
             mpBarHtml(mp, mmp);
+        if (currentBattle.pendingSpellPick) {
+            elements.selfCard.setAttribute('role', 'button');
+            elements.selfCard.setAttribute('tabindex', '0');
+            elements.selfCard.setAttribute('aria-label', 'Cast on yourself');
+            elements.selfCard.onclick = function (e) {
+                e.preventDefault();
+                e.stopPropagation();
+                confirmSpellTarget(currentBattle.viewerId);
+            };
+            elements.selfCard.onkeydown = function (e) {
+                if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    confirmSpellTarget(currentBattle.viewerId);
+                }
+            };
+        } else {
+            elements.selfCard.removeAttribute('role');
+            elements.selfCard.removeAttribute('tabindex');
+            elements.selfCard.removeAttribute('aria-label');
+            elements.selfCard.onclick = null;
+            elements.selfCard.onkeydown = null;
+        }
+    }
+
+    function confirmSpellTarget(targetId) {
+        const pending = currentBattle.pendingSpellPick;
+        if (!pending || !pending.spellId || !targetId) {
+            return;
+        }
+        currentBattle.pendingSpellPick = null;
+        currentBattle.selectedTarget = targetId;
+        if (window.socket) {
+            window.socket.emit('combat_action', {
+                action: 'spell',
+                spell_id: pending.spellId,
+                target_id: targetId,
+            });
+        }
+        renderRoster();
+    }
+
+    function cancelSpellPick() {
+        if (!currentBattle.pendingSpellPick) {
+            return false;
+        }
+        currentBattle.pendingSpellPick = null;
+        renderRoster();
+        showStatusMessage('Spell cancelled.');
+        return true;
     }
 
     function inspectTarget(combatant, ev) {
@@ -712,7 +772,16 @@ const Combat = (function () {
 
     function selectTarget(combatant) {
         if (!combatant) return;
-        currentBattle.selectedTarget = combatantKey(combatant);
+        const key = combatantKey(combatant);
+        if (currentBattle.pendingSpellPick) {
+            // Living targets only for heal / single_any.
+            if (Number(combatant.hp) <= 0) {
+                return;
+            }
+            confirmSpellTarget(key);
+            return;
+        }
+        currentBattle.selectedTarget = key;
         renderRoster();
     }
 
@@ -1171,6 +1240,7 @@ const Combat = (function () {
             opponents: [],
             combatants: [],
             selectedTarget: null,
+            pendingSpellPick: null,
             viewerId: currentBattle.viewerId,
             selfHp: null,
             selfMhp: null,
@@ -1330,8 +1400,26 @@ const Combat = (function () {
             if (typeof SpellUI === 'undefined' || !SpellUI.open) {
                 return;
             }
+            if (currentBattle.pendingSpellPick) {
+                cancelSpellPick();
+            }
             SpellUI.open({
                 onPick: function (spellId) {
+                    const spells = (typeof SpellUI.getSpells === 'function')
+                        ? SpellUI.getSpells()
+                        : [];
+                    const def = spells.find(function (s) {
+                        return s && s.spell_id === spellId;
+                    });
+                    const mode = def && def.target_mode;
+                    if (mode === 'single_any') {
+                        currentBattle.pendingSpellPick = { spellId: spellId };
+                        currentBattle.selectedTarget = null;
+                        renderRoster();
+                        showStatusMessage('Choose a target for Heal (tap a card, including yourself).');
+                        appendCombatLog('Choose a target for Heal.');
+                        return;
+                    }
                     if (window.socket) {
                         window.socket.emit('combat_action', {
                             action: 'spell',
@@ -1370,5 +1458,12 @@ const Combat = (function () {
         return true;
     }
 
-    return { processCombatUpdate, sendAction, isOpen, previewDefeat, appendLog: appendCombatLog };
+    return {
+        processCombatUpdate,
+        sendAction,
+        isOpen,
+        previewDefeat,
+        appendLog: appendCombatLog,
+        playSpellCastFx: playSpellCastFx,
+    };
 })();

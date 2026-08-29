@@ -671,6 +671,16 @@ body {
     box-shadow: 0 0 16px rgba(40, 180, 200, 0.15);
 }
 
+.combat-self.combat-self-pickable {
+    cursor: pointer;
+    border-color: #0f0;
+    box-shadow: 0 0 12px rgba(0, 255, 0, 0.35);
+}
+
+.combat-self.selected-target {
+    border-color: #ff0;
+}
+
 .combat-self.current-turn {
     border-color: #fa0;
     box-shadow: 0 0 16px rgba(255, 170, 0, 0.3);
@@ -1197,6 +1207,59 @@ body {
     flex: 1 1 auto;
     min-height: 0;
     overflow: hidden;
+}
+
+.action-spells {
+    flex: 0 0 auto;
+    border-top: 1px solid #003300;
+    padding: 8px 12px 12px;
+    max-height: 40%;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+.action-spells-heading {
+    margin: 0 0 6px;
+    font-size: 1rem;
+    color: #0f0;
+    letter-spacing: 0.04em;
+}
+
+.action-spells-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.action-spell-btn {
+    font-family: inherit;
+    text-align: left;
+    padding: 8px 10px;
+    border: 1px solid #003300;
+    background: #000;
+    color: #0f0;
+    font-size: 0.95rem;
+    cursor: pointer;
+}
+
+.action-spell-btn:hover,
+.action-spell-btn:focus {
+    border-color: #0f0;
+    background: #001100;
+    outline: none;
+}
+
+.action-spell-btn:disabled,
+.action-spell-btn.action-spell-disabled {
+    color: #363;
+    border-color: #022;
+    cursor: default;
+}
+
+.action-spell-btn:disabled:hover,
+.action-spell-btn.action-spell-disabled:hover {
+    border-color: #022;
+    background: #000;
 }
 
 .inventory-grid {

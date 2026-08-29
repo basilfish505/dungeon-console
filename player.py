@@ -21,7 +21,8 @@ from player_leveling import (
 
 def _spells_for_client(player):
     from spell_casting import spells_for_client
-    return spells_for_client(player)
+    context = 'combat' if getattr(player, 'in_combat', False) else 'exploration'
+    return spells_for_client(player, context=context)
 
 # Compass steps (dy, dx). Legacy WASD: w=n, a=west, s=s, d=e.
 # Token "w" stays north so cached clients do not strafe west on W.

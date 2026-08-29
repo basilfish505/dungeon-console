@@ -837,26 +837,62 @@ class CombatSystem:
                 f'.... That spell targeting ({spell.target_mode}) '
                 f'cannot be cast yet.',
             )
+        if not getattr(spell, 'usable_in_combat', True):
+            return self._spell_fail(
+                player_id, battle, '.... That spell cannot be cast in combat.',
+            )
 
-        # single_enemy: resolve / infer like attack
+        mode = getattr(spell, 'target_mode', None) or 'single_enemy'
         target = None
         target_is_monster = False
-        if target_id:
-            target, target_is_monster = self._resolve_target(battle, target_id)
-        if not target:
-            inferred = self._infer_target(player_id, battle)
-            if inferred:
-                target_id = inferred
-                target, target_is_monster = self._resolve_target(battle, target_id)
-        if not target:
-            self._send_target_request(player_id, battle)
-            return False
 
-        # single_enemy must not be the caster
-        if not target_is_monster and getattr(target, 'id', None) == player_id:
-            return self._spell_fail(
-                player_id, battle, '.... Choose an enemy to target.'
+        if mode == 'single_any':
+            # Explicit target required — never infer, self is allowed.
+            if not target_id:
+                return self._spell_fail(
+                    player_id, battle, '.... Choose a target for that spell.',
+                )
+            if target_id == player_id:
+                target = caster
+                target_is_monster = False
+            else:
+                target, target_is_monster = self._resolve_target(battle, target_id)
+            if not target:
+                return self._spell_fail(
+                    player_id, battle, '.... That target is not in this battle.',
+                )
+            # Must be a living battle entity (participants or battle monsters).
+            in_battle = (
+                target_is_monster
+                or target_id in (battle.get('participants') or [])
+                or target_id == player_id
             )
+            if not in_battle:
+                return self._spell_fail(
+                    player_id, battle, '.... That target is not in this battle.',
+                )
+            if int(getattr(target, 'hp', 0) or 0) <= 0:
+                return self._spell_fail(
+                    player_id, battle, '.... That target is already slain.',
+                )
+        else:
+            # single_enemy: resolve / infer like attack
+            if target_id:
+                target, target_is_monster = self._resolve_target(battle, target_id)
+            if not target:
+                inferred = self._infer_target(player_id, battle)
+                if inferred:
+                    target_id = inferred
+                    target, target_is_monster = self._resolve_target(
+                        battle, target_id
+                    )
+            if not target:
+                self._send_target_request(player_id, battle)
+                return False
+            if not target_is_monster and getattr(target, 'id', None) == player_id:
+                return self._spell_fail(
+                    player_id, battle, '.... Choose an enemy to target.'
+                )
 
         result = resolve_spell(caster, spell, target)
         if not result.get('ok'):
@@ -867,16 +903,31 @@ class CombatSystem:
 
         spend_mp(caster, spell)
         damage = int(result.get('damage') or 0)
+        healed = int(result.get('healed') or 0)
+        effect = result.get('effect_type') or getattr(spell, 'effect_type', None)
         hit = bool(result.get('hit'))
-        if hit and damage > 0:
+        if effect == 'heal':
+            if healed > 0:
+                try:
+                    mhp = int(getattr(target, 'mhp', target.hp) or target.hp)
+                except (TypeError, ValueError):
+                    mhp = int(getattr(target, 'hp', 0) or 0)
+                target.hp = min(mhp, int(getattr(target, 'hp', 0) or 0) + healed)
+        elif hit and damage > 0:
             target.hp -= damage
+
+        # Ensure target_id matches resolved entity for feedback
+        if not target_id:
+            target_id = target.id if not target_is_monster else getattr(
+                target, 'id', None
+            )
 
         self._broadcast_spell_feedback(
             battle, player_id, target_id, spell, result,
             target_is_monster=target_is_monster,
         )
 
-        if hit and damage > 0 and target.hp <= 0:
+        if effect != 'heal' and hit and damage > 0 and target.hp <= 0:
             if target_is_monster:
                 self._handle_monster_death(
                     player_id, target, battle,
@@ -900,6 +951,8 @@ class CombatSystem:
             caster_name = player.id if player is not None else str(caster_id)
         spell_name = getattr(spell, 'name', None) or getattr(spell, 'id', 'a spell')
         damage = int(result.get('damage') or 0)
+        healed = int(result.get('healed') or 0)
+        effect = result.get('effect_type') or getattr(spell, 'effect_type', None)
         hit = bool(result.get('hit'))
         mp_suffix = ''
         if not caster_is_monster:
@@ -909,6 +962,49 @@ class CombatSystem:
                     f' (MP {int(getattr(caster, "mp", 0))}/'
                     f'{int(getattr(caster, "mmp", 0))})'
                 )
+
+        if effect == 'heal':
+            if healed <= 0:
+                if not caster_is_monster and viewer_id == caster_id:
+                    if target_name == caster_name or (
+                        not is_monster and getattr(target, 'id', None) == caster_id
+                    ):
+                        return (
+                            f'.... You cast {spell_name} on yourself, but your '
+                            f'hit points were already full.{mp_suffix}'
+                        )
+                    return (
+                        f'.... You cast {spell_name} on {target_name}, but their '
+                        f'hit points were already full.{mp_suffix}'
+                    )
+                if not is_monster and viewer_id == getattr(target, 'id', None):
+                    return (
+                        f'.... {caster_name} casts {spell_name} on you, but your '
+                        f'hit points were already full.'
+                    )
+                return (
+                    f'.... {caster_name} casts {spell_name} on {target_name}, '
+                    f'but their hit points were already full.'
+                )
+            if not caster_is_monster and viewer_id == caster_id:
+                if not is_monster and getattr(target, 'id', None) == caster_id:
+                    return (
+                        f'.... You cast {spell_name} on yourself and restore '
+                        f'{healed} HP.{mp_suffix}'
+                    )
+                return (
+                    f'.... You cast {spell_name} on {target_name} and restore '
+                    f'{healed} HP.{mp_suffix}'
+                )
+            if not is_monster and viewer_id == getattr(target, 'id', None):
+                return (
+                    f'.... {caster_name} casts {spell_name} on you and restores '
+                    f'{healed} HP.'
+                )
+            return (
+                f'.... {caster_name} casts {spell_name} on {target_name} and '
+                f'restores {healed} HP.'
+            )
 
         if not hit:
             if not caster_is_monster and viewer_id == caster_id:
@@ -937,7 +1033,18 @@ class CombatSystem:
         caster_is_monster=False,
     ):
         """Emit spell cast FX to participants, then refresh game_state."""
-        target, is_monster = self._resolve_target(battle, target_id)
+        # Self-target: resolve via players map when not a battle monster.
+        if (
+            not target_is_monster
+            and target_id in self.game_state.players
+            and target_id not in (
+                m.id for m in (battle.get('monsters') or [])
+            )
+        ):
+            target = self.game_state.players[target_id]
+            is_monster = False
+        else:
+            target, is_monster = self._resolve_target(battle, target_id)
         if not target:
             return
         is_monster = bool(target_is_monster or is_monster)
@@ -964,7 +1071,10 @@ class CombatSystem:
         participants = list(battle['participants'])
         combatants = self._get_combatants_status(battle)
         damage = int(result.get('damage') or 0)
-        hit = bool(result.get('hit')) and damage > 0
+        healed = int(result.get('healed') or 0)
+        effect = result.get('effect_type') or getattr(spell, 'effect_type', None)
+        is_heal = effect == 'heal'
+        hit = (not is_heal) and bool(result.get('hit')) and damage > 0
 
         for p_id in participants:
             is_caster = (not caster_is_monster) and p_id == caster_id
@@ -973,7 +1083,9 @@ class CombatSystem:
                 'type': 'combat_action',
                 'battle_id': battle['battle_id'],
                 'action': 'spell',
-                'hit': hit,
+                'hit': hit if not is_heal else True,
+                'effect_type': effect,
+                'healed': healed if is_heal else 0,
                 'message': self._spell_message(
                     p_id, caster_id, target, is_monster, spell, result,
                     caster_is_monster=caster_is_monster,
@@ -987,9 +1099,11 @@ class CombatSystem:
                 'your_turn': False,
                 'play_spell_sound': True,
                 'play_hit_sound': hit,
-                'play_miss_sound': None if hit else miss_sound,
+                'play_miss_sound': (
+                    None if (hit or is_heal) else miss_sound
+                ),
                 'shake_combat': hit,
-                'shake_target': target_key,
+                'shake_target': target_key if hit else None,
             }
             if hit:
                 if is_caster:
@@ -1000,6 +1114,11 @@ class CombatSystem:
                         f'{target.hp}/{target.mhp}'
                         if hasattr(target, 'mhp') else target.hp
                     )
+            if is_heal and is_target:
+                update['your_hp'] = (
+                    f'{target.hp}/{target.mhp}'
+                    if hasattr(target, 'mhp') else target.hp
+                )
             if is_caster:
                 update['your_mp'] = (
                     f'{int(getattr(caster, "mp", 0))}/'

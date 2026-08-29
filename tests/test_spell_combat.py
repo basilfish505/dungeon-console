@@ -22,8 +22,27 @@ def _ensure_magic_bolt():
             scaling_factor=1.0,
             hit_rule='always_hit',
             spell_range=6,
+            usable_in_combat=True,
+            usable_out_of_combat=False,
         ))
     return SPELL_TYPES['magic_bolt']
+
+
+def _ensure_heal():
+    if 'heal' not in SPELL_TYPES:
+        register_spell_type(SpellTypeDef(
+            'heal',
+            name='Heal',
+            effect_type='heal',
+            target_mode='single_any',
+            mp_cost=2,
+            min_power=8,
+            max_power=15,
+            hit_rule='always_hit',
+            usable_in_combat=True,
+            usable_out_of_combat=True,
+        ))
+    return SPELL_TYPES['heal']
 
 
 class _GameStateStub:
@@ -177,6 +196,121 @@ class SpellCombatTests(unittest.TestCase):
         # Death sets status to ending during the pause
         self.assertIn(self.battle['status'], ('ending', 'ended', 'active'))
         self.assertTrue(self.mon.hp <= 0)
+
+
+class HealCombatTests(unittest.TestCase):
+    def setUp(self):
+        _ensure_heal()
+        self.gs, self.cs, self.sock = _system()
+        self.hero = Player('Steve', [1, 1])
+        self.hero.mp = 8
+        self.hero.mmp = 8
+        self.hero.hp = 50
+        self.hero.mhp = 100
+        self.hero.known_spells = ['heal']
+        self.ally = Player('Ally', [1, 1])
+        self.ally.hp = 40
+        self.ally.mhp = 100
+        self.mon = Monster.from_type('troll', [1, 2], monster_id='slime-1', level=1)
+        self.mon.name = 'Slime'
+        self.mon.type = 'Slime'
+        self.mon.hp = 30
+        self.mon.mhp = 50
+        self.gs.players = {'Steve': self.hero, 'Ally': self.ally}
+        self.battle = _battle(self.gs, self.cs, self.hero, self.mon)
+        # Ally joins battle participants for targeting
+        if 'Ally' not in self.battle['participants']:
+            self.battle['participants'].append('Ally')
+
+    def test_heal_self_requires_explicit_target_no_infer(self):
+        turn_before = self.battle['current_turn_index']
+        ok = self.cs.process_action(
+            'Steve', 'spell', target_id=None, spell_id='heal',
+        )
+        self.assertFalse(ok)
+        self.assertEqual(self.hero.mp, 8)
+        self.assertEqual(self.battle['current_turn_index'], turn_before)
+
+    def test_heal_self_restores_hp(self):
+        class Fixed:
+            def randint(self, a, b):
+                return 10
+
+        import spell_casting as sc
+        real = sc._resolve_heal
+
+        def wrapped(caster, spell, target, rng=None):
+            return real(caster, spell, target, rng=Fixed())
+
+        sc.SPELL_EFFECT_HANDLERS['heal'] = wrapped
+        try:
+            ok = self.cs.process_action(
+                'Steve', 'spell', target_id='Steve', spell_id='heal',
+            )
+        finally:
+            sc.SPELL_EFFECT_HANDLERS['heal'] = real
+        self.assertTrue(ok)
+        self.assertEqual(self.hero.mp, 6)
+        self.assertEqual(self.hero.hp, 60)
+        msgs = [
+            data.get('message', '')
+            for (event, data, room) in self.sock.emitted
+            if event == 'combat_update' and isinstance(data, dict)
+            and data.get('action') == 'spell' and room == 'Steve'
+        ]
+        self.assertTrue(any('restore' in m.lower() and '10' in m for m in msgs))
+        payloads = [
+            data for (event, data, room) in self.sock.emitted
+            if event == 'combat_update' and isinstance(data, dict)
+            and data.get('action') == 'spell'
+        ]
+        self.assertTrue(payloads[0].get('play_spell_sound'))
+        self.assertFalse(payloads[0].get('play_hit_sound'))
+
+    def test_heal_full_hp_spends_mp(self):
+        self.hero.hp = 100
+        ok = self.cs.process_action(
+            'Steve', 'spell', target_id='Steve', spell_id='heal',
+        )
+        self.assertTrue(ok)
+        self.assertEqual(self.hero.mp, 6)
+        self.assertEqual(self.hero.hp, 100)
+        msgs = [
+            data.get('message', '')
+            for (event, data, room) in self.sock.emitted
+            if event == 'combat_update' and isinstance(data, dict)
+            and data.get('action') == 'spell' and room == 'Steve'
+        ]
+        self.assertTrue(any('already full' in m for m in msgs))
+
+    def test_heal_ally_and_monster(self):
+        class Fixed:
+            def randint(self, a, b):
+                return 8
+
+        import spell_casting as sc
+        real = sc._resolve_heal
+
+        def wrapped(caster, spell, target, rng=None):
+            return real(caster, spell, target, rng=Fixed())
+
+        sc.SPELL_EFFECT_HANDLERS['heal'] = wrapped
+        try:
+            ok = self.cs.process_action(
+                'Steve', 'spell', target_id='Ally', spell_id='heal',
+            )
+            self.assertTrue(ok)
+            self.assertEqual(self.ally.hp, 48)
+            self.battle['current_turn_index'] = 0
+            self.battle['turn_order'] = ['Steve', self.mon.id]
+            self.battle['status'] = 'active'
+            ok2 = self.cs.process_action(
+                'Steve', 'spell', target_id=self.mon.id, spell_id='heal',
+            )
+            self.assertTrue(ok2)
+            self.assertEqual(self.mon.hp, 38)
+        finally:
+            sc.SPELL_EFFECT_HANDLERS['heal'] = real
 
 
 if __name__ == '__main__':
