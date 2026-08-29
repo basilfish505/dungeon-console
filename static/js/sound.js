@@ -1,6 +1,12 @@
 // sound.js — silent unlock + preloaded Web Audio playback (no join blip)
+//
+// iPad Safari often re-suspends AudioContext after Join; resume alone is not
+// enough. Re-unlock on every user gesture and tick a silent buffer so unlock
+// sticks across devices.
 const Sound = (function () {
     let ctx = null;
+    let silentBuf = null;
+    let gestureBound = false;
     const buffers = {};
     const loading = {};
     const PATHS = {
@@ -22,11 +28,52 @@ const Sound = (function () {
         return ctx;
     }
 
+    function ensureSilentBuffer(c) {
+        if (silentBuf) {
+            return silentBuf;
+        }
+        // One sample of silence — start() during a gesture is what iOS wants.
+        silentBuf = c.createBuffer(1, 1, c.sampleRate || 22050);
+        return silentBuf;
+    }
+
+    function tickSilent(c) {
+        try {
+            const src = c.createBufferSource();
+            src.buffer = ensureSilentBuffer(c);
+            src.connect(c.destination);
+            src.start(0);
+        } catch (e) {
+            // Ignore — unlock still attempted via resume().
+        }
+    }
+
     function unlock() {
         const c = audioContext();
+        const after = function () {
+            tickSilent(c);
+        };
         if (c.state === 'suspended') {
-            c.resume().catch(() => {});
+            c.resume().then(after).catch(function () {});
+        } else {
+            after();
         }
+        return c;
+    }
+
+    function bindGestureUnlock() {
+        if (gestureBound) {
+            return;
+        }
+        gestureBound = true;
+        const opts = { capture: true, passive: true };
+        const onGesture = function () {
+            unlock();
+        };
+        // pointerdown covers mouse + most touch; touchstart catches older iOS.
+        document.addEventListener('pointerdown', onGesture, opts);
+        document.addEventListener('touchstart', onGesture, opts);
+        document.addEventListener('keydown', onGesture, opts);
     }
 
     function load(name, url) {
@@ -37,14 +84,18 @@ const Sound = (function () {
             return loading[name];
         }
         loading[name] = fetch(url)
-            .then(r => r.arrayBuffer())
-            .then(data => audioContext().decodeAudioData(data))
-            .then(buf => {
+            .then(function (r) {
+                return r.arrayBuffer();
+            })
+            .then(function (data) {
+                return audioContext().decodeAudioData(data);
+            })
+            .then(function (buf) {
                 buffers[name] = buf;
                 delete loading[name];
                 return buf;
             })
-            .catch(() => {
+            .catch(function () {
                 delete loading[name];
                 return null;
             });
@@ -53,8 +104,9 @@ const Sound = (function () {
 
     // Call from a user gesture (Join / Attack). Does not play any audible sound.
     function warm() {
+        bindGestureUnlock();
         unlock();
-        Object.keys(PATHS).forEach(name => {
+        Object.keys(PATHS).forEach(function (name) {
             load(name, PATHS[name]);
         });
     }
@@ -62,6 +114,9 @@ const Sound = (function () {
     function start(buf) {
         const c = audioContext();
         const playNow = function () {
+            if (c.state === 'suspended') {
+                return;
+            }
             const src = c.createBufferSource();
             src.buffer = buf;
             const gain = c.createGain();
@@ -72,7 +127,10 @@ const Sound = (function () {
         };
         // start() while suspended is often dropped; wait for resume first
         if (c.state === 'suspended') {
-            c.resume().then(playNow).catch(() => {});
+            c.resume().then(function () {
+                tickSilent(c);
+                playNow();
+            }).catch(function () {});
             return;
         }
         playNow();
@@ -86,32 +144,52 @@ const Sound = (function () {
     }
 
     function play(name, onStart) {
+        bindGestureUnlock();
         unlock();
         const url = PATHS[name];
-        if (!url) return 0;
+        if (!url) {
+            return 0;
+        }
 
         const gen = (playGen[name] = (playGen[name] || 0) + 1);
         const ready = buffers[name];
         if (ready) {
             start(ready);
-            if (typeof onStart === 'function') onStart(ready.duration);
+            if (typeof onStart === 'function') {
+                onStart(ready.duration);
+            }
             return ready.duration;
         }
 
-        // First play may race preload — wait for decode, then play if still current
+        // First play may race preload — wait for decode, then play if still current.
+        // Allow a longer window so slower iPad / Render fetches still hear the clip.
         const requestedAt = (typeof performance !== 'undefined' && performance.now)
             ? performance.now() : Date.now();
-        load(name, url).then(buf => {
-            if (!buf || playGen[name] !== gen) return;
+        load(name, url).then(function (buf) {
+            if (!buf || playGen[name] !== gen) {
+                return;
+            }
             const now = (typeof performance !== 'undefined' && performance.now)
                 ? performance.now() : Date.now();
-            // Too late to stay in sync with the attack that requested it
-            if (now - requestedAt > 500) return;
+            if (now - requestedAt > 2500) {
+                return;
+            }
             start(buf);
-            if (typeof onStart === 'function') onStart(buf.duration);
+            if (typeof onStart === 'function') {
+                onStart(buf.duration);
+            }
         });
         return 0;
     }
 
-    return { warm, play, duration };
+    // Install gesture unlock early so the first tap after load re-arms audio.
+    if (typeof document !== 'undefined') {
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', bindGestureUnlock);
+        } else {
+            bindGestureUnlock();
+        }
+    }
+
+    return { warm: warm, play: play, duration: duration, unlock: unlock };
 })();
