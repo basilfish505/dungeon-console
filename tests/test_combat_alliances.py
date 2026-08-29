@@ -12,7 +12,6 @@ from player import Player
 from player_interactions import (
     CHOICE_CHAT,
     CHOICE_LEAVE,
-    STATE_CHAT,
     PlayerInteractionSystem,
 )
 from world_serial import battle_from_dict, battle_to_dict
@@ -34,7 +33,7 @@ class _GameStateStub:
     def add_global_message(self, message):
         self.global_messages.append(message)
 
-    def remove_monster_at(self, position):
+    def remove_monster_at(self, position, monster=None):
         pass
 
     def get_game_state(self, player_id):
@@ -330,39 +329,48 @@ class SocialOfferTests(unittest.TestCase):
         self.assertEqual(len(social.offers), 1)
 
 
+def _pending(ix, player_id):
+    """The encounter this player has been asked to answer, if any."""
+    for record in ix.encounters_for(player_id):
+        if record.get('deciding_id') == player_id:
+            return record
+    return None
+
+
 class CombatChatInviteTests(unittest.TestCase):
     def test_chat_invite_opens_on_accept(self):
         gs, sock, cs, ix, social = _system(players=('A', 'B'))
         cs.start_combat('A', 'B', emit_game_state=False)
         self.assertTrue(social.invite_chat('A', ['B']))
-        record = ix.get_interaction('B')
+        record = _pending(ix, 'B')
         self.assertIsNotNone(record)
         self.assertTrue(record.get('from_combat'))
         self.assertTrue(ix.handle_choice('B', record['interaction_id'], CHOICE_CHAT))
-        self.assertEqual(ix.get_interaction('A')['state'], STATE_CHAT)
+        self.assertTrue(ix.in_chat('A'))
+        self.assertTrue(ix.in_chat('B'))
 
-    def test_first_accept_cancels_siblings(self):
+    def test_multiple_accepts_join_one_session(self):
         gs, sock, cs, ix, social = _system()
         m1 = _troll()
         cs.start_combat('A', m1, emit_game_state=False)
         cs.start_combat('B', m1, emit_game_state=False)
         cs.start_combat('C', m1, emit_game_state=False)
         self.assertTrue(social.invite_chat('A', ['B', 'C']))
-        # Both targets should have pending invites
-        rec_b = ix.get_interaction('B')
-        rec_c = ix.get_interaction('C')
+        rec_b = _pending(ix, 'B')
+        rec_c = _pending(ix, 'C')
         self.assertIsNotNone(rec_b)
         self.assertIsNotNone(rec_c)
-        self.assertEqual(rec_b['combat_chat_group'], rec_c['combat_chat_group'])
         self.assertTrue(ix.handle_choice('B', rec_b['interaction_id'], CHOICE_CHAT))
-        self.assertIsNone(ix.get_interaction('C'))
-        self.assertEqual(ix.get_interaction('A')['state'], STATE_CHAT)
+        self.assertTrue(ix.handle_choice('C', rec_c['interaction_id'], CHOICE_CHAT))
+        self.assertEqual(len(ix.sessions), 1)
+        session = ix.get_session('A')
+        self.assertEqual(sorted(session['participants']), ['A', 'B', 'C'])
 
     def test_reject_chat_invite(self):
         gs, sock, cs, ix, social = _system(players=('A', 'B'))
         cs.start_combat('A', 'B', emit_game_state=False)
         social.invite_chat('A', ['B'])
-        rec = ix.get_interaction('B')
+        rec = _pending(ix, 'B')
         self.assertTrue(ix.handle_choice('B', rec['interaction_id'], CHOICE_LEAVE))
         self.assertFalse(ix.is_busy('A'))
         self.assertFalse(ix.is_busy('B'))

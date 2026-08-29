@@ -1452,7 +1452,7 @@ class CombatSystem:
                 battle['current_turn_index'] = max(0, battle['current_turn_index'] - 1)
         
         # Remove monster from whichever dungeon level it lives on
-        self.game_state.remove_monster_at(tuple(monster.pos))
+        self.game_state.remove_monster_at(tuple(monster.pos), monster)
         
         battle_id = battle['battle_id']
         dead_monster_id = monster.id

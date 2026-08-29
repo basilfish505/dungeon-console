@@ -138,8 +138,9 @@
         <div id="chat-panel" class="inspect-panel chat-panel" role="dialog" aria-modal="true" aria-labelledby="chat-title">
             <div class="inspect-header">
                 <h3 id="chat-title" class="inspect-title">Chat</h3>
-                <button type="button" id="chat-end" class="inspect-close" aria-label="End chat">End Chat</button>
+                <button type="button" id="chat-end" class="inspect-close" aria-label="Leave chat">End Chat</button>
             </div>
+            <div id="chat-roster" class="chat-roster" aria-live="polite"></div>
             <div id="chat-log" class="chat-log" aria-live="polite"></div>
             <div class="chat-input-row">
                 <input type="text" id="chat-input" class="chat-input" maxlength="200" autocomplete="off" placeholder="Type a message..." />

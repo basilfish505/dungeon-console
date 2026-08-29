@@ -1411,9 +1411,13 @@ body {
 }
 
 /* Player interaction prompt + chat */
-.interaction-overlay,
 .chat-overlay {
     z-index: 1680;
+}
+
+/* A bump prompt can arrive while a chat is open, so it must sit on top. */
+.interaction-overlay {
+    z-index: 1700;
 }
 
 .interaction-panel {
@@ -1469,12 +1473,26 @@ body {
     max-height: min(560px, calc(var(--chat-vh, 80dvh) - 16px));
 }
 
+.chat-roster {
+    flex-shrink: 0;
+    padding: 6px 14px;
+    color: #0a0;
+    font-size: 0.8em;
+    border-bottom: 1px solid #004400;
+    word-break: break-word;
+}
+
 .chat-log {
     flex: 1 1 auto;
     min-height: 0;
     overflow-y: auto;
     padding: 10px 14px;
     border-bottom: 1px solid #004400;
+}
+
+.chat-system {
+    color: #076;
+    font-style: italic;
 }
 
 .chat-line {

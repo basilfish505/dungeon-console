@@ -345,7 +345,7 @@ class WorldPersistence:
             if current_id in self.game_state.players:
                 self.combat_system._start_turn_timer(battle, current_id)
             else:
-                self.combat_system._handle_monster_turn(battle)
+                self.combat_system._schedule_monster_turn(current_id, battle)
 
     def start_autosave(self) -> None:
         if self._autosave_started or self.socketio is None:

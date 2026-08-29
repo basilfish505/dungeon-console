@@ -24,15 +24,26 @@ const PlayerAssets = (function () {
     const cache = Object.create(null);
     const readyCallbacks = [];
     let pending = 0;
+    let flushScheduled = false;
 
     function ready(img) {
         return !!(img && img.complete && img.naturalWidth);
     }
 
+    // Subscribers stay registered so a sprite loaded later still repaints.
     function flushReady() {
-        if (pending > 0) return;
-        const cbs = readyCallbacks.splice(0, readyCallbacks.length);
-        for (let i = 0; i < cbs.length; i++) cbs[i]();
+        if (pending > 0 || flushScheduled || !readyCallbacks.length) return;
+        flushScheduled = true;
+        const flush = function () {
+            flushScheduled = false;
+            if (pending > 0) return;
+            for (let i = 0; i < readyCallbacks.length; i++) readyCallbacks[i]();
+        };
+        if (typeof requestAnimationFrame === 'function') {
+            requestAnimationFrame(flush);
+        } else {
+            setTimeout(flush, 0);
+        }
     }
 
     function load(url) {
@@ -122,8 +133,8 @@ const PlayerAssets = (function () {
 
     function setOnReady(fn) {
         if (typeof fn !== 'function') return;
-        if (pending <= 0) { fn(); return; }
         readyCallbacks.push(fn);
+        flushReady();
     }
 
     preload();

@@ -250,6 +250,25 @@ class StairArrivalTests(unittest.TestCase):
         self.assertTrue(self.gs.remove_monster_at((2, 2)))
         self.assertEqual(m[2][2], '.')
 
+    def test_kill_only_clears_the_named_monster_not_its_twin_upstairs(self):
+        # The same coordinates exist on every floor; without identity the
+        # scan would delete whichever level happens to come first.
+        upper_map = _blank_map()
+        upper_map[2][2] = '&'
+        bystander = type('M', (), {'pos': [2, 2]})()
+        self._set_level(0, upper_map, {(2, 2): bystander})
+
+        lower_map = _blank_map()
+        lower_map[2][2] = '&'
+        victim = type('M', (), {'pos': [2, 2]})()
+        self._set_level(1, lower_map, {(2, 2): victim})
+
+        self.assertTrue(self.gs.remove_monster_at((2, 2), victim))
+        self.assertIn((2, 2), self.gs.levels[0][1])
+        self.assertNotIn((2, 2), self.gs.levels[1][1])
+        self.assertEqual(upper_map[2][2], '&')
+        self.assertEqual(lower_map[2][2], '.')
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -1,4 +1,4 @@
-// interaction_ui.js — player bump prompt + chat session
+// interaction_ui.js — player bump prompts + group chat sessions
 const InteractionUI = (function () {
     let promptOverlay = null;
     let promptPanel = null;
@@ -9,6 +9,7 @@ const InteractionUI = (function () {
     let chatOverlay = null;
     let chatPanel = null;
     let chatTitle = null;
+    let chatRoster = null;
     let chatLog = null;
     let chatInput = null;
     let chatSendBtn = null;
@@ -16,8 +17,13 @@ const InteractionUI = (function () {
 
     let promptOpen = false;
     let chatOpen = false;
-    let currentInteractionId = null;
-    let currentOtherId = null;
+    // Several encounters can target one player at once, so payloads are held
+    // by id and the most urgent one is drawn.
+    const serverPrompts = new Map();
+    let localPromptOpen = false;
+    let renderedKey = null;
+    let currentSessionId = null;
+    let participants = [];
     let countdownTimer = null;
     let countdownRemaining = 0;
     let bound = false;
@@ -28,6 +34,7 @@ const InteractionUI = (function () {
         demand: 'Demand Goods',
         chat: 'Chat',
         leave: 'Leave',
+        join: 'Join Battle',
     };
 
     function ensureEls() {
@@ -43,6 +50,7 @@ const InteractionUI = (function () {
         chatOverlay = document.getElementById('chat-overlay');
         chatPanel = document.getElementById('chat-panel');
         chatTitle = document.getElementById('chat-title');
+        chatRoster = document.getElementById('chat-roster');
         chatLog = document.getElementById('chat-log');
         chatInput = document.getElementById('chat-input');
         chatSendBtn = document.getElementById('chat-send');
@@ -71,7 +79,7 @@ const InteractionUI = (function () {
             if (chatEndBtn) {
                 chatEndBtn.addEventListener('click', function (e) {
                     e.preventDefault();
-                    endChat();
+                    leaveChat();
                 });
             }
             if (chatInput) {
@@ -118,17 +126,107 @@ const InteractionUI = (function () {
         }, 1000);
     }
 
-    function hidePrompt() {
+    function hidePromptOverlay() {
         stopCountdown();
         promptOpen = false;
+        renderedKey = null;
         if (promptOverlay) {
             promptOverlay.hidden = true;
             promptOverlay.setAttribute('aria-hidden', 'true');
         }
         if (promptChoices) {
             promptChoices.innerHTML = '';
+            promptChoices.classList.remove('interaction-picker-mode');
         }
     }
+
+    // --- prompt multiplexing ------------------------------------------
+
+    /** An answerable prompt outranks a passive "waiting" notice. */
+    function pickPrompt() {
+        let best = null;
+        serverPrompts.forEach(function (data) {
+            if (data.type === 'interaction_prompt') {
+                if (!best || best.type !== 'interaction_prompt') {
+                    best = data;
+                }
+            } else if (!best) {
+                best = data;
+            }
+        });
+        return best;
+    }
+
+    function renderPrompt() {
+        if (!ensureEls()) {
+            return;
+        }
+        if (localPromptOpen) {
+            return;
+        }
+        const next = pickPrompt();
+        if (!next) {
+            hidePromptOverlay();
+            return;
+        }
+        const key = (next.interaction_id || '') + ':' + next.type;
+        if (key === renderedKey) {
+            return;
+        }
+        renderedKey = key;
+        drawServerPrompt(next);
+    }
+
+    function drawServerPrompt(data) {
+        const otherId = data.other_id || 'player';
+        const isDecision = data.type === 'interaction_prompt';
+        if (promptTitle) {
+            if (data.title) {
+                promptTitle.textContent = data.title;
+            } else if (!isDecision) {
+                promptTitle.textContent = 'Waiting';
+            } else {
+                promptTitle.textContent = (data.role === 'responder')
+                    ? 'Respond to ' + otherId
+                    : 'Encounter';
+            }
+        }
+        if (promptMessage) {
+            promptMessage.textContent = data.message || '';
+        }
+        if (promptChoices) {
+            promptChoices.innerHTML = '';
+            promptChoices.classList.remove('interaction-picker-mode');
+            (data.choices || []).forEach(function (choice) {
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'interaction-choice-btn';
+                btn.dataset.choice = choice;
+                btn.textContent = CHOICE_LABELS[choice] || choice;
+                btn.addEventListener('click', function (e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    sendChoice(data.interaction_id, choice);
+                });
+                promptChoices.appendChild(btn);
+            });
+        }
+        promptOpen = true;
+        promptOverlay.hidden = false;
+        promptOverlay.setAttribute('aria-hidden', 'false');
+        startCountdown(data.timeout);
+    }
+
+    function sendChoice(interactionId, choice) {
+        if (!interactionId) {
+            return;
+        }
+        if (typeof SocketHandler !== 'undefined' && SocketHandler.sendInteractionChoice) {
+            SocketHandler.sendInteractionChoice(interactionId, choice);
+        }
+    }
+
+    // --- chat viewport --------------------------------------------------
 
     /**
      * Pin the chat overlay to the visual viewport. On iOS the on-screen
@@ -188,8 +286,12 @@ const InteractionUI = (function () {
         vv.removeEventListener('scroll', syncChatViewport);
     }
 
+    // --- chat session ---------------------------------------------------
+
     function hideChat() {
         chatOpen = false;
+        currentSessionId = null;
+        participants = [];
         unbindViewportSync();
         clearChatViewport();
         if (chatOverlay) {
@@ -199,92 +301,67 @@ const InteractionUI = (function () {
         if (chatLog) {
             chatLog.innerHTML = '';
         }
+        if (chatRoster) {
+            chatRoster.textContent = '';
+        }
         if (chatInput) {
             chatInput.value = '';
         }
     }
 
-    function hideAll() {
-        hidePrompt();
-        hideChat();
-        currentInteractionId = null;
-        currentOtherId = null;
+    function renderRoster() {
+        if (chatRoster) {
+            chatRoster.textContent = participants.join(', ');
+        }
+        if (chatTitle) {
+            chatTitle.textContent = participants.length > 2
+                ? 'Group Chat (' + participants.length + ')'
+                : 'Chat';
+        }
     }
 
-    function showPrompt(data) {
-        if (!ensureEls()) {
+    function appendSystemLine(text) {
+        if (!chatLog) {
             return;
         }
-        hideChat();
-        currentInteractionId = data.interaction_id || null;
-        currentOtherId = data.other_id || null;
-        const role = data.role || 'initiator';
-        if (promptTitle) {
-            promptTitle.textContent = role === 'responder'
-                ? 'Respond to ' + (currentOtherId || 'player')
-                : 'Encounter';
-        }
-        if (promptMessage) {
-            promptMessage.textContent = data.message || '';
-        }
-        if (promptChoices) {
-            promptChoices.innerHTML = '';
-            const choices = data.choices || [];
-            choices.forEach(function (choice) {
-                const btn = document.createElement('button');
-                btn.type = 'button';
-                btn.className = 'interaction-choice-btn';
-                btn.dataset.choice = choice;
-                btn.textContent = CHOICE_LABELS[choice] || choice;
-                btn.addEventListener('click', function (e) {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    sendChoice(choice);
-                });
-                promptChoices.appendChild(btn);
-            });
-        }
-        promptOpen = true;
-        promptOverlay.hidden = false;
-        promptOverlay.setAttribute('aria-hidden', 'false');
-        startCountdown(data.timeout);
+        const row = document.createElement('div');
+        row.className = 'chat-line chat-system';
+        row.textContent = text;
+        chatLog.appendChild(row);
+        chatLog.scrollTop = chatLog.scrollHeight;
     }
 
-    function showWaiting(data) {
-        if (!ensureEls()) {
+    function appendMessageLine(from, text) {
+        if (!chatLog) {
             return;
         }
-        hideChat();
-        currentInteractionId = data.interaction_id || null;
-        currentOtherId = data.other_id || null;
-        if (promptTitle) {
-            promptTitle.textContent = 'Waiting';
-        }
-        if (promptMessage) {
-            promptMessage.textContent = data.message || 'Waiting...';
-        }
-        if (promptChoices) {
-            promptChoices.innerHTML = '';
-        }
-        promptOpen = true;
-        promptOverlay.hidden = false;
-        promptOverlay.setAttribute('aria-hidden', 'false');
-        startCountdown(data.timeout);
+        const row = document.createElement('div');
+        row.className = 'chat-line';
+        const fromEl = document.createElement('span');
+        fromEl.className = 'chat-from';
+        fromEl.textContent = (from || '?') + ': ';
+        const textEl = document.createElement('span');
+        textEl.className = 'chat-text';
+        textEl.textContent = text || '';
+        row.appendChild(fromEl);
+        row.appendChild(textEl);
+        chatLog.appendChild(row);
+        chatLog.scrollTop = chatLog.scrollHeight;
     }
 
     function showChat(data) {
         if (!ensureEls()) {
             return;
         }
-        hidePrompt();
-        currentInteractionId = data.interaction_id || null;
-        currentOtherId = data.other_id || null;
-        if (chatTitle) {
-            chatTitle.textContent = 'Chat with ' + (currentOtherId || 'player');
-        }
+        currentSessionId = data.session_id || null;
+        participants = (data.participants || []).slice();
         if (chatLog) {
             chatLog.innerHTML = '';
         }
+        (data.history || []).forEach(function (entry) {
+            appendMessageLine(entry.from, entry.text);
+        });
+        renderRoster();
         chatOpen = true;
         chatOverlay.hidden = false;
         chatOverlay.setAttribute('aria-hidden', 'false');
@@ -297,38 +374,8 @@ const InteractionUI = (function () {
         }
     }
 
-    function appendChatMessage(data) {
-        if (!ensureEls() || !chatLog) {
-            return;
-        }
-        if (!chatOpen) {
-            return;
-        }
-        const row = document.createElement('div');
-        row.className = 'chat-line';
-        const from = document.createElement('span');
-        from.className = 'chat-from';
-        from.textContent = (data.from || '?') + ': ';
-        const text = document.createElement('span');
-        text.className = 'chat-text';
-        text.textContent = data.text || '';
-        row.appendChild(from);
-        row.appendChild(text);
-        chatLog.appendChild(row);
-        chatLog.scrollTop = chatLog.scrollHeight;
-    }
-
-    function sendChoice(choice) {
-        if (!currentInteractionId) {
-            return;
-        }
-        if (typeof SocketHandler !== 'undefined' && SocketHandler.sendInteractionChoice) {
-            SocketHandler.sendInteractionChoice(currentInteractionId, choice);
-        }
-    }
-
     function sendChat() {
-        if (!currentInteractionId || !chatInput) {
+        if (!currentSessionId || !chatInput) {
             return;
         }
         const text = chatInput.value;
@@ -336,20 +383,27 @@ const InteractionUI = (function () {
             return;
         }
         if (typeof SocketHandler !== 'undefined' && SocketHandler.sendChatMessage) {
-            SocketHandler.sendChatMessage(currentInteractionId, text);
+            SocketHandler.sendChatMessage(currentSessionId, text);
         }
         chatInput.value = '';
         chatInput.focus();
     }
 
-    function endChat() {
-        if (!currentInteractionId) {
-            hideAll();
+    function leaveChat() {
+        if (!currentSessionId) {
+            hideChat();
             return;
         }
         if (typeof SocketHandler !== 'undefined' && SocketHandler.endChat) {
-            SocketHandler.endChat(currentInteractionId);
+            SocketHandler.endChat(currentSessionId);
         }
+    }
+
+    function hideAll() {
+        serverPrompts.clear();
+        localPromptOpen = false;
+        hidePromptOverlay();
+        hideChat();
     }
 
     function processUpdate(data) {
@@ -358,37 +412,56 @@ const InteractionUI = (function () {
         }
         switch (data.type) {
             case 'interaction_prompt':
-                showPrompt(data);
-                break;
             case 'interaction_waiting':
-                showWaiting(data);
+                if (data.interaction_id) {
+                    serverPrompts.set(data.interaction_id, data);
+                    renderPrompt();
+                }
                 break;
             case 'interaction_end':
-                if (
-                    !data.interaction_id
-                    || data.interaction_id === currentInteractionId
-                ) {
-                    hideAll();
+                if (data.interaction_id) {
+                    serverPrompts.delete(data.interaction_id);
+                    if (renderedKey
+                        && renderedKey.indexOf(data.interaction_id + ':') === 0) {
+                        renderedKey = null;
+                        hidePromptOverlay();
+                    }
+                    renderPrompt();
                 }
                 break;
             case 'chat_start':
                 showChat(data);
                 break;
             case 'chat_message':
-                appendChatMessage(data);
+                if (chatOpen && data.session_id === currentSessionId) {
+                    appendMessageLine(data.from, data.text);
+                }
+                break;
+            case 'chat_join':
+                if (chatOpen && data.session_id === currentSessionId) {
+                    participants = (data.participants || []).slice();
+                    renderRoster();
+                    appendSystemLine((data.player_id || 'A player') + ' joined.');
+                }
+                break;
+            case 'chat_leave':
+                if (chatOpen && data.session_id === currentSessionId) {
+                    participants = (data.participants || []).slice();
+                    renderRoster();
+                    appendSystemLine((data.player_id || 'A player') + ' left.');
+                }
                 break;
             case 'chat_end':
-                if (
-                    !data.interaction_id
-                    || data.interaction_id === currentInteractionId
-                ) {
-                    hideAll();
+                if (!data.session_id || data.session_id === currentSessionId) {
+                    hideChat();
                 }
                 break;
             default:
                 break;
         }
     }
+
+    // --- client-driven prompts (combat social actions) ------------------
 
     /**
      * Generic Accept/Reject (or similar) prompt reusing the interaction overlay.
@@ -399,9 +472,8 @@ const InteractionUI = (function () {
             return;
         }
         opts = opts || {};
-        hideChat();
-        currentInteractionId = opts.id || null;
-        currentOtherId = opts.otherId || null;
+        localPromptOpen = true;
+        renderedKey = null;
         if (promptTitle) {
             promptTitle.textContent = opts.title || 'Decision';
         }
@@ -410,6 +482,7 @@ const InteractionUI = (function () {
         }
         if (promptChoices) {
             promptChoices.innerHTML = '';
+            promptChoices.classList.remove('interaction-picker-mode');
             const choices = opts.choices || [];
             choices.forEach(function (choice) {
                 const id = typeof choice === 'string' ? choice : choice.id;
@@ -424,7 +497,7 @@ const InteractionUI = (function () {
                 btn.addEventListener('click', function (e) {
                     e.preventDefault();
                     e.stopPropagation();
-                    hidePrompt();
+                    closeLocalPrompt();
                     if (typeof opts.onChoice === 'function') {
                         opts.onChoice(id);
                     }
@@ -447,9 +520,8 @@ const InteractionUI = (function () {
             return;
         }
         opts = opts || {};
-        hideChat();
-        currentInteractionId = null;
-        currentOtherId = null;
+        localPromptOpen = true;
+        renderedKey = null;
         if (promptTitle) {
             promptTitle.textContent = opts.title || 'Select';
         }
@@ -495,10 +567,7 @@ const InteractionUI = (function () {
                 const ids = Object.keys(selected).filter(function (k) {
                     return selected[k];
                 });
-                hidePrompt();
-                if (promptChoices) {
-                    promptChoices.classList.remove('interaction-picker-mode');
-                }
+                closeLocalPrompt();
                 if (typeof opts.onConfirm === 'function') {
                     opts.onConfirm(ids);
                 }
@@ -510,10 +579,7 @@ const InteractionUI = (function () {
             cancelBtn.addEventListener('click', function (e) {
                 e.preventDefault();
                 e.stopPropagation();
-                hidePrompt();
-                if (promptChoices) {
-                    promptChoices.classList.remove('interaction-picker-mode');
-                }
+                closeLocalPrompt();
                 if (typeof opts.onCancel === 'function') {
                     opts.onCancel();
                 }
@@ -527,11 +593,11 @@ const InteractionUI = (function () {
         stopCountdown();
     }
 
-    function hidePromptAndClearPicker() {
-        if (promptChoices) {
-            promptChoices.classList.remove('interaction-picker-mode');
-        }
-        hidePrompt();
+    /** Dismiss a client-driven prompt and fall back to any queued server one. */
+    function closeLocalPrompt() {
+        localPromptOpen = false;
+        hidePromptOverlay();
+        renderPrompt();
     }
 
     return {
@@ -540,6 +606,6 @@ const InteractionUI = (function () {
         hide: hideAll,
         showGenericPrompt: showGenericPrompt,
         showPicker: showPicker,
-        hidePrompt: hidePromptAndClearPicker,
+        hidePrompt: closeLocalPrompt,
     };
 })();

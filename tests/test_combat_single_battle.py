@@ -18,7 +18,7 @@ class _GameStateStub:
     def add_player_message(self, player_id, message):
         self.messages.append((player_id, message))
 
-    def remove_monster_at(self, position):
+    def remove_monster_at(self, position, monster=None):
         pass
 
     def get_game_state(self, player_id):

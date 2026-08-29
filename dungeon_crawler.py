@@ -395,13 +395,18 @@ class GameState:
             x, y, self.players_on_level(level_number), monsters, game_map
         )
 
-    def remove_monster_at(self, position):
+    def remove_monster_at(self, position, monster=None):
         """Remove a monster from whichever level it lives on.
 
-        Only clear a `&` marker. Stairs under the monster must stay.
+        Coordinates repeat across levels, so pass the monster itself to be
+        sure the right one is cleared rather than a namesake tile on another
+        floor. Only clear a `&` marker; stairs under the monster must stay.
         """
         for level_number, (game_map, monsters) in self.levels.items():
-            if position in monsters:
+            occupant = monsters.get(position)
+            if occupant is not None and (
+                monster is None or occupant is monster
+            ):
                 del monsters[position]
                 y, x = position[0], position[1]
                 if game_map[y][x] == '&':
@@ -730,11 +735,10 @@ class GameState:
                     self.active_combats.get(other_id)
                 )
                 if target_battle is not None:
-                    # Already fighting: join their battle. A combatant cannot be
-                    # frozen for an interaction prompt, so bumping them in is the
-                    # only way for a third player to enter an ongoing fight.
-                    combat_system.start_combat(
-                        player_id, other_id, emit_game_state=False
+                    # Already fighting: offer to join the fray. Only the bumper
+                    # is prompted; the combatants stay on the combat screen.
+                    interaction_system.start_battle_interaction(
+                        player_id, other_id
                     )
                 else:
                     interaction_system.start_interaction(player_id, other_id)
@@ -1313,7 +1317,7 @@ def handle_chat_send(data):
         return
     interaction_system.send_chat(
         player_id,
-        data.get('interaction_id'),
+        data.get('session_id'),
         data.get('text'),
     )
 
@@ -1325,7 +1329,7 @@ def handle_chat_end(data):
         return
     if not isinstance(data, dict):
         return
-    interaction_system.end_chat(player_id, data.get('interaction_id'))
+    interaction_system.end_chat(player_id, data.get('session_id'))
     for pid in list(game_state.active_players.keys()):
         emit('game_state', game_state.get_game_state(pid), room=pid)
 

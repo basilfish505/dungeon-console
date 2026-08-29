@@ -24,18 +24,36 @@ const MonsterAssets = (function () {
     const failed = Object.create(null);
     const readyCallbacks = [];
     let pending = 0;
+    let flushScheduled = false;
 
     function isImageReady(img) {
         return !!(img && img.complete && img.naturalWidth);
     }
 
+    /**
+     * Monster art loads lazily per type, so subscribers stay registered: a
+     * batch that arrives later (new level, new species) must be able to
+     * trigger another repaint. Deferred so a burst of loads coalesces into
+     * one callback and cannot re-enter a render already in progress.
+     */
     function notifyReady() {
-        if (pending > 0) {
+        if (pending > 0 || flushScheduled || !readyCallbacks.length) {
             return;
         }
-        const cbs = readyCallbacks.splice(0, readyCallbacks.length);
-        for (let i = 0; i < cbs.length; i++) {
-            cbs[i]();
+        flushScheduled = true;
+        const flush = function () {
+            flushScheduled = false;
+            if (pending > 0) {
+                return;
+            }
+            for (let i = 0; i < readyCallbacks.length; i++) {
+                readyCallbacks[i]();
+            }
+        };
+        if (typeof requestAnimationFrame === 'function') {
+            requestAnimationFrame(flush);
+        } else {
+            setTimeout(flush, 0);
         }
     }
 
@@ -149,11 +167,8 @@ const MonsterAssets = (function () {
         if (typeof fn !== 'function') {
             return;
         }
-        if (pending <= 0) {
-            fn();
-            return;
-        }
         readyCallbacks.push(fn);
+        notifyReady();
     }
 
     if (GRAPHICS_MONSTERS_ENABLED) {

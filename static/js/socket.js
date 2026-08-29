@@ -266,22 +266,22 @@ const SocketHandler = (function () {
         });
     }
 
-    function sendChatMessage(interactionId, text) {
-        if (!interactionId) {
+    function sendChatMessage(sessionId, text) {
+        if (!sessionId) {
             return;
         }
         socket.emit('chat_send', {
-            interaction_id: interactionId,
+            session_id: sessionId,
             text: text,
         });
     }
 
-    function endChat(interactionId) {
-        if (!interactionId) {
+    function endChat(sessionId) {
+        if (!sessionId) {
             return;
         }
         socket.emit('chat_end', {
-            interaction_id: interactionId,
+            session_id: sessionId,
         });
     }
 

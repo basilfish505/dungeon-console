@@ -258,8 +258,8 @@ class CombatSocialSystem:
     def invite_chat(self, player_id, target_ids=None):
         """Invite one or more battle participants to chat.
 
-        First accept wins: remaining sibling invites for this initiator are
-        cancelled when a chat session opens (1:1 chat system).
+        Every acceptance joins the same conversation, so several invites may be
+        outstanding at once.
         """
         battle = self._battle_for(player_id)
         if battle is None or battle.get('status') not in ('active', 'ending'):
@@ -274,25 +274,24 @@ class CombatSocialSystem:
             })
             return False
 
-        # Initiator already in an active chat / map interaction.
-        if player_id in getattr(self.interaction_system, 'by_player', {}):
+        # A player already in a conversation cannot start a new one.
+        if self.interaction_system.in_chat(player_id):
             self._emit(player_id, {
                 'type': 'social_notice',
                 'message': 'You are already in a conversation.',
             })
             return False
 
-        group_id = str(uuid.uuid4())
         created = 0
         for tid in targets:
-            if self.interaction_system.is_busy(tid):
+            if self.interaction_system.is_deciding(tid):
                 self._emit(player_id, {
                     'type': 'social_notice',
                     'message': f'{tid} is busy.',
                 })
                 continue
             ok = self.interaction_system.start_combat_chat(
-                player_id, tid, battle['battle_id'], group_id=group_id
+                player_id, tid, battle['battle_id']
             )
             if ok:
                 created += 1
