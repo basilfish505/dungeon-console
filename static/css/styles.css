@@ -252,6 +252,42 @@ body {
     animation: combat-shake 0.5s ease;
 }
 
+.spell-flash {
+    position: fixed;
+    inset: 0;
+    z-index: 5000;
+    pointer-events: none;
+    background:
+        radial-gradient(circle at 50% 40%, #fff 0%, #f4f8ff 42%, #cfe4ff 100%);
+    opacity: 0;
+}
+
+.spell-flash.is-on {
+    animation: spell-flash-burst var(--spell-flash-ms, 1200ms) ease-out forwards;
+}
+
+@keyframes spell-flash-burst {
+    0% { opacity: 0.95; }
+    10% { opacity: 0.55; }
+    18% { opacity: 0.9; }
+    32% { opacity: 0.2; }
+    42% { opacity: 0.55; }
+    70% { opacity: 0.12; }
+    100% { opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .spell-flash.is-on {
+        animation: spell-flash-soft var(--spell-flash-ms, 1200ms) ease-out forwards;
+    }
+}
+
+@keyframes spell-flash-soft {
+    0% { opacity: 0.45; }
+    25% { opacity: 0.2; }
+    100% { opacity: 0; }
+}
+
 .combat-statusbar {
     text-align: center;
     font-size: 1.25rem;

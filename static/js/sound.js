@@ -12,6 +12,7 @@ const Sound = (function () {
         levelUp: '/static/sounds/levelUp.mp3',
         killmonster: '/static/sounds/killmonster.mp3',
         enterbattle: '/static/sounds/enterbattle.mp3',
+        spell: '/static/sounds/spell.mp3',
     };
 
     function audioContext() {
@@ -79,16 +80,22 @@ const Sound = (function () {
 
     const playGen = {};
 
-    function play(name) {
+    function duration(name) {
+        const buf = buffers[name];
+        return buf ? buf.duration : 0;
+    }
+
+    function play(name, onStart) {
         unlock();
         const url = PATHS[name];
-        if (!url) return;
+        if (!url) return 0;
 
         const gen = (playGen[name] = (playGen[name] || 0) + 1);
         const ready = buffers[name];
         if (ready) {
             start(ready);
-            return;
+            if (typeof onStart === 'function') onStart(ready.duration);
+            return ready.duration;
         }
 
         // First play may race preload — wait for decode, then play if still current
@@ -101,8 +108,10 @@ const Sound = (function () {
             // Too late to stay in sync with the attack that requested it
             if (now - requestedAt > 500) return;
             start(buf);
+            if (typeof onStart === 'function') onStart(buf.duration);
         });
+        return 0;
     }
 
-    return { warm, play };
+    return { warm, play, duration };
 })();

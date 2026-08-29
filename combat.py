@@ -945,6 +945,7 @@ class CombatSystem:
                 'spell_name': getattr(spell, 'name', None),
                 'combatants': combatants,
                 'your_turn': False,
+                'play_spell_sound': True,
                 'play_hit_sound': (hit and (is_caster or is_target)),
                 'shake_combat': (hit and is_target),
             }

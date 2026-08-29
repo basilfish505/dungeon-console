@@ -216,6 +216,49 @@ const Combat = (function () {
         setTimeout(() => target.classList.remove('combat-shake'), 500);
     }
 
+    function flashSpellScreen(seconds) {
+        let el = document.getElementById('spell-flash');
+        if (!el) {
+            el = document.createElement('div');
+            el.id = 'spell-flash';
+            el.className = 'spell-flash';
+            el.setAttribute('aria-hidden', 'true');
+            document.body.appendChild(el);
+        }
+        const ms = Math.max(400, Math.round((seconds || 1.2) * 1000));
+        el.style.setProperty('--spell-flash-ms', ms + 'ms');
+        el.classList.remove('is-on');
+        void el.offsetWidth;
+        el.classList.add('is-on');
+        if (el._spellFlashTimer) {
+            clearTimeout(el._spellFlashTimer);
+        }
+        el._spellFlashTimer = setTimeout(function () {
+            el.classList.remove('is-on');
+        }, ms);
+    }
+
+    function playSpellCastFx(onEnded) {
+        const fallback = 1.2;
+        let endedScheduled = false;
+        const afterSound = function (seconds) {
+            if (endedScheduled) return;
+            endedScheduled = true;
+            if (typeof onEnded !== 'function') return;
+            setTimeout(onEnded, Math.round((seconds || fallback) * 1000));
+        };
+        if (typeof Sound === 'undefined' || !Sound.play) {
+            flashSpellScreen(fallback);
+            afterSound(fallback);
+            return;
+        }
+        // Flash starts when the clip starts so the white-out matches the sound.
+        Sound.play('spell', function (seconds) {
+            flashSpellScreen(seconds || fallback);
+            afterSound(seconds);
+        });
+    }
+
     function findCardEl(key) {
         if (!elements.roster || !key) return null;
         const cards = elements.roster.querySelectorAll('.combat-card[data-key]');
@@ -940,7 +983,15 @@ const Combat = (function () {
         // Action consumed the prior turn — drop its countdown so "Your turn"
         // cannot resurface after the status-hold while a monster acts.
         stopCountdown();
-        if (data.play_hit_sound) Sound.play('hit');
+        if (data.play_spell_sound) {
+            playSpellCastFx(function () {
+                if (data.play_hit_sound && typeof Sound !== 'undefined') {
+                    Sound.play('hit');
+                }
+            });
+        } else if (data.play_hit_sound) {
+            Sound.play('hit');
+        }
         if (data.play_miss_sound) Sound.play(data.play_miss_sound);
         if (data.shake_combat) shakeCombatWindow();
 

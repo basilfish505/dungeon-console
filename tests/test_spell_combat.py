@@ -117,6 +117,7 @@ class SpellCombatTests(unittest.TestCase):
         ]
         self.assertTrue(caster_msgs)
         self.assertEqual(caster_msgs[0].get('your_mp'), '6/8')
+        self.assertTrue(caster_msgs[0].get('play_spell_sound'))
 
     def test_insufficient_mp_consumes_neither_turn_nor_mp(self):
         self.hero.mp = 1
@@ -136,6 +137,12 @@ class SpellCombatTests(unittest.TestCase):
             and isinstance(data, dict)
         ]
         self.assertTrue(any('MP' in m for m in fail_msgs))
+        fail_payloads = [
+            data
+            for (event, data, room) in self.sock.emitted
+            if event == 'combat_update' and isinstance(data, dict)
+        ]
+        self.assertFalse(any(p.get('play_spell_sound') for p in fail_payloads))
 
     def test_unknown_spell_consumes_neither(self):
         turn_before = self.battle['current_turn_index']
