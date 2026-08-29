@@ -1054,6 +1054,8 @@ def handle_connect():
             game_state.bind_socket(player_id, request.sid)
             join_room(player_id)
             emit('game_state', game_state.get_game_state(player_id))
+            # The combat screen is restored from select_id, which is the only
+            # path that actually puts the client into the game shell.
             print(f"Player {player_id} resumed on connect (sid={request.sid}).")
             return
     emit('game_state', game_state.get_game_state(None))
@@ -1120,6 +1122,9 @@ def handle_select_id(data):
         if pid in game_state.active_players:
             emit('game_state', game_state.get_game_state(pid), room=pid)
 
+    # A rejoiner whose battle is still running needs the combat screen back.
+    combat_system.resume_combat_for(player_id)
+
 
 @socketio.on('disconnect')
 def handle_disconnect():
@@ -1159,8 +1164,20 @@ def handle_move(direction):
         player = game_state.players[moving_player_id]
         # Check if player is in combat or a timed interaction
         if player.in_combat or moving_player_id in game_state.active_combats:
+            # Correct the client's predicted step so it cannot drift away from
+            # the position the server is holding it at.
+            emit(
+                'game_state',
+                game_state.get_game_state(moving_player_id),
+                room=moving_player_id,
+            )
             return  # Ignore movement commands during combat
         if interaction_system.is_busy(moving_player_id):
+            emit(
+                'game_state',
+                game_state.get_game_state(moving_player_id),
+                room=moving_player_id,
+            )
             return  # Frozen while deciding / chatting
         
         if game_state.move_player(moving_player_id, direction):

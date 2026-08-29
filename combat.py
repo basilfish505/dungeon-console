@@ -441,7 +441,9 @@ class CombatSystem:
             return None
         return '. '.join(parts) + '.'
     
-    def _send_combat_start(self, player_id, battle, message=None, is_join_refresh=False):
+    def _send_combat_start(
+        self, player_id, battle, message=None, is_join_refresh=False, is_resume=False
+    ):
         """Send battle information to a player"""
         player = self.game_state.players[player_id]
         
@@ -477,6 +479,7 @@ class CombatSystem:
             'combatants': self._get_combatants_status(battle),
             'turn_timeout': TURN_TIMEOUT_SECONDS,
             'is_join_refresh': bool(is_join_refresh),
+            'is_resume': bool(is_resume),
         }
         if message:
             combat_info['message'] = message
@@ -485,7 +488,42 @@ class CombatSystem:
         self._update_combat_turn_info(combat_info, player_id, battle)
 
         self._emit('combat_update', combat_info, room=player_id)
-    
+
+    def resume_combat_for(self, player_id):
+        """
+        Re-open the combat screen for a player who reconnected mid-battle.
+
+        A reconnecting client has no combat state, so without this it would show
+        the map while the server still holds the player in the battle. When the
+        battle is already gone, clear the leftover flags instead so the player
+        is not locked out of movement.
+        """
+        gs = self.game_state
+        player = gs.players.get(player_id)
+        battle_id = gs.active_combats.get(player_id)
+        battle = self.battles.get(battle_id) if battle_id else None
+
+        if battle is None or battle.get('status') not in ('active', 'ending'):
+            gs.active_combats.pop(player_id, None)
+            if player is not None:
+                player.in_combat = False
+            return False
+
+        if player_id not in battle['participants']:
+            # Waiting in the kill-pause queue; _flush_queued_joins will start them.
+            return False
+
+        if player is not None:
+            player.in_combat = True
+        self._send_combat_start(
+            player_id,
+            battle,
+            message=".... Thou art still locked in battle.",
+            is_join_refresh=True,
+            is_resume=True,
+        )
+        return True
+
     def process_action(self, player_id, action, target_id=None, spell_id=None):
         """Process a combat action from a player. Returns True if a turn was consumed."""
         # Validate the action can be taken
@@ -1174,8 +1212,12 @@ class CombatSystem:
 
     def _get_current_active_player(self, battle):
         """Return the unique id of the actor whose turn it is (player or monster)."""
-        current_turn_id = battle['turn_order'][battle['current_turn_index']]
-        
+        turn_order = battle['turn_order']
+        index = battle['current_turn_index']
+        if not turn_order or index >= len(turn_order):
+            return None
+        current_turn_id = turn_order[index]
+
         if current_turn_id in self.game_state.players:
             return self.game_state.players[current_turn_id].id
         for monster in battle['monsters']:

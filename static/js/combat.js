@@ -144,6 +144,10 @@ const Combat = (function () {
 
     function showOverlay() {
         if (!elements.overlay) return;
+        const shell = document.getElementById('game-shell');
+        if (shell && shell.hidden) {
+            return; // Still on the login screen; nothing to overlay yet.
+        }
         const opening = !open;
         elements.overlay.hidden = false;
         elements.overlay.setAttribute('aria-hidden', 'false');
@@ -863,6 +867,7 @@ const Combat = (function () {
     function handleCombatStart(data) {
         Sound.warm();
         const isJoinRefresh = !!data.is_join_refresh;
+        const wasOpen = open;
         const priorMonsterKeys = {};
         (currentBattle.opponents || []).forEach(function (o) {
             if (o && o.is_monster) {
@@ -885,7 +890,7 @@ const Combat = (function () {
         applyOpponents(data.opponents || opponentsFromCombatants(
             data.combatants, currentBattle.viewerId
         ));
-        if (isJoinRefresh && open) {
+        if (isJoinRefresh && wasOpen) {
             const newcomers = (currentBattle.opponents || []).some(function (o) {
                 if (!o || !o.is_monster) return false;
                 const key = combatantKey(o);
@@ -905,16 +910,20 @@ const Combat = (function () {
         showOverlay();
         renderRoster();
         updateButtonStates(data.your_turn);
-        let startMsg;
-        if (data.message) {
-            startMsg = data.message;
-        } else if (data.your_turn) {
-            startMsg = "Combat has begun! It's your turn to act!";
-        } else {
-            startMsg = 'Combat has begun! Select your target and action.';
+        // A resume on a screen that never lost the battle is a silent refresh,
+        // so a mobile socket blip does not spam the log.
+        if (!data.is_resume || !wasOpen) {
+            let startMsg;
+            if (data.message) {
+                startMsg = data.message;
+            } else if (data.your_turn) {
+                startMsg = "Combat has begun! It's your turn to act!";
+            } else {
+                startMsg = 'Combat has begun! Select your target and action.';
+            }
+            appendCombatLog(startMsg);
+            showStatusMessage(startMsg);
         }
-        appendCombatLog(startMsg);
-        showStatusMessage(startMsg);
         if (data.turn_timeout) {
             startCountdown(data.turn_timeout, data.your_turn, data.active_player);
         }
