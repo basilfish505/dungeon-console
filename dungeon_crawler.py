@@ -1484,6 +1484,141 @@ def handle_buy_item(data):
     })
 
 
+@socketio.on('cast_spell')
+def handle_cast_spell(data):
+    """Out-of-combat spell cast (Heal, etc.). Combat uses combat_action instead."""
+    from spell_types.registry import get_spell_type
+    from spell_casting import (
+        apply_heal_result,
+        can_cast,
+        explore_heal_message,
+        explore_spell_targets,
+        resolve_explore_target,
+        resolve_spell,
+        spend_mp,
+        supported_effect_type,
+        supported_target_mode,
+    )
+
+    player_id = session.get('player_id')
+    if not player_id or player_id not in game_state.players:
+        return
+    caster = game_state.players[player_id]
+    if getattr(caster, 'in_combat', False):
+        emit('cast_spell_result', {
+            'ok': False,
+            'message': '.... Use the Spell button in combat.',
+        })
+        return
+
+    data = data or {}
+    spell_id = data.get('spell_id')
+    target_id = data.get('target_id')
+    spell = get_spell_type(spell_id)
+    if spell is None:
+        emit('cast_spell_result', {'ok': False, 'message': '.... That spell is unknown.'})
+        return
+    if not getattr(spell, 'usable_out_of_combat', False):
+        emit('cast_spell_result', {
+            'ok': False,
+            'message': '.... That spell cannot be cast out of combat.',
+        })
+        return
+    ok, reason = can_cast(caster, spell)
+    if not ok:
+        emit('cast_spell_result', {
+            'ok': False,
+            'message': f'.... {reason or "Thou cannot cast that."}',
+        })
+        return
+    if not supported_effect_type(spell) or not supported_target_mode(spell):
+        emit('cast_spell_result', {
+            'ok': False,
+            'message': '.... That spell cannot be cast yet.',
+        })
+        return
+
+    targets = explore_spell_targets(game_state, caster)
+    if not target_id:
+        if len(targets) == 1:
+            target_id = targets[0][0]
+        else:
+            emit('cast_spell_result', {
+                'ok': False,
+                'need_target': True,
+                'spell_id': getattr(spell, 'id', spell_id),
+                'targets': [
+                    {'id': tid, 'label': label}
+                    for tid, label, _ent in targets
+                ],
+                'message': '.... Choose a target.',
+            })
+            return
+
+    target, _is_monster = resolve_explore_target(game_state, caster, target_id)
+    if target is None:
+        emit('cast_spell_result', {
+            'ok': False,
+            'message': '.... That target is out of range.',
+        })
+        return
+    if int(getattr(target, 'hp', 0) or 0) <= 0:
+        emit('cast_spell_result', {
+            'ok': False,
+            'message': '.... That target is already slain.',
+        })
+        return
+
+    result = resolve_spell(caster, spell, target)
+    if not result.get('ok'):
+        emit('cast_spell_result', {
+            'ok': False,
+            'message': f'.... {result.get("message") or "The spell fizzles."}',
+        })
+        return
+
+    spend_mp(caster, spell)
+    healed = int(result.get('healed') or 0)
+    effect = result.get('effect_type') or getattr(spell, 'effect_type', None)
+    if effect == 'heal':
+        apply_heal_result(target, healed)
+
+    is_self = getattr(target, 'id', None) == player_id
+    caster_msg = explore_heal_message(caster, target, spell, healed, is_self)
+    game_state.add_player_message(player_id, caster_msg)
+    if (
+        not is_self
+        and getattr(target, 'id', None) in game_state.players
+    ):
+        tname = caster.id
+        spell_name = getattr(spell, 'name', None) or 'a spell'
+        if healed <= 0:
+            tmsg = (
+                f'.... {tname} casts {spell_name} on you, but your '
+                f'hit points were already full.'
+            )
+        else:
+            tmsg = (
+                f'.... {tname} casts {spell_name} on you and restores '
+                f'{healed} HP.'
+            )
+        game_state.add_player_message(target.id, tmsg)
+        emit('game_state', game_state.get_game_state(target.id), room=target.id)
+
+    game_state.mark_character_dirty(player_id)
+    if not is_self and getattr(target, 'id', None) in game_state.players:
+        game_state.mark_character_dirty(target.id)
+
+    emit('cast_spell_result', {
+        'ok': True,
+        'spell_id': getattr(spell, 'id', None),
+        'healed': healed,
+        'message': caster_msg,
+        'play_spell_sound': True,
+    })
+    emit('game_state', game_state.get_game_state(player_id), room=player_id)
+
+
 @socketio.on('use_item')
 def handle_use_item(data):
     """Back-compat wrapper for inventory use."""

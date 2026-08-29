@@ -87,7 +87,7 @@
         <div class="mobile-btn" data-direction="n" aria-label="North">↑</div>
         <div class="mobile-btn" data-direction="ne" aria-label="Northeast">↗</div>
         <div class="mobile-btn" data-direction="west" aria-label="West">←</div>
-        <button type="button" id="pad-center-btn" class="mobile-btn mobile-btn-center" aria-label="Inventory">Inventory</button>
+        <button type="button" id="pad-center-btn" class="mobile-btn mobile-btn-center" aria-label="Action">Action</button>
         <div class="mobile-btn" data-direction="e" aria-label="East">→</div>
         <div class="mobile-btn" data-direction="sw" aria-label="Southwest">↙</div>
         <div class="mobile-btn" data-direction="s" aria-label="South">↓</div>
@@ -117,12 +117,16 @@
     <div id="inventory-overlay" class="inspect-overlay inventory-overlay" hidden aria-hidden="true">
         <div id="inventory-panel" class="inspect-panel inventory-panel" role="dialog" aria-modal="true" aria-labelledby="inventory-title">
             <div class="inspect-header">
-                <h3 id="inventory-title" class="inspect-title">Inventory</h3>
+                <h3 id="inventory-title" class="inspect-title">Action</h3>
                 <button type="button" id="inventory-close" class="inspect-close" aria-label="Close">Close</button>
             </div>
             <div class="inventory-body">
                 <div id="inventory-grid" class="inventory-grid"></div>
                 <div id="inventory-detail" class="inventory-detail" hidden aria-live="polite"></div>
+                <div id="action-spells" class="action-spells" hidden>
+                    <h4 class="action-spells-heading">Spells</h4>
+                    <div id="action-spells-list" class="action-spells-list"></div>
+                </div>
             </div>
         </div>
     </div>
