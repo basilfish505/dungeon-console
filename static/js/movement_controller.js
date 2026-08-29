@@ -349,6 +349,17 @@ const MovementController = (function () {
         pressDir(dir);
     }
 
+    function isTypingTarget(el) {
+        if (!el || el === document.body || el === document.documentElement) {
+            return false;
+        }
+        const tag = el.tagName;
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') {
+            return true;
+        }
+        return !!el.isContentEditable;
+    }
+
     function bind() {
         if (bound) {
             return;
@@ -356,6 +367,9 @@ const MovementController = (function () {
         bound = true;
 
         document.addEventListener('keydown', function (e) {
+            if (isTypingTarget(document.activeElement)) {
+                return;
+            }
             if (typeof InspectUI !== 'undefined' && InspectUI.isOpen()) {
                 if (e.key === 'Escape') {
                     InspectUI.hide();
@@ -370,6 +384,9 @@ const MovementController = (function () {
                         InventoryUI.hide();
                     }
                 }
+                return;
+            }
+            if (typeof InteractionUI !== 'undefined' && InteractionUI.isOpen()) {
                 return;
             }
             const dir = KEY_TO_CARDINAL[e.key];
