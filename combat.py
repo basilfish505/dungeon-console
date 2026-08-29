@@ -17,6 +17,8 @@ MONSTER_TURN_DELAY_SECONDS = 1  # pause before monster acts after another turn
 ATTACK_FX_HOLD_SECONDS = 0.5
 SPELL_FX_HOLD_SECONDS = 1.8
 KILLING_BLOW_PAUSE_SECONDS = 1  # pause so killer can read damage before combat closes
+# Temporary: when a monster knows a castable spell, roll to use it instead of melee.
+MONSTER_SPELL_CAST_CHANCE = 0.75
 
 
 def _monster_combatant(monster, is_current_turn=False):
@@ -876,7 +878,10 @@ class CombatSystem:
 
         if hit and damage > 0 and target.hp <= 0:
             if target_is_monster:
-                self._handle_monster_death(player_id, target, battle)
+                self._handle_monster_death(
+                    player_id, target, battle,
+                    pause_seconds=SPELL_FX_HOLD_SECONDS,
+                )
             else:
                 self._handle_player_death(
                     target_id, battle, killer_id=player_id
@@ -885,25 +890,34 @@ class CombatSystem:
 
     def _spell_message(
         self, viewer_id, caster_id, target, is_monster, spell, result,
+        caster_is_monster=False, caster_display=None,
     ):
         target_name = target.type if is_monster else target.id
-        caster_name = self.game_state.players[caster_id].id
+        if caster_is_monster:
+            caster_name = caster_display or 'The monster'
+        else:
+            player = self.game_state.players.get(caster_id)
+            caster_name = player.id if player is not None else str(caster_id)
         spell_name = getattr(spell, 'name', None) or getattr(spell, 'id', 'a spell')
         damage = int(result.get('damage') or 0)
         hit = bool(result.get('hit'))
-        caster = self.game_state.players.get(caster_id)
         mp_suffix = ''
-        if caster is not None:
-            mp_suffix = f' (MP {int(getattr(caster, "mp", 0))}/{int(getattr(caster, "mmp", 0))})'
+        if not caster_is_monster:
+            caster = self.game_state.players.get(caster_id)
+            if caster is not None:
+                mp_suffix = (
+                    f' (MP {int(getattr(caster, "mp", 0))}/'
+                    f'{int(getattr(caster, "mmp", 0))})'
+                )
 
         if not hit:
-            if viewer_id == caster_id:
+            if not caster_is_monster and viewer_id == caster_id:
                 return f'.... You cast {spell_name} at {target_name}, but it misses.{mp_suffix}'
             if not is_monster and viewer_id == target.id:
                 return f'.... {caster_name} casts {spell_name} at you, but it misses.'
             return f'.... {caster_name} casts {spell_name} at {target_name}, but it misses.'
 
-        if viewer_id == caster_id:
+        if not caster_is_monster and viewer_id == caster_id:
             return (
                 f'.... You cast {spell_name} at {target_name} '
                 f'for {damage} damage.{mp_suffix}'
@@ -920,6 +934,7 @@ class CombatSystem:
 
     def _broadcast_spell_feedback(
         self, battle, caster_id, target_id, spell, result, target_is_monster=False,
+        caster_is_monster=False,
     ):
         """Emit spell cast FX to participants, then refresh game_state."""
         target, is_monster = self._resolve_target(battle, target_id)
@@ -929,15 +944,30 @@ class CombatSystem:
 
         target_key = target.id if not is_monster else target_id
         target_name = target.type if is_monster else target.id
-        caster_name = self.game_state.players[caster_id].id
-        caster = self.game_state.players[caster_id]
+        if caster_is_monster:
+            caster = None
+            for mon in battle.get('monsters') or []:
+                if mon.id == caster_id:
+                    caster = mon
+                    break
+            if caster is None:
+                return
+            caster_name = getattr(caster, 'type', None) or getattr(caster, 'name', None) or 'Monster'
+            miss_sound = 'monsterMiss'
+        else:
+            caster = self.game_state.players.get(caster_id)
+            if caster is None:
+                return
+            caster_name = caster.id
+            miss_sound = 'playerMiss'
+
         participants = list(battle['participants'])
         combatants = self._get_combatants_status(battle)
         damage = int(result.get('damage') or 0)
         hit = bool(result.get('hit')) and damage > 0
 
         for p_id in participants:
-            is_caster = p_id == caster_id
+            is_caster = (not caster_is_monster) and p_id == caster_id
             is_target = (not is_monster) and p_id == target_key
             update = {
                 'type': 'combat_action',
@@ -946,6 +976,8 @@ class CombatSystem:
                 'hit': hit,
                 'message': self._spell_message(
                     p_id, caster_id, target, is_monster, spell, result,
+                    caster_is_monster=caster_is_monster,
+                    caster_display=caster_name if caster_is_monster else None,
                 ),
                 'attacker_id': caster_name,
                 'target_id': target_name,
@@ -955,7 +987,7 @@ class CombatSystem:
                 'your_turn': False,
                 'play_spell_sound': True,
                 'play_hit_sound': hit,
-                'play_miss_sound': None if hit else 'playerMiss',
+                'play_miss_sound': None if hit else miss_sound,
                 'shake_combat': hit,
                 'shake_target': target_key,
             }
@@ -1174,6 +1206,47 @@ class CombatSystem:
 
         self._start_turn_timer(battle, player_id)
 
+    def _first_castable_monster_spell(self, monster):
+        """Return the first known spell the monster can cast, or None."""
+        from spell_types.registry import get_spell_type
+        from spell_casting import (
+            can_cast,
+            supported_effect_type,
+            supported_target_mode,
+        )
+
+        for sid in getattr(monster, 'known_spells', None) or []:
+            spell = get_spell_type(sid)
+            if spell is None:
+                continue
+            if not supported_effect_type(spell) or not supported_target_mode(spell):
+                continue
+            ok, _reason = can_cast(monster, spell)
+            if ok:
+                return spell
+        return None
+
+    def _handle_monster_spell(self, monster, target_id, target, spell, battle):
+        """Cast a spell for a monster. Returns True if the cast was applied."""
+        from spell_casting import resolve_spell, spend_mp
+
+        result = resolve_spell(monster, spell, target)
+        if not result.get('ok'):
+            return False
+
+        spend_mp(monster, spell)
+        damage = int(result.get('damage') or 0)
+        hit = bool(result.get('hit'))
+        if hit and damage > 0:
+            target.hp -= damage
+
+        self._broadcast_spell_feedback(
+            battle, monster.id, target_id, spell, result,
+            target_is_monster=False,
+            caster_is_monster=True,
+        )
+        return True
+
     def _handle_monster_turn(self, monster_id, battle):
         """Process a monster's turn"""
         # Find the monster
@@ -1192,12 +1265,24 @@ class CombatSystem:
             self._advance_turn(battle)
             return
         
-        # Monster automatically attacks a random player
-        if battle['participants']:
-            # Choose a target
-            target_id = random.choice(battle['participants'])
-            target = self.game_state.players[target_id]
+        if not battle['participants']:
+            self._check_battle_end(battle)
+            return
 
+        target_id = random.choice(battle['participants'])
+        target = self.game_state.players.get(target_id)
+        if target is None:
+            self._advance_turn(battle)
+            return
+
+        cast_spell = self._first_castable_monster_spell(monster)
+        used_spell = False
+        if cast_spell is not None and random.random() < MONSTER_SPELL_CAST_CHANCE:
+            used_spell = self._handle_monster_spell(
+                monster, target_id, target, cast_spell, battle,
+            )
+
+        if not used_spell:
             blocked = self._check_block(monster.id, target_id, target.id, battle)
             attack_result = {'hit': False, 'damage': 0, 'hit_chance': 0.0}
 
@@ -1209,15 +1294,12 @@ class CombatSystem:
             self._broadcast_monster_hit(
                 battle, monster, target_id, attack_result, blocked=blocked,
             )
-            
-            # Check for player death
-            if target.hp <= 0:
-                self._handle_player_death(target_id, battle, killer_monster=monster)
-            elif battle['status'] == 'active':
-                self._advance_turn(battle)
-        else:
-            # No players left to attack, end battle
-            self._check_battle_end(battle)
+
+        if target.hp <= 0:
+            self._handle_player_death(target_id, battle, killer_monster=monster)
+        elif battle['status'] == 'active':
+            hold = SPELL_FX_HOLD_SECONDS if used_spell else 0
+            self._advance_turn(battle, fx_hold_seconds=hold)
 
     def _update_combat_turn_info(self, update, player_id, battle):
         """Add current turn information to a combat update"""
@@ -1691,7 +1773,7 @@ class CombatSystem:
         self._persist_combat_state()
         return ended
     
-    def _handle_monster_death(self, killer_id, monster, battle):
+    def _handle_monster_death(self, killer_id, monster, battle, pause_seconds=None):
         """Handle a monster's death in combat"""
         killer = self.game_state.players[killer_id]
         
@@ -1722,9 +1804,19 @@ class CombatSystem:
         dead_monster_id = monster.id
         killer_name = killer.id
         participants = list(battle['participants'])
+        # Spell kills need a longer hold so cast/hit FX finish before smash/end.
+        try:
+            pause = float(
+                KILLING_BLOW_PAUSE_SECONDS
+                if pause_seconds is None
+                else pause_seconds
+            )
+        except (TypeError, ValueError):
+            pause = float(KILLING_BLOW_PAUSE_SECONDS)
+        pause = max(float(KILLING_BLOW_PAUSE_SECONDS), pause)
 
         def finish_after_pause():
-            self.socketio.sleep(KILLING_BLOW_PAUSE_SECONDS)
+            self.socketio.sleep(pause)
             current = self.battles.get(battle_id)
             if not current:
                 return

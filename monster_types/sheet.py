@@ -37,6 +37,9 @@ COLUMNS = [
     'activeness',
     'sight_range',
     'ability_ids',
+    'spells',
+    'loot',
+    'base_mmp',
     'sprite',
     'portrait',
     'spawn_weight',
@@ -67,6 +70,15 @@ HEADER_COMMENTS = {
     'activeness': '0-10. Chance to stay still when idle/neutral = 1 - activeness/10.',
     'sight_range': 'Chebyshev vision distance in tiles. Default 20.',
     'ability_ids': 'Comma-separated ability ids, or blank. Combat hooks not implemented yet.',
+    'spells': (
+        'Comma-separated spell ids from spell_types (e.g. magic_bolt), or blank. '
+        'Monsters cast known spells in combat when they have enough MP.'
+    ),
+    'loot': (
+        'Comma-separated item type ids the monster may leave when defeated. '
+        'Placeholder for now — drops are not implemented yet.'
+    ),
+    'base_mmp': 'Starting maximum MP at base level. Default 0 (no mana).',
     'sprite': 'Leave blank for /static/monsters/sprites/{type_id}.png',
     'portrait': 'Leave blank for /static/monsters/portraits/{type_id}.png',
     'spawn_weight': 'Relative chance to appear when a monster spawns. 0 = never random-spawn.',
@@ -94,6 +106,9 @@ TROLL_EXAMPLE = {
     'activeness': 5,
     'sight_range': 20,
     'ability_ids': '',
+    'spells': '',
+    'loot': '',
+    'base_mmp': 0,
     'sprite': '/static/monsters/sprites/troll.png',
     'portrait': '/static/monsters/portraits/troll.png',
     'spawn_weight': 1,
@@ -109,10 +124,15 @@ def _blank(value):
     return False
 
 
-def parse_ability_ids(value):
+def parse_id_list(value):
+    """Comma-separated machine ids (abilities, spells, loot)."""
     if _blank(value):
         return []
     return [part.strip() for part in str(value).split(',') if part.strip()]
+
+
+def parse_ability_ids(value):
+    return parse_id_list(value)
 
 
 def _int(value, default):
@@ -156,7 +176,10 @@ def row_to_typedef(row):
         speed=_float(row.get('speed'), 10),
         activeness=_float(row.get('activeness'), 5),
         sight_range=_int(row.get('sight_range'), 20),
-        ability_ids=parse_ability_ids(row.get('ability_ids')),
+        ability_ids=parse_id_list(row.get('ability_ids')),
+        spell_ids=parse_id_list(row.get('spells')),
+        loot_ids=parse_id_list(row.get('loot')),
+        base_mmp=_int(row.get('base_mmp'), 0),
         sprite=_str_or_none(row.get('sprite')),
         portrait=_str_or_none(row.get('portrait')),
         spawn_weight=_float(row.get('spawn_weight'), 1),
@@ -298,6 +321,9 @@ def write_monster_xlsx(path=None, extra_rows=None):
         'base_mhp': 12,
         'armour': 10,
         'ability_ids': 18,
+        'spells': 18,
+        'loot': 18,
+        'base_mmp': 12,
         'sprite': 36,
         'portrait': 38,
         'spawn_notes': 36,

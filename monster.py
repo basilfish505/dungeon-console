@@ -62,6 +62,12 @@ class Monster:
         self.elo = 3000
 
         self.ability_ids = list(type_def.ability_ids)
+        self.known_spells = list(getattr(type_def, 'spell_ids', None) or [])
+        try:
+            self.mmp = max(0, int(getattr(type_def, 'base_mmp', 0) or 0))
+        except (TypeError, ValueError):
+            self.mmp = 0
+        self.mp = self.mmp
         # Damage divisor in combat_damage; species default from type sheet (min 1).
         self.armour = int(runtime_overrides.pop('armour', type_def.armour))
         if self.armour < 1:
@@ -126,6 +132,14 @@ class Monster:
                 abilities.append({'id': ability.id, 'name': ability.name})
             else:
                 abilities.append({'id': str(aid), 'name': str(aid)})
+        spells = []
+        for sid in getattr(self, 'known_spells', None) or []:
+            from spell_types.registry import get_spell_type
+            spell = get_spell_type(sid)
+            if spell is not None:
+                spells.append({'id': spell.id, 'name': spell.name})
+            else:
+                spells.append({'id': str(sid), 'name': str(sid)})
         elo_value = round(float(getattr(self, 'elo', 3000)), 1)
         try:
             from monster_elo import elo_percentile
@@ -148,10 +162,13 @@ class Monster:
             'elo_percentile': percentile,
             'hp': self.hp,
             'mhp': self.mhp,
+            'mp': int(getattr(self, 'mp', 0) or 0),
+            'mmp': int(getattr(self, 'mmp', 0) or 0),
             'armour': int(getattr(self, 'armour', 1) or 1),
             'mean_damage': mean_damage,
             'attributes': attributes_for_inspect(self),
             'abilities': abilities,
+            'spells': spells,
             'sprite': self.sprite_url(),
             'portrait': self.portrait_url(),
         }
@@ -166,6 +183,8 @@ class Monster:
             'elo': round(float(getattr(self, 'elo', 3000)), 1),
             'hp': self.hp,
             'mhp': self.mhp,
+            'mp': int(getattr(self, 'mp', 0) or 0),
+            'mmp': int(getattr(self, 'mmp', 0) or 0),
             'pos': self.pos,
             'aggression': self.aggression,
             'speed': self.speed,
@@ -179,6 +198,7 @@ class Monster:
             'agi': self.agi,
             'acc': self.acc,
             'ability_ids': list(self.ability_ids),
+            'known_spells': list(getattr(self, 'known_spells', None) or []),
         }
 
     def receive_attack(self, damage):

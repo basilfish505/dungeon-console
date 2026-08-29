@@ -39,6 +39,9 @@ class MonsterTypeDef:
         base_attributes=None,
         base_mhp=10,
         ability_ids=None,
+        spell_ids=None,
+        loot_ids=None,
+        base_mmp=0,
         description=None,
         sprite=None,
         portrait=None,
@@ -57,6 +60,12 @@ class MonsterTypeDef:
         self.base_attributes = attrs_from_mapping(base_attributes)
         self.base_mhp = max(1, int(base_mhp))
         self.ability_ids = list(ability_ids) if ability_ids else []
+        self.spell_ids = list(spell_ids) if spell_ids else []
+        self.loot_ids = list(loot_ids) if loot_ids else []
+        try:
+            self.base_mmp = max(0, int(base_mmp))
+        except (TypeError, ValueError):
+            self.base_mmp = 0
         self.description = description if description else None
         # Art paths under static/monsters/ (sprites = map, portraits = combat)
         tid = self.id

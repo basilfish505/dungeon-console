@@ -80,6 +80,9 @@ def monster_to_dict(monster: Monster) -> dict:
         'level': int(getattr(monster, 'level', 1) or 1),
         'hp': int(monster.hp),
         'mhp': int(monster.mhp),
+        'mp': int(getattr(monster, 'mp', 0) or 0),
+        'mmp': int(getattr(monster, 'mmp', 0) or 0),
+        'known_spells': list(getattr(monster, 'known_spells', None) or []),
         'elo': float(getattr(monster, 'elo', 3000) or 3000),
         'armour': int(getattr(monster, 'armour', 1) or 1),
         'aggression': float(getattr(monster, 'aggression', 0) or 0),
@@ -114,6 +117,16 @@ def monster_from_dict(data: dict) -> Monster:
             setattr(mon, key, int(attrs[key]))
     mon.hp = int(data.get('hp', mon.hp))
     mon.mhp = int(data.get('mhp', mon.mhp))
+    # MP / known spells: prefer saved values; otherwise keep type defaults from __init__.
+    if 'mmp' in data:
+        mon.mmp = max(0, int(data.get('mmp') or 0))
+    if 'mp' in data:
+        mon.mp = max(0, int(data.get('mp') or 0))
+    elif 'mmp' in data:
+        mon.mp = mon.mmp
+    if 'known_spells' in data:
+        raw = data.get('known_spells') or []
+        mon.known_spells = [str(s).strip() for s in raw if str(s).strip()]
     mon.elo = float(data.get('elo', mon.elo))
     mon.armour = int(data.get('armour', mon.armour))
     mon.aggression = float(data.get('aggression', mon.aggression))

@@ -12,6 +12,7 @@ from monster_types.leveling import DEFAULT_LEVEL_SCALING, DEFAULT_MAX_LEVEL
 from monster_types.registry import MONSTER_TYPES, pick_spawn_type_id, register_monster_type
 from monster_types.sheet import (
     COLUMNS,
+    DEFAULT_XLSX_PATH,
     load_monster_sheet,
     parse_ability_ids,
     row_to_typedef,
@@ -81,6 +82,35 @@ class ParseRowTests(unittest.TestCase):
         self.assertEqual(parse_ability_ids(None), [])
         self.assertEqual(parse_ability_ids('a, b ,c'), ['a', 'b', 'c'])
 
+    def test_parses_spells_loot_and_base_mmp(self):
+        td = row_to_typedef({
+            'type_id': 'imp',
+            'name': 'Imp',
+            'str': 5,
+            'int': 8,
+            'wis': 8,
+            'chr': 4,
+            'dex': 6,
+            'agi': 6,
+            'base_mhp': 10,
+            'spells': 'magic_bolt, frost_bolt',
+            'loot': 'gold_coin, potion',
+            'base_mmp': 6,
+        })
+        self.assertEqual(td.spell_ids, ['magic_bolt', 'frost_bolt'])
+        self.assertEqual(td.loot_ids, ['gold_coin', 'potion'])
+        self.assertEqual(td.base_mmp, 6)
+
+    def test_spells_loot_default_empty(self):
+        td = row_to_typedef({
+            'type_id': 'rat',
+            'name': 'Rat',
+            'base_mhp': 4,
+        })
+        self.assertEqual(td.spell_ids, [])
+        self.assertEqual(td.loot_ids, [])
+        self.assertEqual(td.base_mmp, 0)
+
 
 class XlsxLoadTests(unittest.TestCase):
     def test_xlsx_registers_multiple_types(self):
@@ -142,6 +172,16 @@ class XlsxLoadTests(unittest.TestCase):
             path.write_text('type_id,name\n', encoding='utf-8')
             with self.assertRaises(ValueError):
                 load_monster_sheet(path, register=False)
+
+    def test_live_imp_row_has_magic_bolt_and_mp(self):
+        if not DEFAULT_XLSX_PATH.is_file():
+            self.skipTest('monster_types.xlsx missing')
+        types = {td.id: td for td in load_monster_sheet(DEFAULT_XLSX_PATH, register=False)}
+        self.assertIn('imp', types)
+        imp = types['imp']
+        self.assertEqual(imp.spell_ids, ['magic_bolt'])
+        self.assertEqual(imp.base_mmp, 6)
+        self.assertEqual(imp.loot_ids, [])
 
 
 class SpawnPickTests(unittest.TestCase):

@@ -63,6 +63,8 @@ const Combat = (function () {
     let pendingTurnNotification = null;
     let fxHoldTimer = null;
     let fxHoldUntil = 0;
+    /** Monster keys waiting for spell FX before smash/death sound. */
+    const pendingSpellDefeats = new Set();
 
     function endMapPeek() {
         if (!mapPeekActive) {
@@ -1014,6 +1016,18 @@ const Combat = (function () {
         stopCountdown();
         beginCombatFxHold(data);
         if (data.play_spell_sound) {
+            const spellKillKeys = [];
+            if (data.combatants) {
+                (data.combatants || []).forEach(function (c) {
+                    if (c && c.is_monster && Number(c.hp) <= 0) {
+                        const key = combatantKey(c);
+                        if (key) {
+                            spellKillKeys.push(key);
+                            pendingSpellDefeats.add(key);
+                        }
+                    }
+                });
+            }
             playSpellCastFx(function () {
                 if (data.play_hit_sound && typeof Sound !== 'undefined') {
                     Sound.play('hit');
@@ -1021,6 +1035,17 @@ const Combat = (function () {
                 if (data.shake_combat) {
                     playHitShake(data.shake_target);
                 }
+                // Let the impact land, then smash — not during the cast flash.
+                const afterImpact = Math.max(
+                    CARD_SHAKE_MS,
+                    soundDurationMs('hit', 0.25)
+                );
+                setTimeout(function () {
+                    spellKillKeys.forEach(function (key) {
+                        pendingSpellDefeats.delete(key);
+                        playMonsterDefeat(key);
+                    });
+                }, data.play_hit_sound || data.shake_combat ? afterImpact : 0);
             });
         } else if (data.play_hit_sound) {
             Sound.play('hit');
@@ -1055,11 +1080,14 @@ const Combat = (function () {
             }
             renderRoster();
             // Killing blow: HP paints at 0, then blood → smash during the pause.
-            (data.combatants || []).forEach(function (c) {
-                if (c && c.is_monster && Number(c.hp) <= 0) {
-                    playMonsterDefeat(combatantKey(c));
-                }
-            });
+            // Spell kills wait until cast + hit FX finish (scheduled above).
+            if (!data.play_spell_sound) {
+                (data.combatants || []).forEach(function (c) {
+                    if (c && c.is_monster && Number(c.hp) <= 0) {
+                        playMonsterDefeat(combatantKey(c));
+                    }
+                });
+            }
         }
         if (data.your_hp) {
             const parsed = parseHpString(data.your_hp);
@@ -1096,6 +1124,8 @@ const Combat = (function () {
         const key = data.monster_id;
         // FX already running from the 0-HP combat_action — let smash finish.
         if (dyingMonsters.has(key)) return;
+        // Spell cast still playing — defeat is scheduled after impact.
+        if (pendingSpellDefeats.has(key)) return;
         // Still on roster (no prior FX) — play defeat, or drop immediately.
         if (currentBattle.opponents.some(o => sameCombatant(o, key))) {
             playMonsterDefeat(key);
@@ -1125,6 +1155,7 @@ const Combat = (function () {
         }
         fxHoldUntil = 0;
         pendingTurnNotification = null;
+        pendingSpellDefeats.clear();
         if (data.victory) Sound.play('victory');
         if (data.message) {
             appendCombatLog(data.message);
