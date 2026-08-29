@@ -6,6 +6,7 @@ const Combat = (function () {
     /** Brief beat so the killing blow's 0 HP registers before the card breaks. */
     const DEFEAT_HOLD_MS = 140;
     const DEFEAT_SMASH_MS = 650;
+    const CARD_SHAKE_MS = 280;
 
     const elements = {
         overlay: document.getElementById('combat-overlay'),
@@ -58,6 +59,10 @@ const Combat = (function () {
     let pendingEnterBattleSound = false;
     /** Display order of opponent keys, so cards keep their slots. */
     let rosterOrder = [];
+    /** Hold next-turn highlight until attack/spell FX finishes. */
+    let pendingTurnNotification = null;
+    let fxHoldTimer = null;
+    let fxHoldUntil = 0;
 
     function endMapPeek() {
         if (!mapPeekActive) {
@@ -214,6 +219,30 @@ const Combat = (function () {
         void target.offsetWidth;
         target.classList.add('combat-shake');
         setTimeout(() => target.classList.remove('combat-shake'), 500);
+    }
+
+    function shakeCombatantCard(key) {
+        const el = findCardEl(key);
+        if (!el) return;
+        el.classList.remove('combat-card-shake');
+        void el.offsetWidth;
+        el.classList.add('combat-card-shake');
+        if (el._shakeTimer) {
+            clearTimeout(el._shakeTimer);
+        }
+        el._shakeTimer = setTimeout(function () {
+            el.classList.remove('combat-card-shake');
+        }, CARD_SHAKE_MS);
+    }
+
+    function playHitShake(key) {
+        const me = currentBattle.viewerId
+            || (document.getElementById('player-id') || {}).value;
+        if (sameCombatant(me, key)) {
+            shakeCombatWindow();
+            return;
+        }
+        shakeCombatantCard(key);
     }
 
     function flashSpellScreen(seconds) {
@@ -983,17 +1012,22 @@ const Combat = (function () {
         // Action consumed the prior turn — drop its countdown so "Your turn"
         // cannot resurface after the status-hold while a monster acts.
         stopCountdown();
+        beginCombatFxHold(data);
         if (data.play_spell_sound) {
             playSpellCastFx(function () {
                 if (data.play_hit_sound && typeof Sound !== 'undefined') {
                     Sound.play('hit');
                 }
+                if (data.shake_combat) {
+                    playHitShake(data.shake_target);
+                }
             });
         } else if (data.play_hit_sound) {
             Sound.play('hit');
         }
-        if (data.play_miss_sound) Sound.play(data.play_miss_sound);
-        if (data.shake_combat) shakeCombatWindow();
+        if (!data.play_spell_sound && data.play_miss_sound) {
+            Sound.play(data.play_miss_sound);
+        }
 
         updateButtonStates(data.your_turn);
         if (data.message) {
@@ -1010,6 +1044,15 @@ const Combat = (function () {
                 || (document.getElementById('player-id') || {}).value;
             ingestCombatants(data.combatants, me);
             applyOpponents(opponentsFromCombatants(data.combatants, me));
+            // Do not paint the next actor's turn box while this hit is still playing.
+            if (combatActionFxMs(data) > 0) {
+                currentBattle.opponents.forEach(function (o) {
+                    o.is_current_turn = false;
+                });
+                (currentBattle.combatants || []).forEach(function (c) {
+                    c.is_current_turn = false;
+                });
+            }
             renderRoster();
             // Killing blow: HP paints at 0, then blood → smash during the pause.
             (data.combatants || []).forEach(function (c) {
@@ -1037,6 +1080,11 @@ const Combat = (function () {
             }
             const mp = document.getElementById('player-mp');
             if (mp) mp.textContent = data.your_mp;
+        }
+        // After roster/self redraw so the class is not wiped. Spells wait
+        // until the hit clip so the twitch matches the impact.
+        if (!data.play_spell_sound && data.shake_combat) {
+            playHitShake(data.shake_target);
         }
     }
 
@@ -1071,6 +1119,12 @@ const Combat = (function () {
     function handleCombatEnd(data) {
         stopCountdown();
         statusHoldUntil = 0;
+        if (fxHoldTimer) {
+            clearTimeout(fxHoldTimer);
+            fxHoldTimer = null;
+        }
+        fxHoldUntil = 0;
+        pendingTurnNotification = null;
         if (data.victory) Sound.play('victory');
         if (data.message) {
             appendCombatLog(data.message);
@@ -1117,7 +1171,70 @@ const Combat = (function () {
         }
     }
 
+    function soundDurationMs(name, fallbackSec) {
+        if (typeof Sound !== 'undefined' && Sound.duration) {
+            const sec = Sound.duration(name);
+            if (sec) return Math.round(sec * 1000);
+        }
+        return Math.round((fallbackSec || 0) * 1000);
+    }
+
+    function combatActionFxMs(data) {
+        if (!data) return 0;
+        let ms = 0;
+        if (data.play_spell_sound) {
+            ms += soundDurationMs('spell', 1.2);
+        }
+        if (data.play_hit_sound) {
+            ms += Math.max(CARD_SHAKE_MS, soundDurationMs('hit', 0.35));
+        } else if (data.play_miss_sound) {
+            ms += soundDurationMs(data.play_miss_sound, 0.4);
+        } else if (data.shake_combat) {
+            ms += CARD_SHAKE_MS;
+        }
+        return ms;
+    }
+
+    function flushPendingTurnNotification() {
+        if (fxHoldTimer) {
+            clearTimeout(fxHoldTimer);
+            fxHoldTimer = null;
+        }
+        fxHoldUntil = 0;
+        const pending = pendingTurnNotification;
+        pendingTurnNotification = null;
+        if (pending) {
+            applyTurnNotification(pending);
+        }
+    }
+
+    function beginCombatFxHold(data) {
+        const ms = combatActionFxMs(data);
+        if (fxHoldTimer) {
+            clearTimeout(fxHoldTimer);
+            fxHoldTimer = null;
+        }
+        if (ms <= 0) {
+            fxHoldUntil = 0;
+            return;
+        }
+        const now = (typeof performance !== 'undefined' && performance.now)
+            ? performance.now() : Date.now();
+        fxHoldUntil = now + ms;
+        fxHoldTimer = setTimeout(flushPendingTurnNotification, ms);
+    }
+
     function handleTurnNotification(data) {
+        const now = (typeof performance !== 'undefined' && performance.now)
+            ? performance.now() : Date.now();
+        if (fxHoldUntil && now < fxHoldUntil) {
+            pendingTurnNotification = data;
+            return;
+        }
+        applyTurnNotification(data);
+    }
+
+    function applyTurnNotification(data) {
         if (data.message && data.message.indexOf('forfeited') !== -1) {
             stopCountdown();
             showStatusMessage(data.message);

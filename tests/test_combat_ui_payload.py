@@ -15,6 +15,7 @@ def _fake_gs():
         'active_combats': {},
         'add_player_message': lambda *a, **k: None,
         'remove_monster_at': lambda *a, **k: None,
+        'get_game_state': lambda *a, **k: {},
     })()
 
 
@@ -229,6 +230,118 @@ class MonsterInspectStatsTests(unittest.TestCase):
             payload = mon.to_inspect_dict()
         self.assertEqual(payload['armour'], 2)
         self.assertEqual(payload['mean_damage'], DEFAULT_WEAPON_BASE_DAMAGE + 7)
+
+
+class SharedCombatFxTests(unittest.TestCase):
+    def setUp(self):
+        self.emitted = []
+        self.gs = _fake_gs()
+        self.cs = CombatSystem(self.gs, _fake_socketio(self.emitted))
+        self.hero = Player('hero', [1, 1])
+        self.ally = Player('ally', [1, 2])
+        self.mon = Monster.from_type('troll', [2, 2], monster_id='m1', level=1)
+        self.gs.players = {'hero': self.hero, 'ally': self.ally}
+        self.battle = {
+            'battle_id': 'b1',
+            'participants': ['hero', 'ally'],
+            'monsters': [self.mon],
+            'turn_order': ['hero', 'ally', self.mon.id],
+            'current_turn_index': 0,
+            'status': 'active',
+            'defend_status': {},
+            'turn_token': None,
+            'alliances': set(),
+        }
+        self.cs.battles = {'b1': self.battle}
+
+    def _actions(self):
+        return [
+            data for (args, _kw) in (
+                (a, k) for a, k in self.emitted
+            )
+            if args[0] == 'combat_update' and args[1].get('type') == 'combat_action'
+            for data in [args[1]]
+        ]
+
+    def test_attack_hit_fx_reaches_all_players(self):
+        self.cs._broadcast_attack_feedback(
+            self.battle, 'hero', 'm1',
+            {'hit': True, 'damage': 4}, False,
+        )
+        actions = self._actions()
+        self.assertEqual(len(actions), 2)
+        for payload in actions:
+            self.assertTrue(payload.get('play_hit_sound'))
+            self.assertTrue(payload.get('shake_combat'))
+            self.assertEqual(payload.get('shake_target'), 'm1')
+
+    def test_attack_miss_sound_reaches_all_players(self):
+        self.cs._broadcast_attack_feedback(
+            self.battle, 'hero', 'm1',
+            {'hit': False, 'damage': 0}, False,
+        )
+        actions = self._actions()
+        self.assertEqual(len(actions), 2)
+        for payload in actions:
+            self.assertEqual(payload.get('play_miss_sound'), 'playerMiss')
+            self.assertFalse(payload.get('play_hit_sound'))
+
+    def test_monster_hit_fx_reaches_all_players(self):
+        self.cs._broadcast_monster_hit(
+            self.battle, self.mon, 'ally',
+            {'hit': True, 'damage': 3},
+        )
+        actions = self._actions()
+        self.assertEqual(len(actions), 2)
+        for payload in actions:
+            self.assertTrue(payload.get('play_hit_sound'))
+            self.assertEqual(payload.get('shake_target'), 'ally')
+
+
+class MonsterTurnPreludeTests(unittest.TestCase):
+    def test_turn_highlight_waits_for_prelude(self):
+        emitted = []
+        clock = {'t': 0.0}
+
+        class S:
+            def emit(self, *a, **k):
+                emitted.append((clock['t'], a, k))
+
+            def sleep(self, seconds):
+                clock['t'] += float(seconds)
+
+            def start_background_task(self, fn, *a, **k):
+                fn(*a, **k)
+
+        gs = _fake_gs()
+        hero = Player('hero', [1, 1])
+        mon = Monster.from_type('troll', [2, 2], monster_id='m1', level=1)
+        gs.players = {'hero': hero}
+        cs = CombatSystem(gs, S())
+        battle = {
+            'battle_id': 'b1',
+            'participants': ['hero'],
+            'monsters': [mon],
+            'turn_order': ['hero', mon.id],
+            'current_turn_index': 1,
+            'status': 'active',
+            'defend_status': {},
+            'turn_token': None,
+        }
+        cs.battles = {'b1': battle}
+        cs._handle_monster_turn = lambda *a, **k: None
+
+        cs._schedule_monster_turn(mon.id, battle, prelude_seconds=0.5)
+
+        notes = [
+            (t, args[1])
+            for (t, args, _k) in emitted
+            if args and args[0] == 'combat_update'
+            and args[1].get('type') == 'turn_notification'
+        ]
+        self.assertTrue(notes)
+        self.assertGreaterEqual(notes[0][0], 0.5)
+        self.assertEqual(notes[0][1].get('active_player'), mon.id)
 
 
 if __name__ == '__main__':

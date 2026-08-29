@@ -118,6 +118,8 @@ class SpellCombatTests(unittest.TestCase):
         self.assertTrue(caster_msgs)
         self.assertEqual(caster_msgs[0].get('your_mp'), '6/8')
         self.assertTrue(caster_msgs[0].get('play_spell_sound'))
+        self.assertTrue(caster_msgs[0].get('play_hit_sound'))
+        self.assertEqual(caster_msgs[0].get('shake_target'), self.mon.id)
 
     def test_insufficient_mp_consumes_neither_turn_nor_mp(self):
         self.hero.mp = 1

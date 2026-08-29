@@ -13,6 +13,9 @@ import uuid
 
 TURN_TIMEOUT_SECONDS = 20
 MONSTER_TURN_DELAY_SECONDS = 1  # pause before monster acts after another turn
+# Hold the next-turn highlight until the prior action's hit/spell FX finishes.
+ATTACK_FX_HOLD_SECONDS = 0.5
+SPELL_FX_HOLD_SECONDS = 1.8
 KILLING_BLOW_PAUSE_SECONDS = 1  # pause so killer can read damage before combat closes
 
 
@@ -562,7 +565,12 @@ class CombatSystem:
         # Advance to the next turn if an action was processed and the battle is still active
         if action_processed and battle['status'] == 'active':
             self._cancel_turn_timer(battle)
-            self._advance_turn(battle)
+            hold = 0
+            if action == 'spell':
+                hold = SPELL_FX_HOLD_SECONDS
+            elif action == 'attack':
+                hold = ATTACK_FX_HOLD_SECONDS
+            self._advance_turn(battle, fx_hold_seconds=hold)
         return action_processed
 
     def process_item_use(self, player_id, instance_id):
@@ -946,8 +954,10 @@ class CombatSystem:
                 'combatants': combatants,
                 'your_turn': False,
                 'play_spell_sound': True,
-                'play_hit_sound': (hit and (is_caster or is_target)),
-                'shake_combat': (hit and is_target),
+                'play_hit_sound': hit,
+                'play_miss_sound': None if hit else 'playerMiss',
+                'shake_combat': hit,
+                'shake_target': target_key,
             }
             if hit:
                 if is_caster:
@@ -1044,7 +1054,7 @@ class CombatSystem:
         self._forfeit_turn(battle, player_id)
         return True
 
-    def _advance_turn(self, battle):
+    def _advance_turn(self, battle, fx_hold_seconds=0):
         """Advance to the next turn in the battle"""
         if not battle['turn_order']:
             return
@@ -1078,35 +1088,45 @@ class CombatSystem:
                 self._check_battle_end(battle)
                 return
 
-            self._advance_turn(battle)
+            self._advance_turn(battle, fx_hold_seconds=fx_hold_seconds)
             return
 
         # Handle the turn based on entity type
         if current_turn_id in self.game_state.players:
             self._handle_player_turn(current_turn_id, battle)
         else:
-            self._schedule_monster_turn(current_turn_id, battle)
-
-    def _schedule_monster_turn(self, monster_id, battle):
-        """Wait briefly before the monster acts so the prior action can be read"""
-        # Notify clients the turn advanced (roster / buttons) without a status
-        # line — the prior action message should stay readable during the delay.
-        for pid in list(battle['participants']):
-            note = self._create_combat_update(
-                pid,
-                battle,
-                'turn_notification',
-                '',
-                your_turn=False,
-                active_player=monster_id,
+            self._schedule_monster_turn(
+                current_turn_id, battle, prelude_seconds=fx_hold_seconds
             )
-            self._emit('combat_update', note, room=pid)
 
+    def _schedule_monster_turn(self, monster_id, battle, prelude_seconds=0):
+        """Wait for prior-action FX, then mark the monster's turn, then act."""
         token = str(uuid.uuid4())
         battle['monster_turn_delay_token'] = token
         battle_id = battle['battle_id']
+        prelude = max(0.0, float(prelude_seconds or 0))
 
         def run_monster_turn():
+            if prelude:
+                self.socketio.sleep(prelude)
+            current = self.battles.get(battle_id)
+            if not current or current.get('status') != 'active':
+                return
+            if current.get('monster_turn_delay_token') != token:
+                return
+
+            # Roster highlight only after the prior attack/spell FX has finished.
+            for pid in list(current['participants']):
+                note = self._create_combat_update(
+                    pid,
+                    current,
+                    'turn_notification',
+                    '',
+                    your_turn=False,
+                    active_player=monster_id,
+                )
+                self._emit('combat_update', note, room=pid)
+
             self.socketio.sleep(MONSTER_TURN_DELAY_SECONDS)
             current = self.battles.get(battle_id)
             if not current or current.get('status') != 'active':
@@ -1301,7 +1321,7 @@ class CombatSystem:
             is_attacker = p_id == attacker_id
             is_target = (not is_monster) and p_id == target_key
             miss_sound = None
-            if not blocked and not hit and is_attacker:
+            if not blocked and not hit:
                 miss_sound = 'playerMiss'
             update = {
                 'type': 'combat_action',
@@ -1316,9 +1336,10 @@ class CombatSystem:
                 'target_id': target_name,
                 'combatants': combatants,
                 'your_turn': False,
-                'play_hit_sound': (hit and damage > 0 and (is_attacker or is_target)),
+                'play_hit_sound': (hit and damage > 0),
                 'play_miss_sound': miss_sound,
-                'shake_combat': (hit and damage > 0 and is_target),
+                'shake_combat': (hit and damage > 0),
+                'shake_target': target_key,
             }
             if hit and damage > 0:
                 if is_attacker:
@@ -1371,9 +1392,10 @@ class CombatSystem:
                 'target_id': target.id,
                 'combatants': combatants,
                 'your_turn': False,
-                'play_hit_sound': (hit and damage > 0 and is_target),
-                'play_miss_sound': 'monsterMiss' if (not hit and is_target) else None,
-                'shake_combat': (hit and damage > 0 and is_target),
+                'play_hit_sound': (hit and damage > 0),
+                'play_miss_sound': 'monsterMiss' if (not hit and not blocked) else None,
+                'shake_combat': (hit and damage > 0),
+                'shake_target': target_id,
             }
             if hit and damage > 0 and is_target:
                 update['damage_taken'] = damage

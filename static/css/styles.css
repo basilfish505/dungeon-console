@@ -408,6 +408,19 @@ body {
     50% { box-shadow: 0 0 26px rgba(255, 170, 0, 0.75); }
 }
 
+@keyframes combat-card-shake {
+    0%, 100% { transform: translate(0, 0); }
+    20% { transform: translate(-3px, 1px); }
+    40% { transform: translate(3px, -2px); }
+    60% { transform: translate(-2px, 1px); }
+    80% { transform: translate(2px, 0); }
+}
+
+.combat-card.combat-card-shake,
+.combat-self.combat-card-shake {
+    animation: combat-card-shake 0.28s ease;
+}
+
 .combat-card-badges {
     display: flex;
     flex-wrap: wrap;
