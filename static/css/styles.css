@@ -731,10 +731,23 @@ body {
 .combat-controls,
 #combat-controls {
     display: grid;
-    grid-template-columns: repeat(6, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(4.5rem, 1fr));
     gap: 8px;
     margin: 0;
     flex-shrink: 0;
+}
+
+.combat-spell-cancel-btn {
+    border-color: #a60 !important;
+    color: #fc3 !important;
+}
+
+.combat-overlay.combat-spell-picking #attack-btn,
+.combat-overlay.combat-spell-picking #defend-btn,
+.combat-overlay.combat-spell-picking #spell-btn,
+.combat-overlay.combat-spell-picking #item-btn,
+.combat-overlay.combat-spell-picking #run-btn {
+    opacity: 0.45;
 }
 
 .combat-controls button,

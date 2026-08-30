@@ -59,12 +59,19 @@ const SpellUI = (function () {
                 castable: !!s.castable,
             };
         });
+        choices.push({ id: '__cancel__', label: 'Cancel' });
 
         InteractionUI.showGenericPrompt({
             title: 'Cast Spell',
             message: 'Choose a spell to cast.',
             choices: choices,
             onChoice: function (spellId) {
+                if (spellId === '__cancel__') {
+                    if (typeof opts.onCancel === 'function') {
+                        opts.onCancel();
+                    }
+                    return;
+                }
                 const picked = list.find(function (s) {
                     return s && s.spell_id === spellId;
                 });
@@ -72,8 +79,15 @@ const SpellUI = (function () {
                     InteractionUI.showGenericPrompt({
                         title: 'Spells',
                         message: 'Thou hast not enough MP.',
-                        choices: [{ id: 'ok', label: 'OK' }],
-                        onChoice: function () {
+                        choices: [
+                            { id: 'back', label: 'Back' },
+                            { id: 'ok', label: 'OK' },
+                        ],
+                        onChoice: function (choiceId) {
+                            if (choiceId === 'back') {
+                                open(opts);
+                                return;
+                            }
                             if (typeof opts.onCancel === 'function') {
                                 opts.onCancel();
                             }

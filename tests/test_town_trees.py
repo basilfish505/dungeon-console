@@ -133,7 +133,7 @@ class TownGrassTreeTests(unittest.TestCase):
     def test_shop_entrances_and_stairs_share_one_road_network(self):
         for seed in range(12):
             gen, game_map = self._generate(seed)
-            hubs = [
+            entrances = [
                 tuple(feat['road'])
                 for feat in gen.town_features.values()
                 if feat.get('road')
@@ -144,25 +144,42 @@ class TownGrassTreeTests(unittest.TestCase):
                     if cell == '↓':
                         stair = (y, x)
             self.assertIsNotNone(stair, seed)
-            hubs.append(stair)
-            self.assertGreaterEqual(len(hubs), 2)
-            start = hubs[0]
-            q = deque([start])
-            seen = {start}
-            while q:
-                y, x = q.popleft()
-                for dy, dx in ((-1, 0), (1, 0), (0, -1), (0, 1)):
-                    ny, nx = y + dy, x + dx
-                    if (ny, nx) in seen:
-                        continue
-                    if not (0 <= ny < len(game_map) and 0 <= nx < len(game_map[0])):
-                        continue
-                    if game_map[ny][nx] not in (',', '↓'):
-                        continue
-                    seen.add((ny, nx))
-                    q.append((ny, nx))
-            self.assertTrue(all(h in seen for h in hubs), seed)
-            self.assertEqual(game_map[stair[0]][stair[1]], '↓')
+            self.assertGreaterEqual(len(entrances), 2)
+
+            # Shop entrances stay linked on ',' alone — stairs must not block.
+            self.assertTrue(
+                gen._entrances_connected_via_roads(entrances, game_map=game_map),
+                seed,
+            )
+
+            # Stairs sit on / against the road (cardinally adjacent to ',').
+            sy, sx = stair
+            road_adj = any(
+                0 <= sy + dy < len(game_map)
+                and 0 <= sx + dx < len(game_map[0])
+                and game_map[sy + dy][sx + dx] == ','
+                for dy, dx in ((-1, 0), (1, 0), (0, -1), (0, 1))
+            )
+            self.assertTrue(road_adj, seed)
+            self.assertEqual(game_map[sy][sx], '↓')
+            self.assertTrue(
+                MapGenerator()._bfs_reachable(list(entrances[0]), list(stair), game_map),
+                seed,
+            )
+
+    def test_stairs_do_not_block_road_between_shops(self):
+        for seed in range(12):
+            gen, game_map = self._generate(seed)
+            entrances = gen._shop_entrance_tiles()
+            stair = gen.find_tile(game_map, '↓')
+            self.assertIsNotNone(stair, seed)
+            # Even with the stair tile blocked for ',' travel, shops remain linked.
+            self.assertTrue(
+                gen._entrances_connected_via_roads(
+                    entrances, blocked={tuple(stair)}, game_map=game_map
+                ),
+                seed,
+            )
 
     def test_buildings_stay_inside_clearing(self):
         gen, _game_map = self._generate(3)
@@ -312,9 +329,24 @@ class TownGrassTreeTests(unittest.TestCase):
         self.assertEqual(p.pos, [road[0], road[1]])
         self.assertTrue(MapGenerator()._bfs_reachable(road, stair, game_map))
         start = gs.map_generator.find_random_start({}, {}, game_map)
-        self.assertIn(game_map[start[0]][start[1]], OPEN_GROUND)
+        self.assertIn(game_map[start[0]][start[1]], OPEN_GROUND | {','})
         self.assertNotEqual(game_map[start[0]][start[1]], TREE)
         self.assertIn(tuple(start), gs.map_generator.town_clearing)
+        self.assertTrue(MapGenerator()._bfs_reachable(start, stair, game_map))
+
+    def test_spawn_never_trapped_in_forest_pockets(self):
+        for seed in range(15):
+            gen, game_map = self._generate(seed)
+            stair = gen.find_tile(game_map, '↓')
+            self.assertIsNotNone(stair, seed)
+            reachable = gen._tiles_reachable_from_town(game_map)
+            for _ in range(20):
+                start = gen.find_random_start({}, {}, game_map)
+                self.assertIn(tuple(start), reachable, seed)
+                self.assertTrue(
+                    MapGenerator()._bfs_reachable(start, stair, game_map),
+                    seed,
+                )
 
 
 if __name__ == '__main__':

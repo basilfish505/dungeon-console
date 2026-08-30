@@ -21,6 +21,7 @@ const Combat = (function () {
         spellBtn: document.getElementById('spell-btn'),
         itemBtn: document.getElementById('item-btn'),
         runBtn: document.getElementById('run-btn'),
+        spellCancelBtn: document.getElementById('spell-cancel-btn'),
         mapPeekBtn: document.getElementById('map-peek-btn'),
         mobileControls: document.getElementById('mobile-controls'),
     };
@@ -533,16 +534,18 @@ const Combat = (function () {
 
     function updateButtonStates(isYourTurn) {
         const disableAll = isYourTurn === false;
-        if (elements.attackBtn) elements.attackBtn.disabled = disableAll;
-        if (elements.defendBtn) elements.defendBtn.disabled = disableAll;
+        const pickingSpell = !!currentBattle.pendingSpellPick;
+        if (elements.attackBtn) elements.attackBtn.disabled = disableAll || pickingSpell;
+        if (elements.defendBtn) elements.defendBtn.disabled = disableAll || pickingSpell;
         if (elements.spellBtn) {
             const noSpell = (typeof SpellUI === 'undefined')
                 || !SpellUI.hasCastable
                 || !SpellUI.hasCastable();
-            elements.spellBtn.disabled = disableAll || noSpell;
+            elements.spellBtn.disabled = disableAll || noSpell || pickingSpell;
         }
-        if (elements.itemBtn) elements.itemBtn.disabled = disableAll;
+        if (elements.itemBtn) elements.itemBtn.disabled = disableAll || pickingSpell;
         if (elements.runBtn) elements.runBtn.disabled = true;
+        syncSpellCancelBtn();
         if (elements.opponentThinking) {
             elements.opponentThinking.style.display = 'none';
         }
@@ -554,6 +557,17 @@ const Combat = (function () {
         }
     }
 
+    function syncSpellCancelBtn() {
+        if (!elements.spellCancelBtn) {
+            return;
+        }
+        const picking = !!currentBattle.pendingSpellPick;
+        elements.spellCancelBtn.hidden = !picking;
+        elements.spellCancelBtn.disabled = !picking;
+        if (elements.overlay) {
+            elements.overlay.classList.toggle('combat-spell-picking', picking);
+        }
+    }
     function hpBarClass(pct) {
         if (pct <= 0.25) return 'hp-low';
         if (pct <= 0.6) return 'hp-hurt';
@@ -737,7 +751,6 @@ const Combat = (function () {
             return;
         }
         currentBattle.pendingSpellPick = null;
-        currentBattle.selectedTarget = targetId;
         if (window.socket) {
             window.socket.emit('combat_action', {
                 action: 'spell',
@@ -746,18 +759,64 @@ const Combat = (function () {
             });
         }
         renderRoster();
+        syncSpellCancelBtn();
     }
 
-    function cancelSpellPick() {
+    function cancelSpellPick(opts) {
+        opts = opts || {};
         if (!currentBattle.pendingSpellPick) {
             return false;
         }
         currentBattle.pendingSpellPick = null;
         renderRoster();
-        showStatusMessage('Spell cancelled.');
+        syncSpellCancelBtn();
+        if (!opts.silent) {
+            showStatusMessage(opts.message || 'Spell cancelled.');
+        }
+        if (opts.reopenPicker) {
+            openSpellPicker();
+        }
         return true;
     }
 
+    function openSpellPicker() {
+        if (typeof SpellUI === 'undefined' || !SpellUI.open) {
+            return;
+        }
+        SpellUI.open({
+            onCancel: function () {
+                showStatusMessage('Spell cancelled.');
+            },
+            onPick: function (spellId) {
+                const spells = (typeof SpellUI.getSpells === 'function')
+                    ? SpellUI.getSpells()
+                    : [];
+                const def = spells.find(function (s) {
+                    return s && s.spell_id === spellId;
+                });
+                const mode = def && def.target_mode;
+                if (mode === 'single_any') {
+                    currentBattle.pendingSpellPick = { spellId: spellId };
+                    currentBattle.selectedTarget = null;
+                    renderRoster();
+                    syncSpellCancelBtn();
+                    updateButtonStates(true);
+                    showStatusMessage(
+                        'Choose a target (tap a card, including yourself). Back to cancel.'
+                    );
+                    appendCombatLog('Choose a spell target.');
+                    return;
+                }
+                if (window.socket) {
+                    window.socket.emit('combat_action', {
+                        action: 'spell',
+                        spell_id: spellId,
+                        target_id: currentBattle.selectedTarget,
+                    });
+                }
+            },
+        });
+    }
     function inspectTarget(combatant, ev) {
         if (ev) {
             ev.preventDefault();
@@ -955,6 +1014,7 @@ const Combat = (function () {
         }
 
         renderSelfCard();
+        syncSpellCancelBtn();
     }
 
     function ingestCombatants(list, viewerId) {
@@ -1049,6 +1109,7 @@ const Combat = (function () {
         }
         if (!isJoinRefresh) {
             currentBattle.selectedTarget = null;
+            resetPendingCombatAction();
         }
         showOverlay();
         renderRoster();
@@ -1336,6 +1397,10 @@ const Combat = (function () {
     }
 
     function applyTurnNotification(data) {
+        // Turn boundaries cancel in-progress spell targeting so a timed-out
+        // pick does not stick into the next round.
+        resetPendingCombatAction();
+
         if (data.message && data.message.indexOf('forfeited') !== -1) {
             stopCountdown();
             showStatusMessage(data.message);
@@ -1372,6 +1437,21 @@ const Combat = (function () {
         renderRoster();
     }
 
+    function resetPendingCombatAction() {
+        if (currentBattle.pendingSpellPick) {
+            cancelSpellPick({ silent: true });
+        }
+        if (typeof InteractionUI === 'undefined' || !InteractionUI.isOpen
+            || !InteractionUI.isOpen() || !InteractionUI.hidePrompt) {
+            return;
+        }
+        const titleEl = document.getElementById('interaction-title');
+        const title = titleEl ? String(titleEl.textContent || '') : '';
+        if (title === 'Cast Spell' || title === 'Spells') {
+            InteractionUI.hidePrompt();
+        }
+    }
+
     function processCombatUpdate(data) {
         switch (data.type) {
             case 'combat_start': handleCombatStart(data); break;
@@ -1397,38 +1477,15 @@ const Combat = (function () {
             return;
         }
         if (action === 'spell') {
-            if (typeof SpellUI === 'undefined' || !SpellUI.open) {
+            if (currentBattle.pendingSpellPick) {
+                cancelSpellPick({ reopenPicker: true, silent: true });
                 return;
             }
-            if (currentBattle.pendingSpellPick) {
-                cancelSpellPick();
-            }
-            SpellUI.open({
-                onPick: function (spellId) {
-                    const spells = (typeof SpellUI.getSpells === 'function')
-                        ? SpellUI.getSpells()
-                        : [];
-                    const def = spells.find(function (s) {
-                        return s && s.spell_id === spellId;
-                    });
-                    const mode = def && def.target_mode;
-                    if (mode === 'single_any') {
-                        currentBattle.pendingSpellPick = { spellId: spellId };
-                        currentBattle.selectedTarget = null;
-                        renderRoster();
-                        showStatusMessage('Choose a target for Heal (tap a card, including yourself).');
-                        appendCombatLog('Choose a target for Heal.');
-                        return;
-                    }
-                    if (window.socket) {
-                        window.socket.emit('combat_action', {
-                            action: 'spell',
-                            spell_id: spellId,
-                            target_id: currentBattle.selectedTarget,
-                        });
-                    }
-                },
-            });
+            openSpellPicker();
+            return;
+        }
+        if (action === 'spell-cancel') {
+            cancelSpellPick({ reopenPicker: true, silent: true });
             return;
         }
         if (window.socket) {
@@ -1458,6 +1515,14 @@ const Combat = (function () {
         return true;
     }
 
+    function handleEscape() {
+        if (currentBattle.pendingSpellPick) {
+            cancelSpellPick({ reopenPicker: true, silent: true });
+            return true;
+        }
+        return false;
+    }
+
     return {
         processCombatUpdate,
         sendAction,
@@ -1465,5 +1530,6 @@ const Combat = (function () {
         previewDefeat,
         appendLog: appendCombatLog,
         playSpellCastFx: playSpellCastFx,
+        handleEscape: handleEscape,
     };
 })();
