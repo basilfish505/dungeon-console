@@ -8,11 +8,16 @@ from monster_elo import calibrate_instance_elo
 from interiors.items_shop import ITEMS_SHOP_ID, stamp_items_shop
 from interiors.weapon_shop import WEAPON_SHOP_ID, stamp_weapon_shop
 from interiors.armour_shop import ARMOUR_SHOP_ID, stamp_armour_shop
-from visibility import GRASS, IMPASSABLE_TERRAIN, MOUNTAIN, OPEN_GROUND, TREE
+from visibility import GRASS, IMPASSABLE_TERRAIN, OPEN_GROUND, TREE
 
 # Constants
 MAP_SIZE = 20  # Viewport / simple-dungeon footprint
-TOWN_MAP_SIZE = 28  # Top-level yard (three shops, road, stairs)
+# Old open yard was 26×26 inside a 28×28 mountain box (~676 grass tiles).
+TOWN_CLEARING_TARGET = 26 * 26
+FOREST_TRANSITION = 20  # tiles from clearing edge → solid forest
+TOWN_FOREST_MARGIN = 2  # solid forest rim beyond the transition
+# Clearing span ~30 + transition both sides + margin.
+TOWN_MAP_SIZE = 30 + 2 * FOREST_TRANSITION + 2 * TOWN_FOREST_MARGIN  # 74
 MONSTER_PROBABILITY = 0.15
 TREE_SPAWN_RATE = 0.04
 # Keep trees off these tiles and their 8-neighbors (doors, road, stairs).
@@ -26,12 +31,22 @@ MAX_GEN_ATTEMPTS = 50
 USE_SIMPLE_LOWER_LEVELS = False
 BOULDER_PROBABILITY = 0.03  # simple-mode only
 
+_CARDINAL = ((-1, 0), (1, 0), (0, -1), (0, 1))
+_EIGHT = tuple(
+    (dy, dx)
+    for dy in (-1, 0, 1)
+    for dx in (-1, 0, 1)
+    if not (dy == 0 and dx == 0)
+)
+
+
 class MapGenerator:
     def __init__(self, map_size=MAP_SIZE):
         self.map_size = map_size
         self.game_map = None
         self.monsters = {}
         self.town_features = {}
+        self.town_clearing = set()
 
     def generate_level(self, stairs_up_pos=None):
         """Generate a lower level (simple rectangle or procedural rooms/tunnels)."""
@@ -55,27 +70,279 @@ class MapGenerator:
         self._place_and_validate_stairs(stairs_up_pos, repair=True)
         return self.game_map, self.monsters
 
-    def generate_top_level(self):
-        """Generate the top level: open yard, items shop, road at the door, stairs down."""
-        size = TOWN_MAP_SIZE
-        self.game_map = [[GRASS for _ in range(size)] for _ in range(size)]
-        for i in range(size):
-            self.game_map[0][i] = MOUNTAIN
-            self.game_map[size - 1][i] = MOUNTAIN
-            self.game_map[i][0] = MOUNTAIN
-            self.game_map[i][size - 1] = MOUNTAIN
+    def generate_top_level(self, rng=None):
+        """
+        Irregular grassy town clearing in a forest.
 
+        No hard boulder/mountain border — the player can walk out into a
+        gradual grass→tree transition that becomes solid forest ~20 tiles
+        past the clearing edge. Shops stamp into the clearing; entrance
+        road tiles are linked into one shortest-path road network.
+        """
+        rng = rng or random
+        size = TOWN_MAP_SIZE
+        self.game_map = [[TREE for _ in range(size)] for _ in range(size)]
         self.monsters = {}
         self.town_features = {}
+        self.town_clearing = self._grow_irregular_clearing(
+            size, size, TOWN_CLEARING_TARGET, rng
+        )
+        dist = self._distance_from_clearing(size, size, self.town_clearing)
+        self._paint_clearing_and_forest(dist, rng)
+        # Hide transition grass from shop placement so buildings stay in the clearing.
+        outside_grass = self._mask_outside_clearing_grass()
         for shop_id, stamp_fn in (
             (ITEMS_SHOP_ID, stamp_items_shop),
             (WEAPON_SHOP_ID, stamp_weapon_shop),
             (ARMOUR_SHOP_ID, stamp_armour_shop),
         ):
-            self.town_features[shop_id] = stamp_fn(self.game_map)
+            self.town_features[shop_id] = stamp_fn(self.game_map, rng=rng)
+        # Stairs first so the road network can link shop entrances to the dungeon.
         self.place_stair('↓')
+        self._connect_town_roads(rng)
+        self._restore_outside_clearing_grass(outside_grass)
         self._plant_trees()
+        self._clear_trees_near_reserved()
         return self.game_map, self.monsters
+
+    def _mask_outside_clearing_grass(self):
+        """Temporarily turn non-clearing grass into trees so shops cannot stamp there."""
+        m = self.game_map
+        saved = []
+        clearing = self.town_clearing
+        for y, row in enumerate(m):
+            for x, cell in enumerate(row):
+                if cell == GRASS and (y, x) not in clearing:
+                    saved.append((y, x))
+                    m[y][x] = TREE
+        return saved
+
+    def _restore_outside_clearing_grass(self, saved):
+        m = self.game_map
+        for y, x in saved:
+            if m[y][x] == TREE:
+                m[y][x] = GRASS
+
+    def _clear_trees_near_reserved(self):
+        """Ensure doors/roads/stairs and their neighbors stay clear of trees."""
+        m = self.game_map
+        for y, x in self._tree_keep_clear(m):
+            if m[y][x] == TREE:
+                m[y][x] = GRASS
+
+    def _grow_irregular_clearing(self, h, w, target, rng):
+        """Grow a compact-but-noisy 4-connected grass blob near map center."""
+        margin = FOREST_TRANSITION + TOWN_FOREST_MARGIN
+        cy = h // 2 + rng.randint(-3, 3)
+        cx = w // 2 + rng.randint(-3, 3)
+        cy = max(margin + 4, min(h - margin - 5, cy))
+        cx = max(margin + 4, min(w - margin - 5, cx))
+
+        clearing = {(cy, cx)}
+        max_radius = 18 + rng.randint(0, 4)
+
+        def in_bounds_clearable(ny, nx):
+            if not (margin <= ny < h - margin and margin <= nx < w - margin):
+                return False
+            if abs(ny - cy) > max_radius or abs(nx - cx) > max_radius:
+                return False
+            return True
+
+        safety = target * 20
+        while len(clearing) < target and safety > 0:
+            safety -= 1
+            weighted = []
+            for y, x in clearing:
+                for dy, dx in _CARDINAL:
+                    ny, nx = y + dy, x + dx
+                    if (ny, nx) in clearing or not in_bounds_clearable(ny, nx):
+                        continue
+                    n_count = sum(
+                        1 for ddy, ddx in _EIGHT
+                        if (ny + ddy, nx + ddx) in clearing
+                    )
+                    weight = (1.0 + n_count) * (0.35 + rng.random())
+                    weighted.append((weight, ny, nx))
+            if not weighted:
+                break
+            weighted.sort(key=lambda t: t[0], reverse=True)
+            pool = weighted[: max(4, len(weighted) // 5)]
+            total = sum(t[0] for t in pool)
+            pick = rng.random() * total
+            acc = 0.0
+            chosen = pool[-1]
+            for item in pool:
+                acc += item[0]
+                if acc >= pick:
+                    chosen = item
+                    break
+            clearing.add((chosen[1], chosen[2]))
+        return clearing
+
+    def _distance_from_clearing(self, h, w, clearing):
+        """Chebyshev distance to nearest clearing tile (8-connected BFS)."""
+        dist = [[10 ** 9 for _ in range(w)] for _ in range(h)]
+        q = deque()
+        for y, x in clearing:
+            dist[y][x] = 0
+            q.append((y, x))
+        while q:
+            y, x = q.popleft()
+            d0 = dist[y][x]
+            for dy, dx in _EIGHT:
+                ny, nx = y + dy, x + dx
+                if not (0 <= ny < h and 0 <= nx < w):
+                    continue
+                nd = d0 + 1
+                if nd < dist[ny][nx]:
+                    dist[ny][nx] = nd
+                    q.append((ny, nx))
+        return dist
+
+    def _paint_clearing_and_forest(self, dist, rng):
+        """Clearing = grass; outside = rising tree chance; far = solid forest."""
+        m = self.game_map
+        h, w = len(m), len(m[0])
+        for y in range(h):
+            for x in range(w):
+                if (y, x) in self.town_clearing:
+                    m[y][x] = GRASS
+                    continue
+                d = dist[y][x]
+                if d > FOREST_TRANSITION:
+                    m[y][x] = TREE
+                    continue
+                noise = rng.uniform(-2.8, 2.8)
+                t = (d + noise) / float(FOREST_TRANSITION)
+                t = 0.0 if t < 0.0 else (1.0 if t > 1.0 else t)
+                p = t * t * (3.0 - 2.0 * t)  # smoothstep
+                p = max(0.02, min(1.0, p))
+                m[y][x] = TREE if rng.random() < p else GRASS
+
+    def _road_carvable(self, y, x, game_map=None):
+        m = game_map if game_map is not None else self.game_map
+        h, w = len(m), len(m[0])
+        if not (0 <= y < h and 0 <= x < w):
+            return False
+        # Stairs are valid path endpoints; never paint over them later.
+        return m[y][x] in (GRASS, ',', '↓', '↑')
+
+    def _shortest_road_path(self, sources, goals, rng):
+        """BFS shortest path; shuffle neighbors so equal-length routes vary."""
+        if not sources or not goals:
+            return None
+        parent = {}
+        q = deque()
+        for s in sources:
+            parent[s] = None
+            q.append(s)
+        found = None
+        while q:
+            y, x = q.popleft()
+            if (y, x) in goals and (y, x) not in sources:
+                found = (y, x)
+                break
+            neighbors = [(y + dy, x + dx) for dy, dx in _CARDINAL]
+            rng.shuffle(neighbors)
+            for ny, nx in neighbors:
+                if (ny, nx) in parent:
+                    continue
+                if not self._road_carvable(ny, nx):
+                    continue
+                parent[(ny, nx)] = (y, x)
+                q.append((ny, nx))
+        if found is None:
+            return None
+        path = []
+        cur = found
+        while cur is not None:
+            path.append(cur)
+            cur = parent[cur]
+        path.reverse()
+        return path
+
+    def _connect_town_roads(self, rng=None):
+        """Link shop entrance roads and the stairs-down into one road network."""
+        rng = rng or random
+        hubs = []
+        for feat in (self.town_features or {}).values():
+            road = feat.get('road')
+            if not road:
+                continue
+            hubs.append((int(road[0]), int(road[1])))
+        stair = self.find_tile(self.game_map, '↓')
+        if stair is not None:
+            hubs.append((int(stair[0]), int(stair[1])))
+        if len(hubs) < 2:
+            return
+
+        m = self.game_map
+        h, w = len(m), len(m[0])
+        network = set()
+        remaining = set(hubs)
+
+        def is_road_network_cell(ny, nx):
+            cell = m[ny][nx]
+            return cell in (',', '↓', '↑')
+
+        def flood_existing_roads(seed):
+            q = deque([seed])
+            seen = {seed}
+            while q:
+                y, x = q.popleft()
+                network.add((y, x))
+                for dy, dx in _CARDINAL:
+                    ny, nx = y + dy, x + dx
+                    if (ny, nx) in seen:
+                        continue
+                    if not (0 <= ny < h and 0 <= nx < w):
+                        continue
+                    if not is_road_network_cell(ny, nx):
+                        continue
+                    seen.add((ny, nx))
+                    q.append((ny, nx))
+
+        flood_existing_roads(hubs[0])
+        remaining -= network
+
+        safety = len(hubs) * 8
+        while remaining and safety > 0:
+            safety -= 1
+            path = self._shortest_road_path(network, remaining, rng)
+            if path is None:
+                dest = min(
+                    remaining,
+                    key=lambda p: min(
+                        abs(p[0] - s[0]) + abs(p[1] - s[1]) for s in network
+                    ),
+                )
+                src = min(
+                    network,
+                    key=lambda s: abs(s[0] - dest[0]) + abs(s[1] - dest[1]),
+                )
+                path = self._manhattan_road_tiles(src, dest, rng)
+            for y, x in path:
+                if m[y][x] == GRASS:
+                    m[y][x] = ','
+                # Keep stair glyphs; road stops on/adjacent via network flood.
+            flood_existing_roads(path[-1])
+            remaining -= network
+
+    def _manhattan_road_tiles(self, start, end, rng):
+        """Shortest Manhattan walk with random axis order (no obstacles)."""
+        y, x = start
+        ey, ex = end
+        tiles = [(y, x)]
+        while (y, x) != (ey, ex):
+            options = []
+            if y != ey:
+                options.append((1 if ey > y else -1, 0))
+            if x != ex:
+                options.append((0, 1 if ex > x else -1))
+            dy, dx = options[rng.randrange(len(options))]
+            y, x = y + dy, x + dx
+            tiles.append((y, x))
+        return tiles
 
     def _tree_keep_clear(self, game_map=None):
         """Tiles that must stay open: reserved glyphs and every 8-neighbor."""
@@ -94,12 +361,15 @@ class MapGenerator:
         return keep_clear
 
     def _plant_trees(self):
-        """Scatter trees on grass; never block doors, road, or stairs."""
+        """Scatter trees on clearing grass; never block doors, road, or stairs."""
         m = self.game_map
         h, w = len(m), len(m[0])
         keep_clear = self._tree_keep_clear(m)
-        for y in range(1, h - 1):
-            for x in range(1, w - 1):
+        clearing = self.town_clearing or None
+        for y in range(h):
+            for x in range(w):
+                if clearing is not None and (y, x) not in clearing:
+                    continue
                 if m[y][x] != GRASS or (y, x) in keep_clear:
                     continue
                 if random.random() < TREE_SPAWN_RATE:
@@ -531,7 +801,17 @@ class MapGenerator:
             for x, cell in enumerate(row)
             if cell in OPEN_GROUND
         ]
-        random.shuffle(floors)
+        # Prefer the town clearing so new players spawn in the city, not
+        # in sparse grass pockets inside the forest transition.
+        clearing = getattr(self, 'town_clearing', None) or set()
+        if clearing:
+            preferred = [p for p in floors if p in clearing]
+            other = [p for p in floors if p not in clearing]
+            random.shuffle(preferred)
+            random.shuffle(other)
+            floors = preferred + other
+        else:
+            random.shuffle(floors)
         for y, x in floors:
             if self.is_position_free(x, y, players, existing_monsters, check_map):
                 return [y, x]
