@@ -97,9 +97,10 @@ class MapGenerator:
             (ARMOUR_SHOP_ID, stamp_armour_shop),
         ):
             self.town_features[shop_id] = stamp_fn(self.game_map, rng=rng)
-        # Stairs first so the road network can link shop entrances to the dungeon.
-        self.place_stair('↓')
+        # Link shop entrances first, then seat stairs on the road without
+        # cutting the path between buildings (stepping on ↓ auto-descends).
         self._connect_town_roads(rng)
+        self._place_town_stairs_on_road(rng)
         self._restore_outside_clearing_grass(outside_grass)
         self._plant_trees()
         self._clear_trees_near_reserved()
@@ -261,18 +262,54 @@ class MapGenerator:
         path.reverse()
         return path
 
-    def _connect_town_roads(self, rng=None):
-        """Link shop entrance roads and the stairs-down into one road network."""
-        rng = rng or random
+    def _shop_entrance_tiles(self):
         hubs = []
         for feat in (self.town_features or {}).values():
             road = feat.get('road')
             if not road:
                 continue
             hubs.append((int(road[0]), int(road[1])))
-        stair = self.find_tile(self.game_map, '↓')
-        if stair is not None:
-            hubs.append((int(stair[0]), int(stair[1])))
+        return hubs
+
+    def _road_tiles(self, game_map=None, include_stairs=False):
+        m = game_map if game_map is not None else self.game_map
+        allowed = {','}
+        if include_stairs:
+            allowed |= {'↓', '↑'}
+        return [
+            (y, x)
+            for y, row in enumerate(m)
+            for x, cell in enumerate(row)
+            if cell in allowed
+        ]
+
+    def _entrances_connected_via_roads(self, entrances, blocked=None, game_map=None):
+        """True if every entrance can reach the others on ',' tiles only."""
+        if len(entrances) <= 1:
+            return True
+        m = game_map if game_map is not None else self.game_map
+        blocked = set(blocked or ())
+        start = entrances[0]
+        q = deque([start])
+        seen = {start}
+        while q:
+            y, x = q.popleft()
+            for dy, dx in _CARDINAL:
+                ny, nx = y + dy, x + dx
+                if (ny, nx) in seen or (ny, nx) in blocked:
+                    continue
+                if not (0 <= ny < len(m) and 0 <= nx < len(m[0])):
+                    continue
+                if m[ny][nx] != ',':
+                    continue
+                seen.add((ny, nx))
+                q.append((ny, nx))
+        return all(e in seen for e in entrances)
+
+    def _connect_town_roads(self, rng=None):
+        """Link every shop entrance road tile into one connected ',' network."""
+        rng = rng or random
+        hubs = self._shop_entrance_tiles()
         if len(hubs) < 2:
             return
 
@@ -280,10 +317,6 @@ class MapGenerator:
         h, w = len(m), len(m[0])
         network = set()
         remaining = set(hubs)
-
-        def is_road_network_cell(ny, nx):
-            cell = m[ny][nx]
-            return cell in (',', '↓', '↑')
 
         def flood_existing_roads(seed):
             q = deque([seed])
@@ -297,7 +330,7 @@ class MapGenerator:
                         continue
                     if not (0 <= ny < h and 0 <= nx < w):
                         continue
-                    if not is_road_network_cell(ny, nx):
+                    if m[ny][nx] != ',':
                         continue
                     seen.add((ny, nx))
                     q.append((ny, nx))
@@ -324,9 +357,66 @@ class MapGenerator:
             for y, x in path:
                 if m[y][x] == GRASS:
                     m[y][x] = ','
-                # Keep stair glyphs; road stops on/adjacent via network flood.
             flood_existing_roads(path[-1])
             remaining -= network
+
+    def _place_town_stairs_on_road(self, rng=None):
+        """
+        Put ↓ on a road tile between the shops without cutting shop-to-shop
+        road travel (↓ auto-descends, so it must not be a choke point).
+        """
+        rng = rng or random
+        m = self.game_map
+        entrances = self._shop_entrance_tiles()
+        entrance_set = set(entrances)
+        roads = [t for t in self._road_tiles(m) if t not in entrance_set]
+        if not roads and entrances:
+            # Single lonely entrance — still need a stair spur off it.
+            roads = []
+
+        cy = sum(y for y, _x in entrances) / float(len(entrances) or 1)
+        cx = sum(x for _y, x in entrances) / float(len(entrances) or 1)
+
+        def tile_score(tile):
+            y, x = tile
+            n = 0
+            for dy, dx in _CARDINAL:
+                ny, nx = y + dy, x + dx
+                if 0 <= ny < len(m) and 0 <= nx < len(m[0]) and m[ny][nx] == ',':
+                    n += 1
+            dist = abs(y - cy) + abs(x - cx)
+            return (n, -dist, rng.random())
+
+        safe = [
+            t for t in roads
+            if self._entrances_connected_via_roads(entrances, blocked={t}, game_map=m)
+        ]
+        if safe:
+            safe.sort(key=tile_score, reverse=True)
+            y, x = safe[0]
+            m[y][x] = '↓'
+            return [y, x]
+
+        # Tree-shaped roads: add a short spur off a central road, put stairs
+        # at the spur tip so the main road between shops stays clear.
+        anchors = list(roads) if roads else list(entrances)
+        anchors.sort(key=tile_score, reverse=True)
+        for ay, ax in anchors:
+            neighbors = [(ay + dy, ax + dx) for dy, dx in _CARDINAL]
+            rng.shuffle(neighbors)
+            for ny, nx in neighbors:
+                if not (0 <= ny < len(m) and 0 <= nx < len(m[0])):
+                    continue
+                if m[ny][nx] != GRASS:
+                    continue
+                if self.town_clearing and (ny, nx) not in self.town_clearing:
+                    continue
+                # Spur road under the stairs so it still "sits on the road".
+                m[ny][nx] = '↓'
+                return [ny, nx]
+
+        # Absolute fallback: classic random open-ground stair.
+        return self.place_stair('↓')
 
     def _manhattan_road_tiles(self, start, end, rng):
         """Shortest Manhattan walk with random axis order (no obstacles)."""
@@ -793,16 +883,51 @@ class MapGenerator:
                     return [y, x]
         return None
 
+    def _town_path_seeds(self, game_map=None):
+        """Hub tiles that define 'in town / to dungeon': roads, stairs, doors."""
+        m = game_map if game_map is not None else self.game_map
+        seeds = []
+        for y, row in enumerate(m):
+            for x, cell in enumerate(row):
+                if cell in (',', '↓', '↑', '+'):
+                    seeds.append((y, x))
+        return seeds
+
+    def _tiles_reachable_from_town(self, game_map=None):
+        """
+        All walkable tiles that can reach the town road/stairs network.
+
+        Multi-source BFS from roads, stairs, and doors so isolated grass
+        pockets in the forest transition are excluded from spawn.
+        """
+        m = game_map if game_map is not None else self.game_map
+        seeds = self._town_path_seeds(m)
+        if not seeds:
+            return set()
+        q = deque(seeds)
+        seen = set(seeds)
+        while q:
+            y, x = q.popleft()
+            for dy, dx in _CARDINAL:
+                ny, nx = y + dy, x + dx
+                if (ny, nx) in seen:
+                    continue
+                if not self._is_walkable_cell(ny, nx, m):
+                    continue
+                seen.add((ny, nx))
+                q.append((ny, nx))
+        return seen
+
     def find_random_start(self, players, existing_monsters, game_map=None):
         check_map = game_map if game_map is not None else self.game_map
+        reachable = self._tiles_reachable_from_town(check_map)
         floors = [
             (y, x)
             for y, row in enumerate(check_map)
             for x, cell in enumerate(row)
-            if cell in OPEN_GROUND
+            if cell in OPEN_GROUND and (y, x) in reachable
         ]
-        # Prefer the town clearing so new players spawn in the city, not
-        # in sparse grass pockets inside the forest transition.
+        # Prefer the town clearing so new players spawn in the city.
         clearing = getattr(self, 'town_clearing', None) or set()
         if clearing:
             preferred = [p for p in floors if p in clearing]
@@ -812,9 +937,21 @@ class MapGenerator:
             floors = preferred + other
         else:
             random.shuffle(floors)
+
         for y, x in floors:
             if self.is_position_free(x, y, players, existing_monsters, check_map):
                 return [y, x]
+
+        # Last resort: a free road tile (always on the town network).
+        for y, x in self._town_path_seeds(check_map):
+            if check_map[y][x] != ',':
+                continue
+            if any(p.pos == [y, x] for p in players.values()):
+                continue
+            if (y, x) in existing_monsters:
+                continue
+            return [y, x]
+
         for y, x in floors:
             return [y, x]
         h, w = len(check_map), len(check_map[0])

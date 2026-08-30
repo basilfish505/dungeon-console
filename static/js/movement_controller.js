@@ -386,6 +386,12 @@ const MovementController = (function () {
                 }
                 return;
             }
+            if (typeof Combat !== 'undefined' && Combat.isOpen && Combat.isOpen()) {
+                if (e.key === 'Escape' && Combat.handleEscape && Combat.handleEscape()) {
+                    e.preventDefault();
+                    return;
+                }
+            }
             if (typeof InteractionUI !== 'undefined' && InteractionUI.isOpen()) {
                 return;
             }
