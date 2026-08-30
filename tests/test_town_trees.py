@@ -1,11 +1,18 @@
-"""Town yard uses grass with sparse trees that keep doors and stairs clear."""
+"""Town sits in an irregular grassy clearing with a forest transition."""
 import random
 import unittest
+from collections import deque
 from unittest.mock import patch
 
 from dungeon_crawler import GameState
 from interiors.items_shop import ITEMS_SHOP_ID
-from map_generator import TREE_SPAWN_RATE, MapGenerator
+from map_generator import (
+    FOREST_TRANSITION,
+    TOWN_CLEARING_TARGET,
+    TOWN_MAP_SIZE,
+    TREE_SPAWN_RATE,
+    MapGenerator,
+)
 from monster_ai import is_terrain_passable
 from player import Player
 from visibility import GRASS, MOUNTAIN, OPEN_GROUND, TREE, WALL
@@ -16,7 +23,7 @@ class TownGrassTreeTests(unittest.TestCase):
         rng = random.Random(seed)
         with patch('map_generator.random', rng), patch('interiors.shop_common.random', rng):
             gen = MapGenerator()
-            game_map, _monsters = gen.generate_top_level()
+            game_map, _monsters = gen.generate_top_level(rng=rng)
         return gen, game_map
 
     def test_town_yard_is_grass_not_stone_floor(self):
@@ -29,20 +36,146 @@ class TownGrassTreeTests(unittest.TestCase):
             for cell in cells
         ))
 
-    def test_town_border_is_mountains(self):
+    def test_no_hard_mountain_or_boulder_border(self):
         _gen, game_map = self._generate(2)
         n = len(game_map)
+        self.assertEqual(n, TOWN_MAP_SIZE)
+        # Outer rim is forest, not a square mountain/boulder wall.
         for i in range(n):
-            self.assertEqual(game_map[0][i], MOUNTAIN)
-            self.assertEqual(game_map[n - 1][i], MOUNTAIN)
-            self.assertEqual(game_map[i][0], MOUNTAIN)
-            self.assertEqual(game_map[i][n - 1], MOUNTAIN)
-        self.assertFalse(is_terrain_passable(game_map, 0, 5))
-        self.assertNotEqual(game_map[1][1], MOUNTAIN)
+            self.assertEqual(game_map[0][i], TREE)
+            self.assertEqual(game_map[n - 1][i], TREE)
+            self.assertEqual(game_map[i][0], TREE)
+            self.assertEqual(game_map[i][n - 1], TREE)
+        self.assertEqual(sum(1 for row in game_map for c in row if c == MOUNTAIN), 0)
+        self.assertEqual(sum(1 for row in game_map for c in row if c == '#'), 0)
 
-    def test_nothing_drawn_beyond_town_border(self):
+    def test_irregular_clearing_near_target_area(self):
+        areas = []
+        for seed in range(8):
+            gen, _game_map = self._generate(seed)
+            area = len(gen.town_clearing)
+            areas.append(area)
+            self.assertGreaterEqual(area, TOWN_CLEARING_TARGET - 40)
+            self.assertLessEqual(area, TOWN_CLEARING_TARGET + 5)
+            # Not a filled axis-aligned rectangle (irregular perimeter).
+            ys = [y for y, _x in gen.town_clearing]
+            xs = [x for _y, x in gen.town_clearing]
+            bbox = (max(ys) - min(ys) + 1) * (max(xs) - min(xs) + 1)
+            self.assertLess(area, bbox)
+        # Different seeds produce different shapes.
+        shapes = []
+        for seed in (0, 1, 2, 3):
+            gen, _ = self._generate(seed)
+            shapes.append(frozenset(gen.town_clearing))
+        self.assertGreater(len(set(shapes)), 1)
+
+    def test_forest_density_increases_with_distance(self):
+        gen, game_map = self._generate(5)
+        dist = gen._distance_from_clearing(
+            len(game_map), len(game_map[0]), gen.town_clearing
+        )
+        near = far = deep = 0
+        near_t = far_t = deep_t = 0
+        for y, row in enumerate(game_map):
+            for x, cell in enumerate(row):
+                if (y, x) in gen.town_clearing:
+                    continue
+                d = dist[y][x]
+                if 1 <= d <= 4:
+                    near += 1
+                    near_t += int(cell == TREE)
+                elif 9 <= d <= 12:
+                    far += 1
+                    far_t += int(cell == TREE)
+                elif d > FOREST_TRANSITION:
+                    deep += 1
+                    deep_t += int(cell == TREE)
+        self.assertGreater(near, 0)
+        self.assertGreater(far, 0)
+        self.assertGreater(deep, 0)
+        self.assertLess(near_t / near, far_t / far)
+        self.assertLess(far_t / far, 0.95)
+        self.assertEqual(deep_t, deep)
+
+    def test_player_can_walk_from_clearing_into_forest(self):
+        gen, game_map = self._generate(7)
+        edge = None
+        for y, x in gen.town_clearing:
+            for dy, dx in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+                ny, nx = y + dy, x + dx
+                if (ny, nx) in gen.town_clearing:
+                    continue
+                if not (0 <= ny < len(game_map) and 0 <= nx < len(game_map[0])):
+                    continue
+                # Prefer a grass gap in the transition so the step is passable.
+                if game_map[ny][nx] == GRASS and game_map[y][x] == GRASS:
+                    edge = (y, x, ny, nx, dy, dx)
+                    break
+            if edge:
+                break
+        if edge is None:
+            self.skipTest('no grass-to-grass clearing edge on this seed')
+        y, x, ny, nx, dy, dx = edge
+        gs = GameState(skip_generate=True)
+        gs.game_map = game_map
+        gs.monsters = {}
+        gs.levels[0] = (game_map, {})
+        gs.map_generator = gen
+        step = {(-1, 0): 'n', (1, 0): 's', (0, 1): 'e', (0, -1): 'west'}[(dy, dx)]
+        p = Player('hero', [y, x])
+        p.dungeon_level = 0
+        gs.players['hero'] = p
+        gs.active_players['hero'] = p
+        gs.player_messages['hero'] = []
+        self.assertTrue(gs.move_player('hero', step))
+        self.assertEqual(p.pos, [ny, nx])
+
+    def test_shop_entrances_and_stairs_share_one_road_network(self):
+        for seed in range(12):
+            gen, game_map = self._generate(seed)
+            hubs = [
+                tuple(feat['road'])
+                for feat in gen.town_features.values()
+                if feat.get('road')
+            ]
+            stair = None
+            for y, row in enumerate(game_map):
+                for x, cell in enumerate(row):
+                    if cell == '↓':
+                        stair = (y, x)
+            self.assertIsNotNone(stair, seed)
+            hubs.append(stair)
+            self.assertGreaterEqual(len(hubs), 2)
+            start = hubs[0]
+            q = deque([start])
+            seen = {start}
+            while q:
+                y, x = q.popleft()
+                for dy, dx in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+                    ny, nx = y + dy, x + dx
+                    if (ny, nx) in seen:
+                        continue
+                    if not (0 <= ny < len(game_map) and 0 <= nx < len(game_map[0])):
+                        continue
+                    if game_map[ny][nx] not in (',', '↓'):
+                        continue
+                    seen.add((ny, nx))
+                    q.append((ny, nx))
+            self.assertTrue(all(h in seen for h in hubs), seed)
+            self.assertEqual(game_map[stair[0]][stair[1]], '↓')
+
+    def test_buildings_stay_inside_clearing(self):
+        gen, _game_map = self._generate(3)
+        for feat in gen.town_features.values():
+            oy, ox = feat['origin']
+            bh, bw = feat['size']
+            for y in range(bh):
+                for x in range(bw):
+                    self.assertIn((oy + y, ox + x), gen.town_clearing)
+
+    def test_nothing_drawn_beyond_map_bounds(self):
         gs = GameState()
-        p = Player('hero', [2, 2])
+        p = Player('hero', list(gs.map_generator.find_random_start({}, {})))
         p.dungeon_level = 0
         gs.players['hero'] = p
         gs.active_players['hero'] = p
@@ -86,27 +219,33 @@ class TownGrassTreeTests(unittest.TestCase):
             }
             self.assertTrue(trees.isdisjoint(keep_clear))
 
-    def test_trees_plant_on_eligible_grass_at_four_percent(self):
+    def test_clearing_trees_plant_at_four_percent(self):
         self.assertEqual(TREE_SPAWN_RATE, 0.04)
-        with patch('map_generator.random.random', return_value=1.0):
-            gen = MapGenerator()
-            gen.generate_top_level()
-        self.assertFalse(any(cell == TREE for row in gen.game_map for cell in row))
+        rng = random.Random(0)
+        gen = MapGenerator()
+        gen.generate_top_level(rng=rng)
+        # Strip clearing trees, then re-plant with deterministic random.
+        for y, x in list(gen.town_clearing):
+            if gen.game_map[y][x] == TREE:
+                gen.game_map[y][x] = GRASS
         keep_clear = gen._tree_keep_clear()
         eligible = [
             (y, x)
-            for y in range(1, len(gen.game_map) - 1)
-            for x in range(1, len(gen.game_map[0]) - 1)
+            for y, x in gen.town_clearing
             if gen.game_map[y][x] == GRASS and (y, x) not in keep_clear
         ]
         self.assertGreater(len(eligible), 0)
+        with patch('map_generator.random.random', return_value=1.0):
+            gen._plant_trees()
+        self.assertFalse(any(
+            gen.game_map[y][x] == TREE for y, x in eligible
+        ))
         with patch('map_generator.random.random', return_value=TREE_SPAWN_RATE - 1e-9):
             gen._plant_trees()
         planted = [
             (y, x)
-            for y, row in enumerate(gen.game_map)
-            for x, cell in enumerate(row)
-            if cell == TREE
+            for y, x in gen.town_clearing
+            if gen.game_map[y][x] == TREE
         ]
         self.assertEqual(set(planted), set(eligible))
 
@@ -175,3 +314,8 @@ class TownGrassTreeTests(unittest.TestCase):
         start = gs.map_generator.find_random_start({}, {}, game_map)
         self.assertIn(game_map[start[0]][start[1]], OPEN_GROUND)
         self.assertNotEqual(game_map[start[0]][start[1]], TREE)
+        self.assertIn(tuple(start), gs.map_generator.town_clearing)
+
+
+if __name__ == '__main__':
+    unittest.main()
