@@ -2,8 +2,7 @@
 const UI = (function() {
     // Cache DOM elements
     const elements = {
-        loginForm: document.getElementById('player-login'),
-        playerName: document.getElementById('player-name'),
+        loginForm: document.getElementById('entry-screen'),
         gameShell: document.getElementById('game-shell'),
         header: document.getElementById('header'),
         mapPane: document.getElementById('map-pane'),
@@ -34,7 +33,7 @@ const UI = (function() {
         }
     }
 
-    // Undo mobile browser zoom left over from focusing the name field
+    // Undo mobile browser zoom left over from focusing an entry field
     function resetMobileViewport() {
         const meta = document.querySelector('meta[name="viewport"]');
         if (!meta) {
@@ -85,14 +84,13 @@ const UI = (function() {
      * Call this before joining so the first game_state already has the real size.
      */
     function prepareJoinViewport() {
-        if (elements.playerName) {
-            elements.playerName.blur();
-        }
         if (document.activeElement && document.activeElement.blur) {
             document.activeElement.blur();
         }
         resetMobileViewport();
-        elements.loginForm.style.display = 'none';
+        if (elements.loginForm) {
+            elements.loginForm.style.display = 'none';
+        }
         if (elements.gameShell) {
             elements.gameShell.hidden = false;
         }
@@ -191,7 +189,12 @@ const UI = (function() {
             elements.messageLog.innerHTML = '';
         }
         lastKnownLevel = null;
-        elements.loginForm.style.display = 'flex';
+        if (elements.loginForm) {
+            elements.loginForm.style.display = 'flex';
+        }
+        if (typeof Entry !== 'undefined' && Entry.showChoice) {
+            Entry.showChoice();
+        }
     }
 
     // Handle player death
@@ -209,7 +212,9 @@ const UI = (function() {
         if (elements.mobileControls) {
             elements.mobileControls.style.display = 'none';
         }
-        elements.loginForm.style.display = 'none';
+        if (elements.loginForm) {
+            elements.loginForm.style.display = 'none';
+        }
         if (elements.gameShell) {
             elements.gameShell.hidden = false;
         }
@@ -219,7 +224,7 @@ const UI = (function() {
             const kind = deathInfo.killer_kind === 'player' ? 'player' : 'foe';
             html += '<div>Slain by ' + deathInfo.killer_name + ' (' + kind + ').</div>';
         }
-        html += '<div style="margin-top:1em;opacity:0.85;">Choose a new name to begin again.</div>';
+        html += '<div style="margin-top:1em;opacity:0.85;">Create a new character to begin again.</div>';
         elements.messageLog.innerHTML = html;
     }
 

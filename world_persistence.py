@@ -3,15 +3,11 @@
 from __future__ import annotations
 
 import atexit
-import json
 import os
 import signal
 import uuid
-from pathlib import Path
 
-from level_turns import LevelTurnState
-from player import Player
-from player_persistence import DEFAULT_SAVE_DIR, load_player
+from character_auth import hash_password, name_key, normalize_name
 from store import get_world_store
 from world_serial import (
     battle_from_dict,
@@ -26,6 +22,8 @@ from world_serial import (
 )
 
 AUTOSAVE_INTERVAL_SECONDS = 25
+# Bump to retire worlds that predate password-authenticated characters.
+WORLD_EPOCH = 1
 
 
 class WorldPersistence:
@@ -63,10 +61,17 @@ class WorldPersistence:
 
         world_id = self.store.get_current_world_id()
         if world_id and not force_new:
-            if self._restore_world(world_id):
+            epoch = self.store.get_world_epoch(world_id)
+            if epoch is None or int(epoch) < WORLD_EPOCH:
+                print(
+                    f'Retiring world {world_id} '
+                    f'(epoch {epoch} < {WORLD_EPOCH}); creating fresh world.'
+                )
+                self.store.retire_current_world()
+                world_id = None
+            elif self._restore_world(world_id):
                 self.world_id = world_id
                 self.game_state.world_id = world_id
-                self._migrate_legacy_json_saves()
                 return world_id
 
         world_id = uuid.uuid4().hex
@@ -78,13 +83,13 @@ class WorldPersistence:
             town_features=self.game_state.map_generator.town_features,
             battles=[],
             make_current=True,
+            epoch=WORLD_EPOCH,
         )
         self._dirty_world_meta = True
         for level_number in list(self.game_state.levels.keys()):
             self.mark_level_dirty(level_number)
         self.save_all()
-        self._migrate_legacy_json_saves()
-        print(f'Created new world {world_id}')
+        print(f'Created new world {world_id} (epoch {WORLD_EPOCH})')
         return world_id
 
     def _restore_world(self, world_id: str) -> bool:
@@ -148,46 +153,50 @@ class WorldPersistence:
               f'({len(gs.levels)} levels, {len(gs.players)} players)')
         return True
 
-    def _migrate_legacy_json_saves(self) -> None:
-        import sys
-        if os.environ.get('PERMAQUEST_SKIP_LEGACY_MIGRATION', '').lower() in (
-            '1', 'true', 'yes',
-        ):
-            return
-        if 'unittest' in sys.modules and not os.environ.get('PERMAQUEST_MIGRATE_LEGACY'):
-            return
+    def find_character(self, raw_name: str) -> dict | None:
+        """Case-insensitive character lookup for login / status checks."""
         if not self.world_id:
-            return
-        existing = self.store.load_characters(self.world_id, status=None)
-        if existing:
-            return
-        save_dir = DEFAULT_SAVE_DIR
-        if not save_dir.is_dir():
-            return
-        migrated = 0
-        for path in save_dir.glob('*.json'):
-            try:
-                data = json.loads(path.read_text(encoding='utf-8'))
-            except (OSError, json.JSONDecodeError):
-                continue
-            player_id = data.get('player_id') or path.stem
-            probe = Player(player_id, [1, 1])
-            if load_player(probe, save_dir=save_dir):
-                payload = player_to_world_dict(probe)
-                self.store.save_character(
-                    self.world_id,
-                    player_id,
-                    data=payload,
-                    status='alive',
-                )
-                migrated += 1
-        if migrated:
-            print(f'Migrated {migrated} legacy player save(s) into world store.')
+            return None
+        key = name_key(raw_name)
+        if not key:
+            return None
+        return self.store.find_character_by_name_key(self.world_id, key)
+
+    def create_character(self, display_name: str, password: str, player) -> bool:
+        """
+        Atomically persist a brand-new character with credentials.
+
+        Returns True on success. False means the name was already taken —
+        nothing is written.
+        """
+        if not self.world_id or player is None:
+            return False
+        display = normalize_name(display_name)
+        key = name_key(display)
+        if not key:
+            return False
+        gs = self.game_state
+        msgs = gs.player_messages.get(player.id, [])
+        payload = player_to_world_dict(player, messages=msgs)
+        ok = self.store.create_character(
+            self.world_id,
+            display,
+            name_key=key,
+            password_hash=hash_password(password),
+            data=payload,
+            status='alive',
+        )
+        if ok:
+            self._dirty_characters.discard(display)
+        return ok
 
     def get_character_status(self, player_id: str) -> str | None:
         if not self.world_id:
             return None
-        row = self.store.get_character(self.world_id, player_id)
+        # Prefer case-insensitive lookup so login/resume paths agree.
+        row = self.find_character(player_id)
+        if row is None:
+            row = self.store.get_character(self.world_id, player_id)
         if row is None:
             return None
         return row.get('status') or 'alive'
@@ -195,12 +204,15 @@ class WorldPersistence:
     def get_tombstone(self, player_id: str) -> dict | None:
         if not self.world_id:
             return None
-        row = self.store.get_character(self.world_id, player_id)
+        row = self.find_character(player_id)
+        if row is None:
+            row = self.store.get_character(self.world_id, player_id)
         if row is None:
             return None
         death = row.get('death') or {}
+        display_id = row.get('player_id') or player_id
         return {
-            'player_id': player_id,
+            'player_id': display_id,
             'message': death.get('message') or '.... Thou art dead.',
             'killer_name': death.get('killer_name'),
             'killer_kind': death.get('killer_kind'),
@@ -235,6 +247,7 @@ class WorldPersistence:
             data=data,
             status='dead',
             death=death,
+            name_key=name_key(player_id),
         )
 
     def save_character(self, player_id: str) -> None:
@@ -251,6 +264,7 @@ class WorldPersistence:
             player_id,
             data=payload,
             status='alive',
+            name_key=name_key(player_id),
         )
         self._dirty_characters.discard(player_id)
 
@@ -326,9 +340,10 @@ class WorldPersistence:
             town_features=self.game_state.map_generator.town_features,
             battles=[],
             make_current=True,
+            epoch=WORLD_EPOCH,
         )
         self.save_all()
-        print(f'Started new world {world_id}')
+        print(f'Started new world {world_id} (epoch {WORLD_EPOCH})')
         return world_id
 
     def resume_battle_timers(self) -> None:

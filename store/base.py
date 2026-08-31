@@ -18,8 +18,12 @@ class WorldStore(ABC):
         """Return the active world id, or None."""
 
     @abstractmethod
+    def get_world_epoch(self, world_id: str) -> int | None:
+        """Return the world's epoch integer, or None if the world is missing."""
+
+    @abstractmethod
     def load_world_meta(self, world_id: str) -> dict[str, Any] | None:
-        """Load world row: town_features, battles, created_at."""
+        """Load world row: town_features, battles, created_at, epoch."""
 
     @abstractmethod
     def load_levels(self, world_id: str) -> dict[int, dict[str, Any]]:
@@ -29,13 +33,24 @@ class WorldStore(ABC):
     def load_characters(
         self, world_id: str, *, status: str | None = 'alive'
     ) -> dict[str, dict[str, Any]]:
-        """player_id -> {data, status, death}."""
+        """player_id -> {data, status, death, name_key, password_hash}."""
 
     @abstractmethod
     def get_character(
         self, world_id: str, player_id: str
     ) -> dict[str, Any] | None:
         """Single character row or None."""
+
+    @abstractmethod
+    def find_character_by_name_key(
+        self, world_id: str, name_key: str
+    ) -> dict[str, Any] | None:
+        """
+        Look up a character by case-insensitive name key.
+
+        Returns {player_id, data, status, death, name_key, password_hash}
+        or None.
+        """
 
     @abstractmethod
     def create_world(
@@ -45,6 +60,7 @@ class WorldStore(ABC):
         town_features: dict,
         battles: list,
         make_current: bool = True,
+        epoch: int = 0,
     ) -> None:
         """Insert a new world row."""
 
@@ -76,6 +92,25 @@ class WorldStore(ABC):
         """Upsert one dungeon level snapshot."""
 
     @abstractmethod
+    def create_character(
+        self,
+        world_id: str,
+        player_id: str,
+        *,
+        name_key: str,
+        password_hash: str,
+        data: dict,
+        status: str = 'alive',
+        death: dict | None = None,
+    ) -> bool:
+        """
+        Atomically insert a new character.
+
+        Returns True on success, False if name_key (or player_id) already
+        exists. Must not overwrite an existing row.
+        """
+
+    @abstractmethod
     def save_character(
         self,
         world_id: str,
@@ -84,8 +119,15 @@ class WorldStore(ABC):
         data: dict,
         status: str = 'alive',
         death: dict | None = None,
+        name_key: str | None = None,
+        password_hash: str | None = None,
     ) -> None:
-        """Upsert character row."""
+        """
+        Upsert character row.
+
+        When name_key or password_hash is None, preserve the existing column
+        value so routine autosaves never clobber credentials.
+        """
 
     @abstractmethod
     def delete_character(self, world_id: str, player_id: str) -> None:

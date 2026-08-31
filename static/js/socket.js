@@ -1,4 +1,4 @@
-// socket.js - Socket event handlers + reconnect resume
+// socket.js - Socket event handlers + authenticated resume
 const SocketHandler = (function () {
     const socket = io({
         transports: ['websocket', 'polling'],
@@ -9,10 +9,12 @@ const SocketHandler = (function () {
     });
 
     let joinedPlayerId = null;
+    let authToken = null;
     let resumeInFlight = false;
-    let idTakenRetries = 0;
     /** World this tab joined. A new server process has a different id. */
     let knownBootId = null;
+    /** True once this tab has entered the game shell with a token. */
+    let inGame = false;
 
     function currentViewport() {
         if (typeof MapView !== 'undefined' && MapView.measureViewportNow) {
@@ -32,21 +34,40 @@ const SocketHandler = (function () {
 
     function clearJoinedSession() {
         joinedPlayerId = null;
+        authToken = null;
         resumeInFlight = false;
-        idTakenRetries = 0;
+        inGame = false;
         const el = document.getElementById('player-id');
         if (el) {
             el.value = '';
         }
     }
 
-    function handleWorldReset(newBootId) {
+    function logoutOnServer() {
+        try {
+            fetch('/api/logout', {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: { 'Content-Type': 'application/json' },
+                body: '{}',
+            });
+        } catch (err) {
+            /* ignore */
+        }
+    }
+
+    function returnToEntry() {
         clearJoinedSession();
-        knownBootId = newBootId || null;
+        if (typeof Entry !== 'undefined' && Entry.showChoice) {
+            Entry.showChoice();
+        }
         if (typeof UI !== 'undefined' && UI.showLoginScreen) {
             UI.showLoginScreen();
         } else {
-            document.getElementById('player-login').style.display = 'block';
+            const screen = document.getElementById('entry-screen');
+            if (screen) {
+                screen.style.display = 'flex';
+            }
             const shell = document.getElementById('game-shell');
             if (shell) {
                 shell.hidden = true;
@@ -54,10 +75,18 @@ const SocketHandler = (function () {
         }
     }
 
+    function handleWorldReset(newBootId) {
+        clearJoinedSession();
+        knownBootId = newBootId || null;
+        if (typeof Entry !== 'undefined' && Entry.setRemembered) {
+            Entry.setRemembered(null, null);
+        }
+        returnToEntry();
+    }
+
     /** Re-bind server session after mobile background / socket drop. */
     function tryResumeSession() {
-        const playerId = getJoinedPlayerId();
-        if (!playerId || !socket.connected || !knownBootId) {
+        if (!inGame || !authToken || !socket.connected || !knownBootId) {
             return;
         }
         if (resumeInFlight) {
@@ -65,8 +94,7 @@ const SocketHandler = (function () {
         }
         resumeInFlight = true;
         const viewport = currentViewport();
-        selectPlayerId(playerId, viewport);
-        // Allow another resume shortly (e.g. visibility after connect)
+        enterGame(authToken, viewport, joinedPlayerId);
         setTimeout(function () {
             resumeInFlight = false;
         }, 750);
@@ -85,8 +113,19 @@ const SocketHandler = (function () {
             if (!knownBootId) {
                 knownBootId = boot;
             }
-            // Same world after a drop — reclaim the character
-            if (getJoinedPlayerId()) {
+            if (data && data.remembered && data.token) {
+                if (typeof Entry !== 'undefined' && Entry.setRemembered) {
+                    Entry.setRemembered(data.remembered, data.token);
+                }
+                // Do not auto-enter; CONTINUE AS is shown on the entry screen.
+                if (!inGame) {
+                    authToken = data.token;
+                }
+            } else if (typeof Entry !== 'undefined' && Entry.setRemembered) {
+                Entry.setRemembered(null, null);
+            }
+            // Same world after a drop — reclaim the character if already in game
+            if (inGame && authToken) {
                 tryResumeSession();
             }
         });
@@ -96,20 +135,24 @@ const SocketHandler = (function () {
             handleWorldReset(boot || knownBootId);
         });
 
-        socket.on('id_taken', function (data) {
-            // Brief race after reconnect: retry a couple times, then give up
-            if (joinedPlayerId && idTakenRetries < 2) {
-                idTakenRetries += 1;
-                setTimeout(tryResumeSession, 400);
-                return;
+        socket.on('auth_required', function () {
+            clearJoinedSession();
+            returnToEntry();
+        });
+
+        socket.on('session_replaced', function () {
+            clearJoinedSession();
+            returnToEntry();
+            if (typeof Entry !== 'undefined' && Entry.showChoice) {
+                Entry.showChoice();
             }
+        });
+
+        socket.on('id_taken', function (data) {
+            // Legacy event — treat like session replaced.
             clearJoinedSession();
             alert((data && data.message) || 'That name is currently in use!');
-            document.getElementById('player-login').style.display = 'block';
-            const shell = document.getElementById('game-shell');
-            if (shell) {
-                shell.hidden = true;
-            }
+            returnToEntry();
         });
 
         socket.on('game_state', function (data) {
@@ -127,9 +170,13 @@ const SocketHandler = (function () {
                 return;
             }
             if (data && data.player && data.player.id) {
-                idTakenRetries = 0;
                 if (boot) {
                     knownBootId = boot;
+                }
+                joinedPlayerId = data.player.id;
+                const el = document.getElementById('player-id');
+                if (el) {
+                    el.value = data.player.id;
                 }
             }
             UI.applyGameState(data);
@@ -215,45 +262,63 @@ const SocketHandler = (function () {
         });
 
         socket.on('player_died', function () {
+            logoutOnServer();
             clearJoinedSession();
+            if (typeof Entry !== 'undefined' && Entry.setRemembered) {
+                Entry.setRemembered(null, null);
+            }
             UI.handlePlayerDeath();
             socket.disconnect();
         });
 
         socket.on('character_dead', function (data) {
+            logoutOnServer();
             clearJoinedSession();
+            if (typeof Entry !== 'undefined' && Entry.setRemembered) {
+                Entry.setRemembered(null, null);
+            }
             UI.handlePlayerDeath(data);
             if (typeof UI !== 'undefined' && UI.showLoginScreen) {
                 setTimeout(function () {
                     UI.showLoginScreen();
+                    if (typeof Entry !== 'undefined' && Entry.showChoice) {
+                        Entry.showChoice();
+                    }
                 }, 4000);
             }
         });
 
         document.addEventListener('visibilitychange', function () {
-            if (!document.hidden && getJoinedPlayerId()) {
+            if (!document.hidden && inGame && authToken) {
                 tryResumeSession();
             }
         });
 
         window.addEventListener('pageshow', function (e) {
-            if (e.persisted && getJoinedPlayerId()) {
+            if (e.persisted && inGame && authToken) {
                 tryResumeSession();
             }
         });
     }
 
-    function selectPlayerId(playerId, viewport) {
-        if (!playerId) {
+    function enterGame(token, viewport, displayName) {
+        if (!token) {
             return;
         }
         if (!knownBootId) {
             return;
         }
-        joinedPlayerId = playerId;
-        document.getElementById('player-id').value = playerId;
+        authToken = token;
+        inGame = true;
+        if (displayName) {
+            joinedPlayerId = displayName;
+            const el = document.getElementById('player-id');
+            if (el) {
+                el.value = displayName;
+            }
+        }
         const payload = {
-            id: playerId,
+            token: token,
             boot_id: knownBootId,
         };
         if (viewport && viewport.h && viewport.w) {
@@ -261,6 +326,13 @@ const SocketHandler = (function () {
             payload.w = viewport.w | 0;
         }
         socket.emit('select_id', payload);
+    }
+
+    /** @deprecated Use enterGame — kept for any leftover callers. */
+    function selectPlayerId(playerId, viewport) {
+        if (authToken) {
+            enterGame(authToken, viewport, playerId);
+        }
     }
 
     function sendMove(direction) {
@@ -341,6 +413,7 @@ const SocketHandler = (function () {
     return {
         socket,
         setupSocketEvents,
+        enterGame,
         selectPlayerId,
         sendMove,
         setViewport,

@@ -1,6 +1,6 @@
 import random
 
-from character_stats import attributes_for_inspect
+from character_stats import ATTRIBUTE_KEYS, attributes_for_inspect
 from items.equipment import (
     effective_armour_value,
     equipped_weapon_name,
@@ -46,8 +46,44 @@ INTERIOR_SIGHT_RANGE = 8
 STARTING_MAX_MP = 8
 
 
+def roll_starting_stats(rng=None):
+    """Roll the same starting stats used by new-character creation."""
+    rng = rng or random
+    stats = {
+        'mhp': int(rng.randint(300, 500)),
+        'mmp': STARTING_MAX_MP,
+    }
+    for key in ATTRIBUTE_KEYS:
+        stats[key] = int(rng.randint(1, 10))
+    return stats
+
+
+def _apply_starting_stats(player, starting_stats):
+    stats = starting_stats if isinstance(starting_stats, dict) else {}
+    try:
+        mhp = int(stats.get('mhp', random.randint(300, 500)))
+    except (TypeError, ValueError):
+        mhp = random.randint(300, 500)
+    mhp = max(1, mhp)
+    try:
+        mmp = int(stats.get('mmp', STARTING_MAX_MP))
+    except (TypeError, ValueError):
+        mmp = STARTING_MAX_MP
+    mmp = max(0, mmp)
+    player.mhp = mhp
+    player.hp = mhp
+    player.mmp = mmp
+    player.mp = mmp
+    for key in ATTRIBUTE_KEYS:
+        try:
+            value = int(stats.get(key, random.randint(1, 10)))
+        except (TypeError, ValueError):
+            value = random.randint(1, 10)
+        setattr(player, key, max(1, value))
+
+
 class Player:
-    def __init__(self, player_id, position):
+    def __init__(self, player_id, position, starting_stats=None):
         self.id = player_id
         self.pos = position
         self.dungeon_level = 0  # 0 is top level
@@ -56,19 +92,7 @@ class Player:
         self.total_xp = 0
         self.elo = 1000
         self.pqg = 10
-        # HP/MP properties
-        self.mhp = random.randint(300, 500)
-        self.hp = self.mhp
-        self.mmp = STARTING_MAX_MP
-        self.mp = self.mmp
-        # Stats
-        self.str = random.randint(1, 10)
-        self.int = random.randint(1, 10)
-        self.wis = random.randint(1, 10)
-        self.chr = random.randint(1, 10)
-        self.dex = random.randint(1, 10)
-        self.agi = random.randint(1, 10)
-        self.acc = random.randint(1, 10)
+        _apply_starting_stats(self, starting_stats or roll_starting_stats())
         # Damage divisor in combat_damage; 1 = no reduction until gear exists.
         self.armour = 1
         self.in_combat = False

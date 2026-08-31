@@ -15,26 +15,135 @@ body {
     overflow: hidden;
 }
 
-#player-login {
+#entry-screen,
+.entry-screen {
     position: fixed;
     inset: 0;
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 8px;
     padding: 16px;
     z-index: 2000;
     background: #000;
 }
 
-#player-login input,
-#player-login button {
+.entry-panel {
+    width: min(420px, 100%);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    align-items: stretch;
+}
+
+/* Class selector beats the UA [hidden] rule, so restate it here. */
+.entry-panel[hidden] {
+    display: none;
+}
+
+.entry-title {
+    margin: 0 0 12px;
+    text-align: center;
+    font-size: clamp(2rem, 8vw, 3rem);
+    letter-spacing: 0.12em;
+    font-weight: normal;
+    color: #0f0;
+}
+
+.entry-heading {
+    margin: 0;
+    text-align: center;
+    font-size: 1.5rem;
+    font-weight: normal;
+    letter-spacing: 0.06em;
+    color: #0f0;
+}
+
+.entry-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.entry-actions-row {
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: center;
+}
+
+.entry-btn,
+.entry-input {
     font-family: inherit;
     font-size: 1.25rem;
     background: #000;
     color: #0f0;
     border: 1px solid #0f0;
     padding: 8px 12px;
+}
+
+.entry-btn {
+    cursor: pointer;
+    letter-spacing: 0.04em;
+}
+
+.entry-btn:hover,
+.entry-btn:focus-visible {
+    background: #003300;
+    outline: none;
+}
+
+.entry-btn:disabled {
+    opacity: 0.45;
+    cursor: default;
+}
+
+.entry-secondary {
+    border-color: #060;
+    color: #0a0;
+}
+
+.entry-label {
+    font-size: 1.1rem;
+    color: #0a0;
+}
+
+.entry-input {
+    width: 100%;
+}
+
+.entry-input:focus {
+    outline: none;
+    border-color: #0f0;
+    box-shadow: 0 0 0 1px #0f0;
+}
+
+.entry-stats {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    column-gap: 1.25rem;
+    row-gap: 2px;
+    justify-content: center;
+    font-size: 1.35rem;
+    line-height: 1.35;
+    margin: 4px auto 8px;
+    min-width: 10ch;
+}
+
+.entry-stat-label {
+    color: #0a0;
+    text-align: right;
+}
+
+.entry-stat-value {
+    color: #0f0;
+    text-align: left;
+}
+
+.entry-error {
+    margin: 0;
+    color: #f66;
+    font-size: 1.1rem;
+    text-align: center;
+    min-height: 1.2em;
 }
 
 .game-screen {

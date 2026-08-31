@@ -17,6 +17,13 @@ def attribute_label(key):
     return ATTRIBUTE_LABELS.get(key, str(key).upper())
 
 
+def attribute_short_label(key):
+    """Compact label for character-creation screens (chr -> CHA)."""
+    if key == 'chr':
+        return 'CHA'
+    return str(key).upper()
+
+
 def attrs_from_mapping(data):
     """Build an attribute dict from a mapping; missing keys default to 1."""
     if not data:

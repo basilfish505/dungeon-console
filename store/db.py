@@ -98,12 +98,28 @@ class PostgresWorldStore(WorldStore):
                 return row[0] if row else None
         return self._run(_query)
 
+    def get_world_epoch(self, world_id: str) -> int | None:
+        def _query(conn):
+            with conn.cursor() as cur:
+                cur.execute(
+                    'SELECT epoch FROM worlds WHERE world_id = %s',
+                    (world_id,),
+                )
+                row = cur.fetchone()
+                if not row:
+                    return None
+                try:
+                    return int(row[0])
+                except (TypeError, ValueError):
+                    return 0
+        return self._run(_query)
+
     def load_world_meta(self, world_id: str) -> dict[str, Any] | None:
         def _query(conn):
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
                 cur.execute(
                     '''
-                    SELECT world_id, town_features, battles, created_at
+                    SELECT world_id, town_features, battles, created_at, epoch
                     FROM worlds WHERE world_id = %s
                     ''',
                     (world_id,),
@@ -142,7 +158,7 @@ class PostgresWorldStore(WorldStore):
                 if status is None:
                     cur.execute(
                         '''
-                        SELECT player_id, data, status, death
+                        SELECT player_id, data, status, death, name_key, password_hash
                         FROM characters WHERE world_id = %s
                         ''',
                         (world_id,),
@@ -150,7 +166,7 @@ class PostgresWorldStore(WorldStore):
                 else:
                     cur.execute(
                         '''
-                        SELECT player_id, data, status, death
+                        SELECT player_id, data, status, death, name_key, password_hash
                         FROM characters WHERE world_id = %s AND status = %s
                         ''',
                         (world_id, status),
@@ -160,6 +176,8 @@ class PostgresWorldStore(WorldStore):
                         'data': row['data'] or {},
                         'status': row['status'] or 'alive',
                         'death': row['death'],
+                        'name_key': row.get('name_key'),
+                        'password_hash': row.get('password_hash'),
                     }
             return out
         return self._run(_query)
@@ -171,7 +189,8 @@ class PostgresWorldStore(WorldStore):
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
                 cur.execute(
                     '''
-                    SELECT data, status, death FROM characters
+                    SELECT player_id, data, status, death, name_key, password_hash
+                    FROM characters
                     WHERE world_id = %s AND player_id = %s
                     ''',
                     (world_id, player_id),
@@ -180,9 +199,39 @@ class PostgresWorldStore(WorldStore):
                 if not row:
                     return None
                 return {
+                    'player_id': str(row['player_id']),
                     'data': row['data'] or {},
                     'status': row['status'] or 'alive',
                     'death': row['death'],
+                    'name_key': row.get('name_key'),
+                    'password_hash': row.get('password_hash'),
+                }
+        return self._run(_query)
+
+    def find_character_by_name_key(
+        self, world_id: str, name_key: str
+    ) -> dict[str, Any] | None:
+        def _query(conn):
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute(
+                    '''
+                    SELECT player_id, data, status, death, name_key, password_hash
+                    FROM characters
+                    WHERE world_id = %s AND name_key = %s
+                    LIMIT 1
+                    ''',
+                    (world_id, name_key),
+                )
+                row = cur.fetchone()
+                if not row:
+                    return None
+                return {
+                    'player_id': str(row['player_id']),
+                    'data': row['data'] or {},
+                    'status': row['status'] or 'alive',
+                    'death': row['death'],
+                    'name_key': row.get('name_key'),
+                    'password_hash': row.get('password_hash'),
                 }
         return self._run(_query)
 
@@ -193,6 +242,7 @@ class PostgresWorldStore(WorldStore):
         town_features: dict,
         battles: list,
         make_current: bool = True,
+        epoch: int = 0,
     ) -> None:
         def _insert(conn):
             with conn.cursor() as cur:
@@ -202,18 +252,21 @@ class PostgresWorldStore(WorldStore):
                     )
                 cur.execute(
                     '''
-                    INSERT INTO worlds (world_id, is_current, town_features, battles)
-                    VALUES (%s, %s, %s::jsonb, %s::jsonb)
+                    INSERT INTO worlds
+                        (world_id, is_current, town_features, battles, epoch)
+                    VALUES (%s, %s, %s::jsonb, %s::jsonb, %s)
                     ON CONFLICT (world_id) DO UPDATE SET
                         is_current = EXCLUDED.is_current,
                         town_features = EXCLUDED.town_features,
-                        battles = EXCLUDED.battles
+                        battles = EXCLUDED.battles,
+                        epoch = EXCLUDED.epoch
                     ''',
                     (
                         world_id,
                         make_current,
                         json.dumps(town_features),
                         json.dumps(battles),
+                        int(epoch),
                     ),
                 )
         self._run(_insert)
@@ -291,6 +344,41 @@ class PostgresWorldStore(WorldStore):
                 )
         self._run(_save)
 
+    def create_character(
+        self,
+        world_id: str,
+        player_id: str,
+        *,
+        name_key: str,
+        password_hash: str,
+        data: dict,
+        status: str = 'alive',
+        death: dict | None = None,
+    ) -> bool:
+        def _insert(conn):
+            with conn.cursor() as cur:
+                # Prefer the unique name_key index; also refuse duplicate player_id.
+                cur.execute(
+                    '''
+                    INSERT INTO characters
+                        (world_id, player_id, data, status, death,
+                         name_key, password_hash, updated_at)
+                    VALUES (%s, %s, %s::jsonb, %s, %s::jsonb, %s, %s, NOW())
+                    ON CONFLICT DO NOTHING
+                    ''',
+                    (
+                        world_id,
+                        player_id,
+                        json.dumps(data),
+                        status,
+                        json.dumps(death) if death is not None else None,
+                        name_key,
+                        password_hash,
+                    ),
+                )
+                return cur.rowcount == 1
+        return self._run(_insert)
+
     def save_character(
         self,
         world_id: str,
@@ -299,17 +387,25 @@ class PostgresWorldStore(WorldStore):
         data: dict,
         status: str = 'alive',
         death: dict | None = None,
+        name_key: str | None = None,
+        password_hash: str | None = None,
     ) -> None:
         def _save(conn):
             with conn.cursor() as cur:
                 cur.execute(
                     '''
-                    INSERT INTO characters (world_id, player_id, data, status, death, updated_at)
-                    VALUES (%s, %s, %s::jsonb, %s, %s::jsonb, NOW())
+                    INSERT INTO characters
+                        (world_id, player_id, data, status, death,
+                         name_key, password_hash, updated_at)
+                    VALUES (%s, %s, %s::jsonb, %s, %s::jsonb, %s, %s, NOW())
                     ON CONFLICT (world_id, player_id) DO UPDATE SET
                         data = EXCLUDED.data,
                         status = EXCLUDED.status,
                         death = EXCLUDED.death,
+                        name_key = COALESCE(EXCLUDED.name_key, characters.name_key),
+                        password_hash = COALESCE(
+                            EXCLUDED.password_hash, characters.password_hash
+                        ),
                         updated_at = NOW()
                     ''',
                     (
@@ -318,6 +414,8 @@ class PostgresWorldStore(WorldStore):
                         json.dumps(data),
                         status,
                         json.dumps(death) if death is not None else None,
+                        name_key,
+                        password_hash,
                     ),
                 )
         self._run(_save)
