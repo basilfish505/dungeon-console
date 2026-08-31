@@ -10,9 +10,64 @@
     <link rel="stylesheet" href="{{ asset_url('css/styles.css') }}">
 </head>
 <body>
-    <div id="player-login">
-        What be thy name? <input type="text" id="player-name" />
-        <button id="join-btn">Join</button>
+    <div id="entry-screen" class="entry-screen">
+        <div class="entry-panel" data-panel="choice" id="entry-panel-choice">
+            <h1 class="entry-title">PERMAQUEST</h1>
+            <div class="entry-actions">
+                <button type="button" id="entry-continue-btn" class="entry-btn entry-continue" hidden>CONTINUE AS</button>
+                <button type="button" id="entry-new-btn" class="entry-btn">NEW CHARACTER</button>
+                <button type="button" id="entry-return-btn" class="entry-btn">RETURNING CHARACTER</button>
+                <button type="button" id="entry-logout-btn" class="entry-btn entry-secondary" hidden>LOG OUT</button>
+            </div>
+        </div>
+
+        <div class="entry-panel" data-panel="stats" id="entry-panel-stats" hidden>
+            <h2 class="entry-heading">Starting Attributes</h2>
+            <div id="entry-stats-list" class="entry-stats"></div>
+            <p id="entry-stats-error" class="entry-error" hidden></p>
+            <div class="entry-actions entry-actions-row">
+                <button type="button" id="entry-shuffle-btn" class="entry-btn">SHUFFLE</button>
+                <button type="button" id="entry-accept-btn" class="entry-btn">ACCEPT</button>
+            </div>
+            <button type="button" id="entry-stats-back-btn" class="entry-btn entry-secondary">BACK</button>
+        </div>
+
+        <div class="entry-panel" data-panel="name" id="entry-panel-name" hidden>
+            <h2 class="entry-heading">Choose your character name</h2>
+            <label class="entry-label" for="entry-create-name">Character Name</label>
+            <input type="text" id="entry-create-name" class="entry-input" maxlength="16" autocomplete="username" spellcheck="false">
+            <p id="entry-name-error" class="entry-error" hidden></p>
+            <div class="entry-actions entry-actions-row">
+                <button type="button" id="entry-name-back-btn" class="entry-btn entry-secondary">BACK</button>
+                <button type="button" id="entry-name-next-btn" class="entry-btn">NEXT</button>
+            </div>
+        </div>
+
+        <div class="entry-panel" data-panel="password" id="entry-panel-password" hidden>
+            <h2 class="entry-heading">Create a password</h2>
+            <label class="entry-label" for="entry-create-password">Password</label>
+            <input type="password" id="entry-create-password" class="entry-input" maxlength="128" autocomplete="new-password">
+            <label class="entry-label" for="entry-create-password-confirm">Confirm Password</label>
+            <input type="password" id="entry-create-password-confirm" class="entry-input" maxlength="128" autocomplete="new-password">
+            <p id="entry-password-error" class="entry-error" hidden></p>
+            <div class="entry-actions entry-actions-row">
+                <button type="button" id="entry-password-back-btn" class="entry-btn entry-secondary">BACK</button>
+                <button type="button" id="entry-create-btn" class="entry-btn">CREATE CHARACTER</button>
+            </div>
+        </div>
+
+        <div class="entry-panel" data-panel="login" id="entry-panel-login" hidden>
+            <h2 class="entry-heading">Returning Character</h2>
+            <label class="entry-label" for="entry-login-name">Character Name</label>
+            <input type="text" id="entry-login-name" class="entry-input" maxlength="16" autocomplete="username" spellcheck="false">
+            <label class="entry-label" for="entry-login-password">Password</label>
+            <input type="password" id="entry-login-password" class="entry-input" maxlength="128" autocomplete="current-password">
+            <p id="entry-login-error" class="entry-error" hidden></p>
+            <div class="entry-actions entry-actions-row">
+                <button type="button" id="entry-login-back-btn" class="entry-btn entry-secondary">BACK</button>
+                <button type="button" id="entry-load-btn" class="entry-btn">LOAD CHARACTER</button>
+            </div>
+        </div>
     </div>
 
     <div id="game-shell" class="game-screen" hidden>
@@ -228,6 +283,7 @@
     <script src="{{ asset_url('js/combat_social.js') }}"></script>
     <script src="{{ asset_url('js/combat.js') }}"></script>
     <script src="{{ asset_url('js/socket.js') }}"></script>
+    <script src="{{ asset_url('js/entry.js') }}"></script>
     <script src="{{ asset_url('js/movement_controller.js') }}"></script>
     <script src="{{ asset_url('js/main.js') }}"></script>
 </body>

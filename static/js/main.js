@@ -3,6 +3,9 @@ const Game = (function () {
     function init() {
         UI.hideGameElements();
         SocketHandler.setupSocketEvents();
+        if (typeof Entry !== 'undefined' && Entry.init) {
+            Entry.init();
+        }
         setupEventListeners();
         if (typeof MovementController !== 'undefined') {
             MovementController.bind();
@@ -11,12 +14,6 @@ const Game = (function () {
     }
 
     function setupEventListeners() {
-        document.querySelector('#player-login button').addEventListener('click', submitName);
-
-        document.getElementById('player-name').addEventListener('keypress', function (e) {
-            if (e.key === 'Enter') submitName();
-        });
-
         document.querySelectorAll('#combat-controls button').forEach(btn => {
             if (btn.id === 'map-peek-btn') {
                 return;
@@ -54,15 +51,6 @@ const Game = (function () {
         }
     }
 
-    function submitName() {
-        const name = document.getElementById('player-name').value.trim();
-        if (!name) return;
-        Sound.warm(); // silent unlock + preload — no audible blip
-        const viewport = UI.prepareJoinViewport();
-        SocketHandler.selectPlayerId(name, viewport);
-    }
-
-    window.submitName = submitName;
     window.move = function (direction) {
         if (!direction || typeof MovementController === 'undefined') {
             return;

@@ -9,10 +9,11 @@ except ImportError:
 
 from flask import Flask, render_template, session, request, jsonify, url_for
 from flask_socketio import SocketIO, emit, join_room
+from datetime import timedelta
 import random
 import os
 import uuid
-from player import Player
+from player import Player, roll_starting_stats
 from combat import CombatSystem
 from map_generator import MapGenerator
 from camera import (
@@ -43,8 +44,21 @@ from items.service import (
 )
 from items.equipment import equip_item, unequip_item
 from items.catalog import SHOP_TO_CATEGORY
-from player_persistence import load_player, save_player
+from player_persistence import save_player
 from world_persistence import WorldPersistence
+from character_auth import (
+    clear_login_attempts,
+    login_allowed,
+    make_auth_token,
+    name_key,
+    normalize_name,
+    read_auth_token,
+    record_login_attempt,
+    validate_name,
+    validate_password,
+    verify_password,
+)
+from character_stats import ATTRIBUTE_KEYS, attribute_short_label
 from interiors.items_shop import (
     ITEMS_SHOP_ID,
     build_items_shop,
@@ -61,11 +75,13 @@ SHOP_BUILDERS = {
 }
 
 # Constants (map spawn rates live in map_generator.py)
-SECRET_KEY = 'your-secret-key-here'
+SECRET_KEY = os.environ.get('SECRET_KEY') or 'dev-only-change-me'
 # Persisted world id exposed to clients as boot_id (see WorldPersistence.initialize).
 SERVER_BOOT_ID = None
 # Keep each game_state payload small (full log was resent on every step).
 MAX_PLAYER_MESSAGES = 50
+LOGIN_ERROR = 'Incorrect character name or password.'
+NAME_UNAVAILABLE = 'That name is unavailable.'
 
 # Eight adjacent directions (N, NE, E, SE, S, SW, W, NW)
 _STAIR_ADJACENT_DIRS = (
@@ -75,6 +91,11 @@ _STAIR_ADJACENT_DIRS = (
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = SECRET_KEY
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=30)
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+if os.environ.get('RENDER') or os.environ.get('FORCE_SECURE_COOKIE'):
+    app.config['SESSION_COOKIE_SECURE'] = True
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')
 
 
@@ -460,24 +481,38 @@ class GameState:
         for pid in list(self.active_players.keys()):
             socketio_ref.emit('game_state', self.get_game_state(pid), room=pid)
 
-    def add_player(self, player_id):
+    def add_player(self, player_id, *, allow_create=True):
+        """
+        Activate a player for the current socket session.
+
+        When allow_create is False (authenticated entry paths), only an
+        existing stored / in-memory character may be activated — never invent
+        a brand-new one from a bare name.
+        """
         if player_id not in self.players:
             wp = self._persist_hook()
             restored = False
             if wp and wp.world_id:
-                row = wp.store.get_character(wp.world_id, player_id)
+                row = wp.find_character(player_id)
+                if row is None:
+                    row = wp.store.get_character(wp.world_id, player_id)
                 if row and row.get('status') == 'alive':
                     from world_serial import player_from_world_dict
                     data = row.get('data') or {}
-                    new_player = player_from_world_dict(player_id, data)
-                    self.players[player_id] = new_player
-                    self.player_messages[player_id] = list(data.get('messages') or [])
+                    canonical = row.get('player_id') or player_id
+                    new_player = player_from_world_dict(canonical, data)
+                    self.players[canonical] = new_player
+                    self.player_messages[canonical] = list(
+                        data.get('messages') or []
+                    )
+                    player_id = canonical
                     restored = True
             if not restored:
+                if not allow_create:
+                    return None
                 position = self.find_random_start(0)
                 new_player = Player(player_id, position)
                 new_player.dungeon_level = 0
-                load_player(new_player)
                 self.players[player_id] = new_player
                 self.player_messages[player_id] = []
                 self.add_player_message(
@@ -491,6 +526,48 @@ class GameState:
         # Mark player as active
         self.active_players[player_id] = self.players[player_id]
         return self.players[player_id]
+
+    def create_character(self, display_name, password, starting_stats):
+        """
+        Finalize a new character: build from the accepted roll, persist
+        atomically, then register in memory. Returns (player, None) on
+        success or (None, error_message) on failure. Never leaves a partial
+        permanent record when the name is taken.
+        """
+        display = normalize_name(display_name)
+        err = validate_name(display)
+        if err:
+            return None, err
+        err = validate_password(password)
+        if err:
+            return None, err
+        if display in self.players:
+            return None, NAME_UNAVAILABLE
+
+        wp = self._persist_hook()
+        if wp is None or not wp.world_id:
+            return None, 'World is not ready. Try again.'
+
+        existing = wp.find_character(display)
+        if existing is not None:
+            return None, NAME_UNAVAILABLE
+
+        position = self.find_random_start(0)
+        player = Player(display, position, starting_stats=starting_stats)
+        player.dungeon_level = 0
+        # Temporary message buffer for the initial save payload.
+        self.player_messages[display] = [
+            f"Welcome, {display}, to the realm of PermaQuest. "
+            f"Thy quest begins, and glory or ruin lies ahead.",
+        ]
+        ok = wp.create_character(display, password, player)
+        if not ok:
+            self.player_messages.pop(display, None)
+            return None, NAME_UNAVAILABLE
+
+        self.players[display] = player
+        self.recompute_visibility(player)
+        return player, None
 
     def bind_socket(self, player_id, sid):
         """Record which socket currently owns this player (reconnect-safe)."""
@@ -1019,6 +1096,165 @@ def home():
     return render_template('index.html')
 
 
+def _stats_for_client(stats):
+    """Compact starting-stat payload for the character-creation screen."""
+    if not isinstance(stats, dict):
+        stats = {}
+    rows = []
+    for key in ATTRIBUTE_KEYS:
+        try:
+            value = int(stats.get(key, 1))
+        except (TypeError, ValueError):
+            value = 1
+        rows.append({
+            'key': key,
+            'label': attribute_short_label(key),
+            'value': value,
+        })
+    try:
+        mhp = int(stats.get('mhp', 0))
+    except (TypeError, ValueError):
+        mhp = 0
+    try:
+        mmp = int(stats.get('mmp', 0))
+    except (TypeError, ValueError):
+        mmp = 0
+    rows.append({'key': 'mhp', 'label': 'HP', 'value': mhp})
+    rows.append({'key': 'mmp', 'label': 'MP', 'value': mmp})
+    return {
+        'stats': {row['key']: row['value'] for row in rows},
+        'rows': rows,
+    }
+
+
+def _issue_session(player_id):
+    """Set the Flask cookie session and mint a socket auth token."""
+    session.permanent = True
+    session['player_id'] = player_id
+    session.pop('pending_roll', None)
+    world_id = world_persistence.world_id or SERVER_BOOT_ID
+    token = make_auth_token(
+        SECRET_KEY, player_id=player_id, world_id=str(world_id),
+    )
+    return token
+
+
+def _clear_auth_session():
+    session.pop('player_id', None)
+    session.pop('pending_roll', None)
+
+
+@app.route('/api/character/roll', methods=['POST'])
+def api_character_roll():
+    """Roll (or re-roll) starting stats. No permanent character is created."""
+    stats = roll_starting_stats()
+    session['pending_roll'] = stats
+    session.modified = True
+    payload = _stats_for_client(stats)
+    return jsonify({'ok': True, **payload})
+
+
+@app.route('/api/character/create', methods=['POST'])
+def api_character_create():
+    data = request.get_json(silent=True) or {}
+    display = normalize_name(data.get('name'))
+    password = data.get('password')
+    confirm = data.get('password_confirm')
+    if confirm is not None and str(password) != str(confirm):
+        return jsonify({'ok': False, 'error': 'Passwords do not match.'}), 400
+
+    name_err = validate_name(display)
+    if name_err:
+        return jsonify({'ok': False, 'error': name_err}), 400
+    pass_err = validate_password(password)
+    if pass_err:
+        return jsonify({'ok': False, 'error': pass_err}), 400
+
+    starting_stats = session.get('pending_roll')
+    if not isinstance(starting_stats, dict):
+        return jsonify({
+            'ok': False,
+            'error': 'Roll starting stats before creating a character.',
+        }), 400
+
+    player, err = game_state.create_character(display, password, starting_stats)
+    if err or player is None:
+        status = 409 if err == NAME_UNAVAILABLE else 400
+        return jsonify({'ok': False, 'error': err or NAME_UNAVAILABLE}), status
+
+    token = _issue_session(player.id)
+    return jsonify({'ok': True, 'name': player.id, 'token': token})
+
+
+@app.route('/api/character/login', methods=['POST'])
+def api_character_login():
+    data = request.get_json(silent=True) or {}
+    raw_name = data.get('name')
+    password = data.get('password')
+    key = name_key(raw_name)
+
+    if not login_allowed(key):
+        return jsonify({
+            'ok': False,
+            'error': 'Too many attempts. Wait a moment and try again.',
+        }), 429
+
+    record_login_attempt(key)
+    row = world_persistence.find_character(raw_name)
+    if row is None:
+        return jsonify({'ok': False, 'error': LOGIN_ERROR}), 401
+    if (row.get('status') or 'alive') == 'dead':
+        return jsonify({'ok': False, 'error': LOGIN_ERROR}), 401
+    if not verify_password(row.get('password_hash'), password):
+        return jsonify({'ok': False, 'error': LOGIN_ERROR}), 401
+
+    clear_login_attempts(key)
+    display = row.get('player_id') or normalize_name(raw_name)
+    # Ensure the character body is in memory for the upcoming select_id.
+    if display not in game_state.players:
+        from world_serial import player_from_world_dict
+        player = player_from_world_dict(display, row.get('data') or {})
+        game_state.players[display] = player
+        game_state.player_messages[display] = list(
+            (row.get('data') or {}).get('messages') or []
+        )
+
+    token = _issue_session(display)
+    return jsonify({'ok': True, 'name': display, 'token': token})
+
+
+@app.route('/api/logout', methods=['POST'])
+def api_logout():
+    player_id = session.get('player_id')
+    if player_id and player_id in game_state.active_players:
+        game_state.remove_player(player_id)
+    _clear_auth_session()
+    return jsonify({'ok': True})
+
+
+@app.route('/api/session', methods=['GET'])
+def api_session():
+    player_id = session.get('player_id')
+    if not player_id:
+        return jsonify({'ok': True, 'remembered': None})
+    status = world_persistence.get_character_status(player_id)
+    if status != 'alive':
+        _clear_auth_session()
+        return jsonify({'ok': True, 'remembered': None})
+    # Prefer the canonical stored capitalization.
+    row = world_persistence.find_character(player_id)
+    display = (row or {}).get('player_id') or player_id
+    world_id = world_persistence.world_id or SERVER_BOOT_ID
+    token = make_auth_token(
+        SECRET_KEY, player_id=display, world_id=str(world_id),
+    )
+    return jsonify({
+        'ok': True,
+        'remembered': {'name': display},
+        'token': token,
+    })
+
+
 @app.route('/admin/new_world', methods=['POST'])
 def admin_new_world():
     """Explicit new world generation (requires ADMIN_TOKEN header or ?token=)."""
@@ -1037,51 +1273,86 @@ def admin_new_world():
     SERVER_BOOT_ID = new_id
     return jsonify({'ok': True, 'world_id': new_id})
 
+
+def _remembered_hello_payload():
+    """Build remembered/token fields for server_hello from the cookie session."""
+    player_id = session.get('player_id')
+    if not player_id:
+        return None, None
+    status = world_persistence.get_character_status(player_id)
+    if status != 'alive':
+        _clear_auth_session()
+        return None, None
+    row = world_persistence.find_character(player_id)
+    display = (row or {}).get('player_id') or player_id
+    if display not in game_state.players and row is not None:
+        from world_serial import player_from_world_dict
+        player = player_from_world_dict(display, row.get('data') or {})
+        game_state.players[display] = player
+        game_state.player_messages[display] = list(
+            (row.get('data') or {}).get('messages') or []
+        )
+    world_id = world_persistence.world_id or SERVER_BOOT_ID
+    token = make_auth_token(
+        SECRET_KEY, player_id=display, world_id=str(world_id),
+    )
+    return {'name': display}, token
+
+
 @socketio.on('connect')
 def handle_connect():
-    """Resume an existing session if possible; otherwise send spectator map."""
-    emit('server_hello', {'boot_id': SERVER_BOOT_ID})
-    player_id = session.get('player_id')
-    if player_id:
-        status = world_persistence.get_character_status(player_id)
-        if status == 'dead':
-            tomb = world_persistence.get_tombstone(player_id)
-            if tomb:
-                emit('character_dead', tomb)
-            return
-        if player_id in game_state.players:
-            game_state.add_player(player_id)
-            game_state.bind_socket(player_id, request.sid)
-            join_room(player_id)
-            emit('game_state', game_state.get_game_state(player_id))
-            # The combat screen is restored from select_id, which is the only
-            # path that actually puts the client into the game shell.
-            print(f"Player {player_id} resumed on connect (sid={request.sid}).")
-            return
+    """Announce boot id and any remembered authenticated character."""
+    remembered, token = _remembered_hello_payload()
+    hello = {'boot_id': SERVER_BOOT_ID, 'remembered': remembered}
+    if token:
+        hello['token'] = token
+    emit('server_hello', hello)
+    # Do not auto-bind the socket or push a player game_state here — the
+    # client must explicitly CONTINUE / enter with a token so the game shell
+    # and combat UI are prepared.
     emit('game_state', game_state.get_game_state(None))
 
 
 @socketio.on('select_id')
 def handle_select_id(data):
-    # Accept {id, boot_id, h, w}. Legacy string id has no boot_id → rejected.
+    """
+    Authenticated entry into the game shell.
+
+    Accepts {token, boot_id, h, w}. The token (or cookie session) identifies
+    an already-created character; this path never invents a new one.
+    """
     if isinstance(data, dict):
-        player_id = data.get('id')
         client_boot = data.get('boot_id')
+        auth_token = data.get('token')
         vh, vw = clamp_viewport_size(data.get('h'), data.get('w'))
         has_viewport = 'h' in data or 'w' in data
     else:
-        player_id = data
         client_boot = None
+        auth_token = None
         vh, vw = VIEWPORT_H, VIEWPORT_W
         has_viewport = False
 
-    if not player_id:
-        return
-
-    # Stale tabs after a server restart must not recreate characters.
     if not client_boot or str(client_boot) != SERVER_BOOT_ID:
         emit('world_reset', {'boot_id': SERVER_BOOT_ID})
-        print(f"Rejected select_id for {player_id!r} (stale or missing boot_id).")
+        print('Rejected select_id (stale or missing boot_id).')
+        return
+
+    world_id = world_persistence.world_id or SERVER_BOOT_ID
+    auth = read_auth_token(SECRET_KEY, auth_token, world_id=str(world_id))
+    player_id = auth['player_id'] if auth else None
+    if not player_id:
+        # Fall back to the HTTP cookie session (same-device continue).
+        cookie_id = session.get('player_id')
+        if cookie_id:
+            status = world_persistence.get_character_status(cookie_id)
+            if status == 'alive':
+                row = world_persistence.find_character(cookie_id)
+                player_id = (row or {}).get('player_id') or cookie_id
+
+    if not player_id:
+        emit('auth_required', {
+            'message': 'Sign in to continue.',
+        })
         return
 
     char_status = world_persistence.get_character_status(player_id)
@@ -1091,38 +1362,47 @@ def handle_select_id(data):
             'player_id': player_id,
             'message': '.... Thou art dead.',
         })
+        _clear_auth_session()
         print(f"Rejected select_id for {player_id!r} (character is dead).")
         return
-
-    already_active = player_id in game_state.active_players
-    session_owns = session.get('player_id') == player_id
-    existing_body = player_id in game_state.players
-
-    # Name in use by someone else (not this session reclaiming / resuming)
-    if already_active and not session_owns:
-        emit('id_taken', {'message': 'That name is currently in use!'})
+    if char_status is None and player_id not in game_state.players:
+        emit('auth_required', {
+            'message': 'Sign in to continue.',
+        })
+        _clear_auth_session()
         return
 
+    # Concurrent-session takeover: kick the previous socket for this character.
+    previous_sid = game_state.player_sids.get(player_id)
+    if previous_sid and previous_sid != request.sid:
+        socketio.emit(
+            'session_replaced',
+            {'message': 'Signed in from another device.'},
+            room=previous_sid,
+        )
+
     session['player_id'] = player_id
-    game_state.add_player(player_id)
+    player = game_state.add_player(player_id, allow_create=False)
+    if player is None:
+        emit('auth_required', {
+            'message': 'Sign in to continue.',
+        })
+        _clear_auth_session()
+        return
+
+    player_id = player.id
     game_state.bind_socket(player_id, request.sid)
     join_room(player_id)
 
     if has_viewport:
         game_state.viewports[player_id] = (vh, vw)
-        # Only reset camera for brand-new characters, not reconnect/resume
-        if not existing_body:
-            game_state.cameras.pop(player_id, None)
 
-    kind = 'resumed' if existing_body else 'created'
-    print(f"Player {player_id} joined ({kind}, sid={request.sid}).")
+    print(f"Player {player_id} joined (authenticated, sid={request.sid}).")
 
-    # Update all active players (includes rejoiner)
     for pid in game_state.players:
         if pid in game_state.active_players:
             emit('game_state', game_state.get_game_state(pid), room=pid)
 
-    # A rejoiner whose battle is still running needs the combat screen back.
     combat_system.resume_combat_for(player_id)
 
 
