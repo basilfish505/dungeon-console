@@ -1,8 +1,9 @@
 """Restoring the combat screen for a player who reconnects mid-battle."""
 
+import time
 import unittest
 
-from combat import CombatSystem
+from combat import TURN_TIMEOUT_SECONDS, CombatSystem
 from monster import Monster
 from player import Player
 
@@ -110,6 +111,79 @@ class ResumeCombatTests(unittest.TestCase):
     def test_active_player_is_none_when_turn_index_is_out_of_range(self):
         self.battle['current_turn_index'] = 99
         self.assertIsNone(self.cs._get_current_active_player(self.battle))
+
+
+class TurnDeadlineTests(unittest.TestCase):
+    """The countdown follows the server deadline, not a fresh full turn."""
+
+    def setUp(self):
+        self.emitted = []
+        self.gs = _fake_gs()
+        self.cs = CombatSystem(self.gs, _fake_socketio(self.emitted))
+        self.hero = Player('hero', [1, 1])
+        self.hero.in_combat = True
+        self.mon = Monster.from_type('troll', [2, 2], monster_id='m1', level=3)
+        self.gs.players = {'hero': self.hero}
+        self.gs.active_combats = {'hero': 'b1'}
+        self.battle = {
+            'battle_id': 'b1',
+            'participants': ['hero'],
+            'monsters': [self.mon],
+            'turn_order': ['hero', self.mon.id],
+            'current_turn_index': 0,
+            'status': 'active',
+            'defend_status': {},
+            'turn_token': None,
+            'turn_deadline': None,
+        }
+        self.cs.battles = {'b1': self.battle}
+
+    def _combat_starts(self):
+        return [
+            a[1] for a, _ in self.emitted
+            if a[0] == 'combat_update' and a[1].get('type') == 'combat_start'
+        ]
+
+    def _live_timer(self, remaining):
+        self.battle['turn_token'] = 'tok'
+        self.battle['turn_deadline'] = time.monotonic() + remaining
+
+    def test_start_turn_timer_sets_deadline(self):
+        self.cs._start_turn_timer(self.battle, 'hero')
+        self.assertTrue(self.battle['turn_token'])
+        left = self.battle['turn_deadline'] - time.monotonic()
+        self.assertGreater(left, TURN_TIMEOUT_SECONDS - 2)
+        self.assertLessEqual(left, TURN_TIMEOUT_SECONDS)
+
+    def test_cancel_turn_timer_clears_deadline(self):
+        self.cs._start_turn_timer(self.battle, 'hero')
+        self.cs._cancel_turn_timer(self.battle)
+        self.assertIsNone(self.battle['turn_token'])
+        self.assertIsNone(self.battle['turn_deadline'])
+        self.assertIsNone(self.cs._remaining_turn_seconds(self.battle))
+
+    def test_reconnect_reports_remaining_time(self):
+        self._live_timer(6)
+        self.assertTrue(self.cs.resume_combat_for('hero'))
+        payload = self._combat_starts()[0]
+        self.assertLessEqual(payload['turn_timeout'], 6)
+        self.assertGreater(payload['turn_timeout'], 0)
+
+    def test_join_refresh_does_not_reset_the_clock(self):
+        self._live_timer(4)
+        self.cs._send_combat_start(
+            'hero', self.battle, is_join_refresh=True,
+        )
+        payload = self._combat_starts()[0]
+        self.assertLessEqual(payload['turn_timeout'], 4)
+
+    def test_no_turn_timeout_when_no_timer_is_running(self):
+        self.cs._send_combat_start('hero', self.battle, is_join_refresh=True)
+        self.assertNotIn('turn_timeout', self._combat_starts()[0])
+
+    def test_expired_deadline_reports_one_second(self):
+        self._live_timer(-5)
+        self.assertEqual(self.cs._remaining_turn_seconds(self.battle), 1)
 
 
 if __name__ == '__main__':

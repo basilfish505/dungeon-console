@@ -19,6 +19,8 @@ const Sound = (function () {
         killmonster: '/static/sounds/killmonster.mp3',
         enterbattle: '/static/sounds/enterbattle.mp3',
         spell: '/static/sounds/spell.mp3',
+        runblock: '/static/sounds/runblock.mp3',
+        escape: '/static/sounds/escape.mp3',
     };
 
     function audioContext() {

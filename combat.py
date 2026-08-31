@@ -9,6 +9,8 @@ from player_persistence import save_player
 from player_growth import format_level_up_messages
 import combat_alliances as alliances
 from combat_alliances import REWARD_POLICY
+import math
+import time
 import uuid
 
 TURN_TIMEOUT_SECONDS = 20
@@ -50,6 +52,12 @@ def _player_combatant(player, is_current_turn=False, defending=False):
             sprite = player.sprite_url()
         except Exception:
             sprite = None
+    portrait = sprite
+    if hasattr(player, 'portrait_url'):
+        try:
+            portrait = player.portrait_url() or sprite
+        except Exception:
+            portrait = sprite
     return {
         'id': player.id,
         'name': player.id,
@@ -63,7 +71,7 @@ def _player_combatant(player, is_current_turn=False, defending=False):
         'is_current_turn': bool(is_current_turn),
         'defending': bool(defending),
         'sprite': sprite,
-        'portrait': sprite,
+        'portrait': portrait,
     }
 
 
@@ -72,6 +80,8 @@ class CombatSystem:
         self.game_state = game_state
         self.socketio = socketio
         self.battles = {}  # Dictionary to store battle instances by battle_id
+        # Injectable so tests can force Run success/failure without patching random.
+        self.run_rng = random
 
     def _emit(self, event, data=None, room=None):
         """Emit via SocketIO so background turn timers work outside request context"""
@@ -334,16 +344,17 @@ class CombatSystem:
         
         # Add the defender to the battle
         self._add_entity_to_battle(battle, defender_id, defender, is_monster_combat)
-        
+
+        # Start the opening actor's timer first so combat_start can report the
+        # real remaining time instead of a placeholder.
+        self._start_turn_timer(battle, attacker_id)
+
         # Send combat initiation to attacker
         self._send_combat_start(attacker_id, battle)
         
         # Send combat initiation to defender if it's a player
         if not is_monster_combat:
             self._send_combat_start(defender_id, battle)
-        
-        # Start turn timer for the opening actor (attacker)
-        self._start_turn_timer(battle, attacker_id)
         
         if emit_game_state:
             self._update_all_players()
@@ -482,10 +493,15 @@ class CombatSystem:
             'viewer_id': player_id,
             'opponents': opponents,
             'combatants': self._get_combatants_status(battle),
-            'turn_timeout': TURN_TIMEOUT_SECONDS,
             'is_join_refresh': bool(is_join_refresh),
             'is_resume': bool(is_resume),
         }
+        # Only send a countdown when a player turn timer is live, and send what
+        # is left of it. Omitting the key leaves existing clients' countdowns
+        # alone, so a joiner or reconnect cannot reset everyone to a full turn.
+        remaining = self._remaining_turn_seconds(battle)
+        if remaining is not None:
+            combat_info['turn_timeout'] = remaining
         if message:
             combat_info['message'] = message
 
@@ -554,8 +570,11 @@ class CombatSystem:
         # Process the action based on type
         action_processed = False
         if action == 'attack':
-            self._handle_attack(player_id, target_id, battle)
-            action_processed = True
+            # False means rejected (e.g. self-attack); None/implicit success still
+            # advances the turn like existing paths that return without a value.
+            action_processed = self._handle_attack(
+                player_id, target_id, battle
+            ) is not False
         elif action == 'defend':
             self._handle_defend(player_id, battle)
             action_processed = True
@@ -563,6 +582,8 @@ class CombatSystem:
             action_processed = self._handle_spell(
                 player_id, spell_id, target_id, battle
             )
+        elif action == 'run':
+            action_processed = self._handle_run(player_id, battle)
         
         # Advance to the next turn if an action was processed and the battle is still active
         if action_processed and battle['status'] == 'active':
@@ -729,7 +750,20 @@ class CombatSystem:
             if not target:
                 self._send_target_request(attacker_id, battle)
                 return
-        
+
+        if not target_is_monster and target_id == attacker_id:
+            self._emit('combat_update', {
+                'type': 'combat_action',
+                'battle_id': battle['battle_id'],
+                'action': 'attack',
+                'message': (
+                    '.... You cannot attack yourself. Choose another target.'
+                ),
+                'your_turn': True,
+                'combatants': self._get_combatants_status(battle),
+            }, room=attacker_id)
+            return False
+
         # Get display name for the target
         target_display = target.type if target_is_monster else target.id
         
@@ -781,6 +815,121 @@ class CombatSystem:
         # Send combat updates to all participants (combat window only)
         for p_id in battle['participants']:
             self._send_defend_update(p_id, battle, player_id)
+
+    def _handle_run(self, player_id, battle):
+        """
+        Attempt to flee combat. Returns True so the turn is always consumed.
+
+        Failure keeps the runner in the fight. Success removes only that player;
+        the battle continues for anyone still participating.
+        """
+        from combat_run import (
+            find_escape_tile,
+            highest_enemy_agility,
+            run_chance,
+        )
+
+        player = self.game_state.players.get(player_id)
+        if player is None:
+            return False
+
+        player_agi = 0
+        try:
+            player_agi = int(getattr(player, 'agi', 0) or 0)
+        except (TypeError, ValueError):
+            player_agi = 0
+        enemy_agi = highest_enemy_agility(battle, self.game_state, player_id)
+        chance = run_chance(player_agi, enemy_agi)
+        roll = self.run_rng.random()
+        escaped = roll < chance
+
+        if not escaped:
+            combatants = self._get_combatants_status(battle)
+            for p_id in list(battle['participants']):
+                if p_id == player_id:
+                    message = '.... You try to flee but cannot escape!'
+                else:
+                    message = f'.... {player.id} tried to flee and failed!'
+                self._emit('combat_update', {
+                    'type': 'combat_action',
+                    'battle_id': battle['battle_id'],
+                    'action': 'run',
+                    'escaped': False,
+                    'message': message,
+                    'player_id': player_id,
+                    'combatants': combatants,
+                    'your_turn': False,
+                    'play_run_block_sound': True,
+                }, room=p_id)
+            return True
+
+        origin = list(player.pos)
+        destination = find_escape_tile(
+            self.game_state, player, origin, rng=self.run_rng,
+        )
+        if destination is None:
+            destination = list(origin)
+
+        # Remove from battle before relocating so occupancy checks see them gone.
+        if player_id in battle['participants']:
+            battle['participants'].remove(player_id)
+        battle.setdefault('defend_status', {}).pop(player_id, None)
+        alliances.remove_player(battle, player_id)
+
+        if player_id in battle['turn_order']:
+            idx = battle['turn_order'].index(player_id)
+            battle['turn_order'].remove(player_id)
+            # Runner is the current actor; leave index so _advance_turn (+1)
+            # lands on whoever followed them.
+            if battle['turn_order']:
+                battle['current_turn_index'] = (idx - 1) % len(battle['turn_order'])
+            else:
+                battle['current_turn_index'] = 0
+
+        player.in_combat = False
+        if player_id in self.game_state.active_combats:
+            del self.game_state.active_combats[player_id]
+
+        player.pos = [int(destination[0]), int(destination[1])]
+        gs = self.game_state
+        if hasattr(gs, 'recompute_visibility'):
+            gs.recompute_visibility(player)
+        if hasattr(gs, 'mark_character_dirty'):
+            gs.mark_character_dirty(player_id)
+        if (
+            not getattr(player, 'interior_id', None)
+            and hasattr(gs, 'mark_level_dirty')
+        ):
+            gs.mark_level_dirty(player.dungeon_level)
+
+        remaining = list(battle['participants'])
+        self._emit('combat_update', {
+            'type': 'combat_end',
+            'battle_id': battle['battle_id'],
+            'message': '.... You escaped the battle!',
+            'victory': False,
+            'escaped': True,
+            'play_escape_sound': True,
+        }, room=player_id)
+
+        if remaining:
+            combatants = self._get_combatants_status(battle)
+            for p_id in remaining:
+                self._emit('combat_update', {
+                    'type': 'combat_action',
+                    'battle_id': battle['battle_id'],
+                    'action': 'run',
+                    'escaped': True,
+                    'message': f'.... {player.id} fled the battle!',
+                    'player_id': player_id,
+                    'combatants': combatants,
+                    'your_turn': False,
+                    'play_escape_sound': True,
+                }, room=p_id)
+
+        self._check_battle_end(battle)
+        self._persist_combat_state()
+        return True
 
     def _spell_fail(self, player_id, battle, message):
         """Tell the caster why the spell failed; consume neither turn nor MP."""
@@ -847,11 +996,9 @@ class CombatSystem:
         target_is_monster = False
 
         if mode == 'single_any':
-            # Explicit target required — never infer, self is allowed.
+            # No target means the caster targets themselves (e.g. solo Heal).
             if not target_id:
-                return self._spell_fail(
-                    player_id, battle, '.... Choose a target for that spell.',
-                )
+                target_id = player_id
             if target_id == player_id:
                 target = caster
                 target_is_monster = False
@@ -1132,7 +1279,25 @@ class CombatSystem:
     def _cancel_turn_timer(self, battle):
         """Invalidate any pending turn timer for this battle"""
         battle['turn_token'] = None
+        battle['turn_deadline'] = None
         battle['monster_turn_delay_token'] = None
+
+    def _remaining_turn_seconds(self, battle):
+        """
+        Seconds left on the live turn timer, or None when no timer is running.
+
+        Callers use this instead of TURN_TIMEOUT_SECONDS so a mid-turn join or
+        reconnect reports the real deadline rather than restarting the clock.
+        """
+        if not battle.get('turn_token'):
+            return None
+        deadline = battle.get('turn_deadline')
+        if not deadline:
+            return None
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return 1
+        return min(TURN_TIMEOUT_SECONDS, int(math.ceil(remaining)))
 
     def _turn_timer_expire(self, battle_id, player_id, token):
         """Background task: forfeit turn after timeout if still pending"""
@@ -1153,9 +1318,16 @@ class CombatSystem:
         self._forfeit_turn(current, player_id)
 
     def _start_turn_timer(self, battle, player_id):
-        """Start a 6s forfeit timer for the given player's turn"""
+        """Start the forfeit timer for the given player's turn.
+
+        The deadline is kept on the battle so joiners and reconnecting clients
+        can be told how much of the turn is actually left. Offline players get
+        the same full window: the timer runs server-side either way, so they
+        keep a fair chance to reconnect and act.
+        """
         token = str(uuid.uuid4())
         battle['turn_token'] = token
+        battle['turn_deadline'] = time.monotonic() + TURN_TIMEOUT_SECONDS
         # Use SocketIO background task so it runs on the server event loop
         self.socketio.start_background_task(
             self._turn_timer_expire,

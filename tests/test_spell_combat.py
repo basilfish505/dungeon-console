@@ -222,14 +222,27 @@ class HealCombatTests(unittest.TestCase):
         if 'Ally' not in self.battle['participants']:
             self.battle['participants'].append('Ally')
 
-    def test_heal_self_requires_explicit_target_no_infer(self):
-        turn_before = self.battle['current_turn_index']
-        ok = self.cs.process_action(
-            'Steve', 'spell', target_id=None, spell_id='heal',
-        )
-        self.assertFalse(ok)
-        self.assertEqual(self.hero.mp, 8)
-        self.assertEqual(self.battle['current_turn_index'], turn_before)
+    def test_heal_defaults_to_caster_when_no_target(self):
+        class Fixed:
+            def randint(self, a, b):
+                return 10
+
+        import spell_casting as sc
+        real = sc._resolve_heal
+
+        def wrapped(caster, spell, target, rng=None):
+            return real(caster, spell, target, rng=Fixed())
+
+        sc.SPELL_EFFECT_HANDLERS['heal'] = wrapped
+        try:
+            ok = self.cs.process_action(
+                'Steve', 'spell', target_id=None, spell_id='heal',
+            )
+        finally:
+            sc.SPELL_EFFECT_HANDLERS['heal'] = real
+        self.assertTrue(ok)
+        self.assertEqual(self.hero.mp, 6)
+        self.assertEqual(self.hero.hp, 60)
 
     def test_heal_self_restores_hp(self):
         class Fixed:
@@ -311,6 +324,35 @@ class HealCombatTests(unittest.TestCase):
             self.assertEqual(self.mon.hp, 38)
         finally:
             sc.SPELL_EFFECT_HANDLERS['heal'] = real
+
+
+class SelfAttackTests(unittest.TestCase):
+    def setUp(self):
+        self.gs, self.cs, self.sock = _system()
+        self.hero = Player('Steve', [1, 1])
+        self.hero.hp = 50
+        self.hero.mhp = 100
+        self.mon = Monster.from_type('troll', [1, 2], monster_id='slime-1', level=1)
+        self.gs.players = {'Steve': self.hero}
+        self.battle = _battle(self.gs, self.cs, self.hero, self.mon)
+
+    def test_cannot_attack_yourself(self):
+        turn_before = self.battle['current_turn_index']
+        hp_before = self.hero.hp
+        ok = self.cs.process_action('Steve', 'attack', target_id='Steve')
+        self.assertFalse(ok)
+        self.assertEqual(self.battle['current_turn_index'], turn_before)
+        self.assertEqual(self.hero.hp, hp_before)
+        msgs = [
+            data.get('message', '')
+            for (event, data, room) in self.sock.emitted
+            if event == 'combat_update' and isinstance(data, dict)
+            and room == 'Steve'
+        ]
+        self.assertTrue(
+            any('cannot attack yourself' in m.lower() for m in msgs),
+            msgs,
+        )
 
 
 if __name__ == '__main__':

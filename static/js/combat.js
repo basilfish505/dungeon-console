@@ -7,6 +7,8 @@ const Combat = (function () {
     const DEFEAT_HOLD_MS = 140;
     const DEFEAT_SMASH_MS = 650;
     const CARD_SHAKE_MS = 280;
+    /** Used until the roster payload supplies the viewer's own portrait. */
+    const SELF_PORTRAIT_FALLBACK = '/static/player/Portrait/player.png';
 
     const elements = {
         overlay: document.getElementById('combat-overlay'),
@@ -39,6 +41,7 @@ const Combat = (function () {
         selfMmp: null,
         selfLevel: null,
         selfName: null,
+        selfPortrait: null,
     };
     let combatLogLines = [];
     let countdownTimer = null;
@@ -68,6 +71,24 @@ const Combat = (function () {
     /** Monster keys waiting for spell FX before smash/death sound. */
     const pendingSpellDefeats = new Set();
 
+    function syncMapPeekButton() {
+        const btn = elements.mapPeekBtn;
+        if (!btn) {
+            return;
+        }
+        if (mapPeekActive) {
+            btn.classList.add('active');
+            btn.textContent = 'Battle';
+            btn.setAttribute('aria-label', 'Return to battle');
+            btn.setAttribute('aria-pressed', 'true');
+        } else {
+            btn.classList.remove('active');
+            btn.textContent = 'Map';
+            btn.setAttribute('aria-label', 'View dungeon map');
+            btn.setAttribute('aria-pressed', 'false');
+        }
+    }
+
     function endMapPeek() {
         if (!mapPeekActive) {
             return;
@@ -76,9 +97,7 @@ const Combat = (function () {
         if (elements.overlay) {
             elements.overlay.classList.remove('combat-map-peek');
         }
-        if (elements.mapPeekBtn) {
-            elements.mapPeekBtn.classList.remove('active');
-        }
+        syncMapPeekButton();
     }
 
     function refreshMapDuringPeek() {
@@ -96,27 +115,29 @@ const Combat = (function () {
         }
     }
 
-    function startMapPeek(e) {
+    function startMapPeek() {
         if (!open || mapPeekActive || !elements.overlay) {
             return;
         }
+        mapPeekActive = true;
+        elements.overlay.classList.add('combat-map-peek');
+        syncMapPeekButton();
+        refreshMapDuringPeek();
+    }
+
+    function toggleMapPeek(e) {
         if (e) {
             e.preventDefault();
             e.stopPropagation();
         }
-        mapPeekActive = true;
-        elements.overlay.classList.add('combat-map-peek');
-        if (elements.mapPeekBtn) {
-            elements.mapPeekBtn.classList.add('active');
-            if (e && elements.mapPeekBtn.setPointerCapture && e.pointerId != null) {
-                try {
-                    elements.mapPeekBtn.setPointerCapture(e.pointerId);
-                } catch (_err) {
-                    // Ignore capture failures on unsupported browsers.
-                }
-            }
+        if (!open || !elements.overlay) {
+            return;
         }
-        refreshMapDuringPeek();
+        if (mapPeekActive) {
+            endMapPeek();
+        } else {
+            startMapPeek();
+        }
     }
 
     function bindMapPeek() {
@@ -124,13 +145,11 @@ const Combat = (function () {
         if (!btn) {
             return;
         }
-        btn.addEventListener('pointerdown', startMapPeek);
-        btn.addEventListener('pointerup', endMapPeek);
-        btn.addEventListener('pointercancel', endMapPeek);
-        btn.addEventListener('lostpointercapture', endMapPeek);
+        btn.addEventListener('click', toggleMapPeek);
         btn.addEventListener('contextmenu', function (e) {
             e.preventDefault();
         });
+        syncMapPeekButton();
     }
 
     function stripHtml(html) {
@@ -544,7 +563,7 @@ const Combat = (function () {
             elements.spellBtn.disabled = disableAll || noSpell || pickingSpell;
         }
         if (elements.itemBtn) elements.itemBtn.disabled = disableAll || pickingSpell;
-        if (elements.runBtn) elements.runBtn.disabled = true;
+        if (elements.runBtn) elements.runBtn.disabled = disableAll || pickingSpell;
         syncSpellCancelBtn();
         if (elements.opponentThinking) {
             elements.opponentThinking.style.display = 'none';
@@ -682,6 +701,10 @@ const Combat = (function () {
         currentBattle.selfMhp = me.mhp;
         currentBattle.selfMp = me.mp;
         currentBattle.selfMmp = me.mmp;
+        const url = portraitUrl(me);
+        if (url) {
+            currentBattle.selfPortrait = url;
+        }
     }
 
     function renderSelfCard() {
@@ -711,8 +734,18 @@ const Combat = (function () {
         if (pickingSelf) {
             cls += ' selected-target';
         }
+        const url = currentBattle.selfPortrait || SELF_PORTRAIT_FALLBACK;
         elements.selfCard.className = cls;
         elements.selfCard.innerHTML =
+            `<div class="combat-self-portrait-wrap">` +
+            (url
+                ? `<img class="combat-self-portrait" src="${escapeHtml(url)}" alt="" draggable="false">`
+                : '') +
+            `<span class="combat-self-info-btn" role="button" tabindex="0" aria-label="Inspect your character">` +
+            `<span class="combat-card-info" aria-hidden="true">i</span>` +
+            `</span>` +
+            `</div>` +
+            `<div class="combat-self-body">` +
             `<div class="combat-self-meta">` +
             `<span class="combat-self-name">${escapeHtml(name)}</span>` +
             `<span class="combat-level-badge">Lv ${escapeHtml(level)}</span>` +
@@ -720,28 +753,69 @@ const Combat = (function () {
             (turn ? '<span class="combat-badge-turn">Your turn</span>' : '') +
             `</div>` +
             hpBarHtml(hp, mhp) +
-            mpBarHtml(mp, mmp);
-        if (currentBattle.pendingSpellPick) {
-            elements.selfCard.setAttribute('role', 'button');
-            elements.selfCard.setAttribute('tabindex', '0');
-            elements.selfCard.setAttribute('aria-label', 'Cast on yourself');
-            elements.selfCard.onclick = function (e) {
+            mpBarHtml(mp, mmp) +
+            `</div>`;
+
+        const infoBtn = elements.selfCard.querySelector('.combat-self-info-btn');
+        if (infoBtn) {
+            infoBtn.addEventListener('pointerup', function (e) {
                 e.preventDefault();
                 e.stopPropagation();
-                confirmSpellTarget(currentBattle.viewerId);
-            };
-            elements.selfCard.onkeydown = function (e) {
+                inspectSelf();
+            });
+            infoBtn.addEventListener('keydown', function (e) {
                 if (e.key === 'Enter' || e.key === ' ') {
                     e.preventDefault();
-                    confirmSpellTarget(currentBattle.viewerId);
+                    e.stopPropagation();
+                    inspectSelf();
                 }
-            };
-        } else {
-            elements.selfCard.removeAttribute('role');
-            elements.selfCard.removeAttribute('tabindex');
-            elements.selfCard.removeAttribute('aria-label');
-            elements.selfCard.onclick = null;
-            elements.selfCard.onkeydown = null;
+            });
+        }
+
+        const picking = !!currentBattle.pendingSpellPick;
+        elements.selfCard.setAttribute('role', 'button');
+        elements.selfCard.setAttribute('tabindex', '0');
+        elements.selfCard.setAttribute(
+            'aria-label',
+            picking ? 'Cast on yourself' : 'Inspect your character'
+        );
+        const activate = function () {
+            if (currentBattle.pendingSpellPick) {
+                confirmSpellTarget(currentBattle.viewerId);
+                return;
+            }
+            inspectSelf();
+        };
+        elements.selfCard.onclick = function (e) {
+            if (isSelfInfoTarget(e.target)) {
+                return;
+            }
+            e.preventDefault();
+            e.stopPropagation();
+            activate();
+        };
+        elements.selfCard.onkeydown = function (e) {
+            if (e.key !== 'Enter' && e.key !== ' ') {
+                return;
+            }
+            if (isSelfInfoTarget(e.target)) {
+                return;
+            }
+            e.preventDefault();
+            activate();
+        };
+    }
+
+    function isSelfInfoTarget(target) {
+        return !!(target && target.closest && target.closest('.combat-self-info-btn'));
+    }
+
+    function inspectSelf() {
+        const me = currentBattle.viewerId
+            || (document.getElementById('player-id') || {}).value;
+        if (!me) return;
+        if (typeof SocketHandler !== 'undefined' && SocketHandler.inspectCombatant) {
+            SocketHandler.inspectCombatant(me);
         }
     }
 
@@ -796,6 +870,28 @@ const Combat = (function () {
                 });
                 const mode = def && def.target_mode;
                 if (mode === 'single_any') {
+                    const me = currentBattle.viewerId;
+                    const hasOtherPlayers = (currentBattle.combatants || []).some(
+                        function (c) {
+                            if (!c || c.is_monster) {
+                                return false;
+                            }
+                            if (me && c.id === me) {
+                                return false;
+                            }
+                            return Number(c.hp) > 0;
+                        }
+                    );
+                    if (!hasOtherPlayers) {
+                        if (window.socket) {
+                            window.socket.emit('combat_action', {
+                                action: 'spell',
+                                spell_id: spellId,
+                                target_id: me || null,
+                            });
+                        }
+                        return;
+                    }
                     currentBattle.pendingSpellPick = { spellId: spellId };
                     currentBattle.selectedTarget = null;
                     renderRoster();
@@ -1183,6 +1279,12 @@ const Combat = (function () {
         if (!data.play_spell_sound && data.play_miss_sound) {
             Sound.play(data.play_miss_sound);
         }
+        if (data.play_run_block_sound && typeof Sound !== 'undefined') {
+            Sound.play('runblock');
+        }
+        if (data.play_escape_sound && typeof Sound !== 'undefined') {
+            Sound.play('escape');
+        }
 
         updateButtonStates(data.your_turn);
         if (data.message) {
@@ -1286,10 +1388,42 @@ const Combat = (function () {
         fxHoldUntil = 0;
         pendingTurnNotification = null;
         pendingSpellDefeats.clear();
-        if (data.victory) Sound.play('victory');
         if (data.message) {
+            showStatusMessage(data.message);
             appendCombatLog(data.message);
         }
+        if (data.escaped) {
+            playEscapeThenLeave(data);
+            return;
+        }
+        if (data.victory && typeof Sound !== 'undefined') {
+            Sound.play('victory');
+        }
+        leaveCombatWindow();
+    }
+
+    function playEscapeThenLeave(data) {
+        const fallback = 1.6;
+        let left = false;
+        const leave = function () {
+            if (left) {
+                return;
+            }
+            left = true;
+            leaveCombatWindow();
+        };
+        if (typeof Sound === 'undefined' || !Sound.play) {
+            setTimeout(leave, Math.round(fallback * 1000));
+            return;
+        }
+        Sound.play('escape', function (seconds) {
+            setTimeout(leave, Math.round((seconds || fallback) * 1000));
+        });
+        // If the clip never starts (slow load past the play window), still leave.
+        setTimeout(leave, 8000);
+    }
+
+    function leaveCombatWindow() {
         hideOverlay();
         Array.from(dyingCards.keys()).forEach(detachDyingCard);
         dyingMonsters.clear();
@@ -1309,6 +1443,7 @@ const Combat = (function () {
             selfMmp: null,
             selfLevel: null,
             selfName: null,
+            selfPortrait: currentBattle.selfPortrait,
         };
         clearCombatLog();
         if (elements.roster) elements.roster.innerHTML = '';
@@ -1349,8 +1484,12 @@ const Combat = (function () {
         }
         if (data.play_hit_sound) {
             ms += Math.max(CARD_SHAKE_MS, soundDurationMs('hit', 0.35));
-        } else if (data.play_miss_sound) {
+        } else         if (data.play_miss_sound) {
             ms += soundDurationMs(data.play_miss_sound, 0.4);
+        } else if (data.play_run_block_sound) {
+            ms += soundDurationMs('runblock', 0.6);
+        } else if (data.play_escape_sound) {
+            ms += soundDurationMs('escape', 1.6);
         } else if (data.shake_combat) {
             ms += CARD_SHAKE_MS;
         }

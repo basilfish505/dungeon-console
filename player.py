@@ -108,6 +108,9 @@ class Player:
     def sprite_url(self):
         return '/static/player/sprites/player_walk1.png'
 
+    def portrait_url(self):
+        return '/static/player/Portrait/player.png'
+
     def level_up(self, rng=None):
         """Increase level by 1 and apply one independent growth event."""
         self.level += 1
@@ -171,7 +174,7 @@ class Player:
             'strength': strength,
             'mean_damage': int(mean_damage_for(self)),
             'sprite': self.sprite_url(),
-            'portrait': self.sprite_url(),
+            'portrait': self.portrait_url(),
         }
 
     def to_dict(self):
