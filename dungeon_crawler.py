@@ -1130,16 +1130,9 @@ def handle_select_id(data):
 def handle_disconnect():
     player_id = session.get('player_id')
     if player_id:
-        # Mark offline but keep body/combat participation
-        was_their_turn = False
-        if player_id in game_state.active_combats:
-            battle_id = game_state.active_combats[player_id]
-            battle = combat_system.battles.get(battle_id)
-            if (battle and battle.get('status') == 'active' and battle.get('turn_order')
-                    and battle['current_turn_index'] < len(battle['turn_order'])
-                    and battle['turn_order'][battle['current_turn_index']] == player_id):
-                was_their_turn = True
-
+        # Mark offline but keep body/combat participation. A dropped player
+        # keeps the rest of their turn timer, so reconnecting in time still
+        # lets them act; the running timer forfeits them if they don't return.
         removed = game_state.remove_player(player_id, sid=request.sid)
         if removed:
             print(f"Player {player_id} disconnected.")
@@ -1150,10 +1143,6 @@ def handle_disconnect():
                     world_persistence.save_character(player_id)
                 except Exception as exc:
                     print(f"Disconnect save error for {player_id}: {exc}")
-            # If they disconnected on their turn, forfeit immediately (stay in battle offline)
-            if was_their_turn:
-                print(f"Player {player_id} disconnected during their turn. Forfeiting turn.")
-                combat_system.forfeit_current_turn_if_player(player_id)
         else:
             print(f"Ignored stale disconnect for {player_id} (newer socket active).")
 
