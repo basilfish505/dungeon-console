@@ -247,6 +247,34 @@ class CalibrateTests(unittest.TestCase):
             self.assertEqual(ladder[0].elo, 500)
             self.assertEqual(ladder[1].elo, 1500)
             self.assertEqual(ladder[1].armour, 2)
+            self.assertEqual(ladder[0].known_spells, [])
+            self.assertEqual(ladder[0].mmp, 0)
+
+    def test_load_ladder_restores_spells(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'ratings.json'
+            path.write_text(json.dumps({
+                'ratings': {
+                    'imp': {
+                        '1': {
+                            'elo': 900,
+                            'name': 'Imp',
+                            'mhp': 12,
+                            'armour': 1,
+                            'mmp': 6,
+                            'known_spells': ['magic_bolt'],
+                            'ability_ids': [],
+                            'attributes': {'str': 2, 'int': 6},
+                        },
+                    },
+                },
+            }), encoding='utf-8')
+            ladder = reload_elo_ladder(path)
+            self.assertEqual(len(ladder), 1)
+            self.assertEqual(ladder[0].known_spells, ['magic_bolt'])
+            self.assertEqual(ladder[0].mmp, 6)
+            self.assertEqual(ladder[0].mp, 6)
+            self.assertEqual(ladder[0].int, 6)
 
     def test_monster_starts_with_default_elo_without_calibrate(self):
         mon = Monster.from_type('elo_spawn_rat', [0, 0], monster_id='m', level=1)

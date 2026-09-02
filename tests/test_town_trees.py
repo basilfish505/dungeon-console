@@ -8,6 +8,7 @@ from dungeon_crawler import GameState
 from interiors.items_shop import ITEMS_SHOP_ID
 from map_generator import (
     FOREST_TRANSITION,
+    STAIR_MIN_CLEARANCE,
     TOWN_CLEARING_TARGET,
     TOWN_MAP_SIZE,
     TREE_SPAWN_RATE,
@@ -152,7 +153,7 @@ class TownGrassTreeTests(unittest.TestCase):
                 seed,
             )
 
-            # Stairs sit on / against the road (cardinally adjacent to ',').
+            # Dedicated spur ends at the stairs (cardinally adjacent to ',').
             sy, sx = stair
             road_adj = any(
                 0 <= sy + dy < len(game_map)
@@ -178,6 +179,40 @@ class TownGrassTreeTests(unittest.TestCase):
                 gen._entrances_connected_via_roads(
                     entrances, blocked={tuple(stair)}, game_map=game_map
                 ),
+                seed,
+            )
+
+    def test_stairs_are_away_from_buildings_with_dedicated_spur(self):
+        for seed in range(12):
+            gen, game_map = self._generate(seed)
+            stair = gen.find_tile(game_map, '↓')
+            self.assertIsNotNone(stair, seed)
+            sy, sx = stair
+            buildings = gen._shop_footprint_tiles()
+            self.assertGreaterEqual(
+                gen._chebyshev_to_tiles(sy, sx, buildings),
+                2,
+                seed,
+            )
+            # Not sitting on a shop entrance or against a shop door.
+            self.assertNotIn((sy, sx), set(gen._shop_entrance_tiles()), seed)
+            for dy, dx in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+                ny, nx = sy + dy, sx + dx
+                if 0 <= ny < len(game_map) and 0 <= nx < len(game_map[0]):
+                    self.assertNotEqual(game_map[ny][nx], '+', seed)
+            # Dedicated road reaches the stair tip.
+            road_adj = any(
+                0 <= sy + dy < len(game_map)
+                and 0 <= sx + dx < len(game_map[0])
+                and game_map[sy + dy][sx + dx] == ','
+                for dy, dx in ((-1, 0), (1, 0), (0, -1), (0, 1))
+            )
+            self.assertTrue(road_adj, seed)
+            # Prefer the target clearance; allow a step down if the
+            # clearing is tight, but never sit on the shop footprint.
+            self.assertGreaterEqual(
+                gen._chebyshev_to_tiles(sy, sx, buildings),
+                min(STAIR_MIN_CLEARANCE, 3),
                 seed,
             )
 

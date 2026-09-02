@@ -3,6 +3,12 @@ import random
 from player import Player
 from monster import Monster
 from combat_damage import resolve_attack
+from combat_monster import (
+    MONSTER_SPELL_CAST_CHANCE,
+    apply_monster_spell,
+    choose_monster_combat_action,
+    first_castable_monster_spell,
+)
 from combat_elo import apply_elo_outcome
 from player_xp import calculate_pqg_from_xp, calculate_xp_from_elo
 from player_persistence import save_player
@@ -19,8 +25,6 @@ MONSTER_TURN_DELAY_SECONDS = 1  # pause before monster acts after another turn
 ATTACK_FX_HOLD_SECONDS = 0.5
 SPELL_FX_HOLD_SECONDS = 1.8
 KILLING_BLOW_PAUSE_SECONDS = 1  # pause so killer can read damage before combat closes
-# Temporary: when a monster knows a castable spell, roll to use it instead of melee.
-MONSTER_SPELL_CAST_CHANCE = 0.75
 
 
 def _monster_combatant(monster, is_current_turn=False):
@@ -1499,37 +1503,13 @@ class CombatSystem:
 
     def _first_castable_monster_spell(self, monster):
         """Return the first known spell the monster can cast, or None."""
-        from spell_types.registry import get_spell_type
-        from spell_casting import (
-            can_cast,
-            supported_effect_type,
-            supported_target_mode,
-        )
-
-        for sid in getattr(monster, 'known_spells', None) or []:
-            spell = get_spell_type(sid)
-            if spell is None:
-                continue
-            if not supported_effect_type(spell) or not supported_target_mode(spell):
-                continue
-            ok, _reason = can_cast(monster, spell)
-            if ok:
-                return spell
-        return None
+        return first_castable_monster_spell(monster)
 
     def _handle_monster_spell(self, monster, target_id, target, spell, battle):
         """Cast a spell for a monster. Returns True if the cast was applied."""
-        from spell_casting import resolve_spell, spend_mp
-
-        result = resolve_spell(monster, spell, target)
-        if not result.get('ok'):
+        result = apply_monster_spell(monster, target, spell, rng=random)
+        if not result:
             return False
-
-        spend_mp(monster, spell)
-        damage = int(result.get('damage') or 0)
-        hit = bool(result.get('hit'))
-        if hit and damage > 0:
-            target.hp -= damage
 
         self._broadcast_spell_feedback(
             battle, monster.id, target_id, spell, result,
@@ -1566,11 +1546,11 @@ class CombatSystem:
             self._advance_turn(battle)
             return
 
-        cast_spell = self._first_castable_monster_spell(monster)
+        kind, chosen = choose_monster_combat_action(monster, target, rng=random)
         used_spell = False
-        if cast_spell is not None and random.random() < MONSTER_SPELL_CAST_CHANCE:
+        if kind == 'spell' and chosen is not None:
             used_spell = self._handle_monster_spell(
-                monster, target_id, target, cast_spell, battle,
+                monster, target_id, target, chosen, battle,
             )
 
         if not used_spell:

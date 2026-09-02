@@ -22,6 +22,9 @@ MONSTER_PROBABILITY = 0.15
 TREE_SPAWN_RATE = 0.04
 # Keep trees off these tiles and their 8-neighbors (doors, road, stairs).
 TREE_CLEAR_GLYPHS = frozenset({'+', ',', '↓', '↑'})
+# Town stairs sit this far (Chebyshev) from buildings and the shop road
+# network; a dedicated spur is carved out to them.
+STAIR_MIN_CLEARANCE = 4
 MIN_FLOOR_AREA = 300
 MAX_FLOOR_AREA = 500
 MAX_GEN_ATTEMPTS = 50
@@ -97,8 +100,8 @@ class MapGenerator:
             (ARMOUR_SHOP_ID, stamp_armour_shop),
         ):
             self.town_features[shop_id] = stamp_fn(self.game_map, rng=rng)
-        # Link shop entrances first, then seat stairs on the road without
-        # cutting the path between buildings (stepping on ↓ auto-descends).
+        # Link shop entrances first, then place stairs out in the clearing
+        # with a dedicated spur so they do not sit on the shop road.
         self._connect_town_roads(rng)
         self._place_town_stairs_on_road(rng)
         self._restore_outside_clearing_grass(outside_grass)
@@ -360,63 +363,110 @@ class MapGenerator:
             flood_existing_roads(path[-1])
             remaining -= network
 
+    def _shop_footprint_tiles(self):
+        """Every outdoor tile occupied by a stamped shop building."""
+        tiles = set()
+        for feat in (self.town_features or {}).values():
+            origin = feat.get('origin')
+            size = feat.get('size')
+            if not origin or not size:
+                continue
+            oy, ox = int(origin[0]), int(origin[1])
+            bh, bw = int(size[0]), int(size[1])
+            for y in range(oy, oy + bh):
+                for x in range(ox, ox + bw):
+                    tiles.add((y, x))
+        return tiles
+
+    def _chebyshev_to_tiles(self, y, x, tiles):
+        if not tiles:
+            return 10 ** 9
+        best = 10 ** 9
+        for ty, tx in tiles:
+            d = max(abs(y - ty), abs(x - tx))
+            if d < best:
+                best = d
+        return best
+
     def _place_town_stairs_on_road(self, rng=None):
         """
-        Put ↓ on a road tile between the shops without cutting shop-to-shop
-        road travel (↓ auto-descends, so it must not be a choke point).
+        Place ↓ on a random clearing tile away from shops and the existing
+        road, then carve a dedicated spur from the shop road out to it.
+
+        ↓ auto-descends, so the stair must never sit on the shop-to-shop
+        road. The spur ends at the stair; shops stay linked on ',' alone.
         """
         rng = rng or random
         m = self.game_map
-        entrances = self._shop_entrance_tiles()
-        entrance_set = set(entrances)
-        roads = [t for t in self._road_tiles(m) if t not in entrance_set]
-        if not roads and entrances:
-            # Single lonely entrance — still need a stair spur off it.
-            roads = []
+        h, w = len(m), len(m[0])
+        roads = set(self._road_tiles(m))
+        buildings = self._shop_footprint_tiles()
+        blocked = set(buildings)
+        blocked.update(roads)
+        for y, row in enumerate(m):
+            for x, cell in enumerate(row):
+                if cell in ('+', 'R') or cell in ('i', 'w', 'a'):
+                    blocked.add((y, x))
 
-        cy = sum(y for y, _x in entrances) / float(len(entrances) or 1)
-        cx = sum(x for _y, x in entrances) / float(len(entrances) or 1)
+        clearing = self.town_clearing or {
+            (y, x)
+            for y in range(h)
+            for x in range(w)
+            if m[y][x] == GRASS
+        }
 
-        def tile_score(tile):
-            y, x = tile
-            n = 0
-            for dy, dx in _CARDINAL:
-                ny, nx = y + dy, x + dx
-                if 0 <= ny < len(m) and 0 <= nx < len(m[0]) and m[ny][nx] == ',':
-                    n += 1
-            dist = abs(y - cy) + abs(x - cx)
-            return (n, -dist, rng.random())
-
-        safe = [
-            t for t in roads
-            if self._entrances_connected_via_roads(entrances, blocked={t}, game_map=m)
-        ]
-        if safe:
-            safe.sort(key=tile_score, reverse=True)
-            y, x = safe[0]
-            m[y][x] = '↓'
-            return [y, x]
-
-        # Tree-shaped roads: add a short spur off a central road, put stairs
-        # at the spur tip so the main road between shops stays clear.
-        anchors = list(roads) if roads else list(entrances)
-        anchors.sort(key=tile_score, reverse=True)
-        for ay, ax in anchors:
-            neighbors = [(ay + dy, ax + dx) for dy, dx in _CARDINAL]
-            rng.shuffle(neighbors)
-            for ny, nx in neighbors:
-                if not (0 <= ny < len(m) and 0 <= nx < len(m[0])):
+        def candidates_at(clearance):
+            found = []
+            for y, x in clearing:
+                if (y, x) in blocked:
                     continue
-                if m[ny][nx] != GRASS:
+                if m[y][x] != GRASS:
                     continue
-                if self.town_clearing and (ny, nx) not in self.town_clearing:
+                if self._chebyshev_to_tiles(y, x, roads) < clearance:
                     continue
-                # Spur road under the stairs so it still "sits on the road".
-                m[ny][nx] = '↓'
-                return [ny, nx]
+                if self._chebyshev_to_tiles(y, x, buildings) < clearance:
+                    continue
+                found.append((y, x))
+            return found
 
-        # Absolute fallback: classic random open-ground stair.
-        return self.place_stair('↓')
+        dest = None
+        for clearance in range(STAIR_MIN_CLEARANCE, 1, -1):
+            pool = candidates_at(clearance)
+            if pool:
+                dest = pool[rng.randrange(len(pool))]
+                break
+
+        if dest is None:
+            leftovers = [
+                (y, x) for y, x in clearing
+                if (y, x) not in blocked and m[y][x] == GRASS
+            ]
+            if leftovers:
+                dest = leftovers[rng.randrange(len(leftovers))]
+
+        if dest is None:
+            return self.place_stair('↓')
+
+        sources = roads or set(self._shop_entrance_tiles())
+        path = self._shortest_road_path(sources, {dest}, rng) if sources else None
+        if path is None and sources:
+            src = min(
+                sources,
+                key=lambda s: abs(s[0] - dest[0]) + abs(s[1] - dest[1]),
+            )
+            path = self._manhattan_road_tiles(src, dest, rng)
+
+        if path:
+            for y, x in path[:-1]:
+                if m[y][x] == GRASS:
+                    m[y][x] = ','
+            sy, sx = path[-1]
+            m[sy][sx] = '↓'
+            return [sy, sx]
+
+        dy, dx = dest
+        m[dy][dx] = '↓'
+        return [dy, dx]
 
     def _manhattan_road_tiles(self, start, end, rng):
         """Shortest Manhattan walk with random axis order (no obstacles)."""

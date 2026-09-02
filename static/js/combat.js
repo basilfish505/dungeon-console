@@ -58,8 +58,6 @@ const Combat = (function () {
     const dyingMonsters = new Set();
     /** key -> { card, placeholder, index } for cards frozen mid-smash. */
     const dyingCards = new Map();
-    /** Keys of monsters that joined mid-smash; revealed once it finishes. */
-    const deferredJoins = new Set();
     /** Play enterbattle after death FX so it does not overlap killmonster. */
     let pendingEnterBattleSound = false;
     /** Display order of opponent keys, so cards keep their slots. */
@@ -400,18 +398,9 @@ const Combat = (function () {
     }
 
     function finishMonsterDefeat(key) {
-        const entry = dyingCards.get(key);
-        const slot = entry ? entry.index : rosterOrder.length;
         dyingMonsters.delete(key);
         detachDyingCard(key);
         removeOpponentByKey(key);
-        // Monsters that arrived mid-smash take the slot just vacated.
-        if (deferredJoins.size && !dyingMonsters.size) {
-            const revealed = Array.from(deferredJoins);
-            deferredJoins.clear();
-            rosterOrder = rosterOrder.filter(k => revealed.indexOf(k) === -1);
-            rosterOrder.splice(Math.min(slot, rosterOrder.length), 0, ...revealed);
-        }
         renderRoster();
         if (pendingEnterBattleSound && !dyingMonsters.size) {
             pendingEnterBattleSound = false;
@@ -1045,13 +1034,12 @@ const Combat = (function () {
     }
 
     /**
-     * Opponents to draw right now, in stable display order. Monsters that
-     * joined while a card is smashing are held back until it finishes.
+     * Opponents to draw right now, in stable display order. New joiners
+     * appear immediately — the dying card is pinned to the viewport, so a
+     * mid-smash arrival cannot jump the smash animation.
      */
     function visibleOpponents() {
-        const list = currentBattle.opponents.filter(
-            o => !deferredJoins.has(combatantKey(o))
-        );
+        const list = (currentBattle.opponents || []).slice();
         list.sort(function (a, b) {
             const ia = rosterOrder.indexOf(combatantKey(a));
             const ib = rosterOrder.indexOf(combatantKey(b));
@@ -1134,25 +1122,11 @@ const Combat = (function () {
     }
 
     /**
-     * Adopt a server opponent list. While a card is smashing, anyone new is
-     * held back so the roster never grows past the slot count it had at death.
+     * Adopt a server opponent list. Joiners are shown immediately so the
+     * "has joined the battle" line matches the roster.
      */
     function applyOpponents(list) {
-        const incoming = list || [];
-        if (dyingMonsters.size) {
-            incoming.forEach(function (o) {
-                const key = combatantKey(o);
-                if (key && rosterOrder.indexOf(key) === -1) {
-                    deferredJoins.add(key);
-                }
-            });
-        }
-        deferredJoins.forEach(function (key) {
-            if (!incoming.some(o => sameCombatant(o, key))) {
-                deferredJoins.delete(key);
-            }
-        });
-        currentBattle.opponents = incoming;
+        currentBattle.opponents = list || [];
     }
 
     function opponentsFromCombatants(list, viewerId) {
@@ -1175,9 +1149,6 @@ const Combat = (function () {
             }
         });
         dyingMonsters.forEach(function (key) {
-            priorMonsterKeys[key] = true;
-        });
-        deferredJoins.forEach(function (key) {
             priorMonsterKeys[key] = true;
         });
         if (!isJoinRefresh) {
@@ -1427,7 +1398,6 @@ const Combat = (function () {
         hideOverlay();
         Array.from(dyingCards.keys()).forEach(detachDyingCard);
         dyingMonsters.clear();
-        deferredJoins.clear();
         pendingEnterBattleSound = false;
         rosterOrder = [];
         currentBattle = {

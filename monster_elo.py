@@ -7,7 +7,8 @@ Run from the project root:
     py monster_elo.py --seed 12345
     py monster_elo.py --seed 1 --fights 4 --passes 1
 
-Uses real Monster leveling and combat_damage.damage_between.
+Uses real Monster leveling and the same combat-turn intelligence as
+vs players (spells, then melee; abilities when hooked).
 Does not touch the map, UI, XP, loot, or game sessions.
 """
 
@@ -22,7 +23,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from character_stats import ATTRIBUTE_KEYS
-from combat_damage import resolve_attack
+from combat_monster import take_monster_combat_turn
 from monster import Monster
 from monster_types.registry import MONSTER_TYPES
 
@@ -64,9 +65,16 @@ class LadderFighter:
     mhp: int
     hp: int = 0
     in_combat: bool = False
+    int: int = 1
+    wis: int = 1
+    mmp: int = 0
+    mp: int = 0
+    known_spells: list = field(default_factory=list)
+    ability_ids: list = field(default_factory=list)
 
     def __post_init__(self):
         self.hp = self.mhp
+        self.mp = self.mmp
 
     def receive_attack(self, damage):
         self.hp -= damage
@@ -101,6 +109,14 @@ def _parse_ladder_from_payload(payload):
             except (TypeError, ValueError):
                 acc_val = 1
             try:
+                int_val = int(attrs.get('int', 1))
+            except (TypeError, ValueError):
+                int_val = 1
+            try:
+                wis_val = int(attrs.get('wis', 1))
+            except (TypeError, ValueError):
+                wis_val = 1
+            try:
                 armour = max(1, int(entry.get('armour', 1)))
             except (TypeError, ValueError):
                 armour = 1
@@ -109,9 +125,17 @@ def _parse_ladder_from_payload(payload):
             except (TypeError, ValueError):
                 mhp = 1
             try:
+                mmp = max(0, int(entry.get('mmp', 0) or 0))
+            except (TypeError, ValueError):
+                mmp = 0
+            try:
                 elo = float(entry.get('elo', INITIAL_ELO))
             except (TypeError, ValueError):
                 elo = float(INITIAL_ELO)
+            raw_spells = entry.get('known_spells') or []
+            known_spells = [str(s).strip() for s in raw_spells if str(s).strip()]
+            raw_abilities = entry.get('ability_ids') or []
+            ability_ids = [str(a).strip() for a in raw_abilities if str(a).strip()]
             fighters.append(LadderFighter(
                 type_id=str(type_id),
                 name=str(entry.get('name') or type_id),
@@ -122,6 +146,11 @@ def _parse_ladder_from_payload(payload):
                 acc=acc_val,
                 armour=armour,
                 mhp=mhp,
+                int=int_val,
+                wis=wis_val,
+                mmp=mmp,
+                known_spells=known_spells,
+                ability_ids=ability_ids,
             ))
     fighters.sort(key=lambda f: (f.elo, f.type_id, f.level))
     return fighters
@@ -327,6 +356,7 @@ def calibrate_instance_elo(
             break
         # Fresh HP for ladder fighter each bout (shared cache instances).
         opponent.hp = opponent.mhp
+        opponent.mp = getattr(opponent, 'mmp', 0)
         opponent.in_combat = False
         first_is_a = (fight_idx % 2 == 0)
         score_a, _rounds = simulate_monster_fight(
@@ -358,6 +388,9 @@ class CombatantRecord:
     attributes: dict = field(default_factory=dict)
     mhp: int = 0
     armour: int = 1
+    mmp: int = 0
+    known_spells: list = field(default_factory=list)
+    ability_ids: list = field(default_factory=list)
 
     @property
     def fights(self) -> int:
@@ -403,6 +436,12 @@ def update_elo(rating_a: float, rating_b: float, score_a: float, k: float = K_FA
 def reset_combat_state(monster) -> None:
     """Restore temporary fight state; leave permanent attrs alone."""
     monster.hp = monster.mhp
+    mmp = getattr(monster, 'mmp', None)
+    if mmp is not None:
+        try:
+            monster.mp = int(mmp)
+        except (TypeError, ValueError):
+            monster.mp = 0
     if hasattr(monster, 'in_combat'):
         monster.in_combat = False
 
@@ -444,6 +483,10 @@ def build_test_monster_pool(
                 rng=rng,
             )
             attrs = {key: int(getattr(monster, key, 1)) for key in ATTRIBUTE_KEYS}
+            try:
+                mmp = max(0, int(getattr(monster, 'mmp', 0) or 0))
+            except (TypeError, ValueError):
+                mmp = 0
             records.append(CombatantRecord(
                 type_id=type_def.id,
                 name=type_def.name,
@@ -453,6 +496,9 @@ def build_test_monster_pool(
                 attributes=attrs,
                 mhp=int(monster.mhp),
                 armour=int(monster.armour),
+                mmp=mmp,
+                known_spells=list(getattr(monster, 'known_spells', None) or []),
+                ability_ids=list(getattr(monster, 'ability_ids', None) or []),
             ))
     return records
 
@@ -465,7 +511,8 @@ def simulate_monster_fight(
     max_rounds: int = MAX_COMBAT_ROUNDS,
 ):
     """
-    Headless attack-only duel using resolve_attack (hit check + damage).
+    Headless 1v1 using the same monster turn AI as vs players
+    (spells / abilities / melee).
 
     Returns (score_a, rounds) where score_a is 1.0 / 0.5 / 0.0.
     """
@@ -479,9 +526,8 @@ def simulate_monster_fight(
 
     while rounds < max_rounds:
         rounds += 1
-        attack_result = resolve_attack(attacker, defender, rng=rng)
-        died = defender.receive_attack(attack_result['damage'])
-        if died:
+        take_monster_combat_turn(attacker, defender, rng=rng)
+        if getattr(defender, 'hp', 0) <= 0:
             score_a = 0.0 if defender is monster_a else 1.0
             reset_combat_state(monster_a)
             reset_combat_state(monster_b)
@@ -573,6 +619,9 @@ def save_elo_results(
             'avg_rounds': round(rec.avg_rounds, 3),
             'mhp': rec.mhp,
             'armour': rec.armour,
+            'mmp': rec.mmp,
+            'known_spells': list(rec.known_spells),
+            'ability_ids': list(rec.ability_ids),
             'attributes': dict(rec.attributes),
         }
     payload = {
