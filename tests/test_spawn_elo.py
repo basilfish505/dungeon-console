@@ -332,7 +332,7 @@ class CalibrateTests(unittest.TestCase):
                         gen.game_map = [['.', '.', '.'], ['.', '.', '.'], ['.', '.', '.']]
                         gen.monsters = {}
                         gen._dims = lambda: (3, 3)
-                        gen.spawn_monsters()
+                        gen.spawn_monsters(dungeon_level=2)
         self.assertGreater(cal.call_count, 0)
 
 

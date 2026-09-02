@@ -5,6 +5,7 @@ from monster import Monster
 from monster_types.registry import get_monster_type, pick_spawn_type_id
 from monster_types.leveling import assign_monster_level
 from monster_elo import calibrate_instance_elo
+from monster_spawn import pick_spawn_combatant
 from interiors.items_shop import ITEMS_SHOP_ID, stamp_items_shop
 from interiors.weapon_shop import WEAPON_SHOP_ID, stamp_weapon_shop
 from interiors.armour_shop import ARMOUR_SHOP_ID, stamp_armour_shop
@@ -18,7 +19,7 @@ FOREST_TRANSITION = 20  # tiles from clearing edge → solid forest
 TOWN_FOREST_MARGIN = 2  # solid forest rim beyond the transition
 # Clearing span ~30 + transition both sides + margin.
 TOWN_MAP_SIZE = 30 + 2 * FOREST_TRANSITION + 2 * TOWN_FOREST_MARGIN  # 74
-MONSTER_PROBABILITY = 0.15
+MONSTER_PROBABILITY = 0.05
 TREE_SPAWN_RATE = 0.04
 # Keep trees off these tiles and their 8-neighbors (doors, road, stairs).
 TREE_CLEAR_GLYPHS = frozenset({'+', ',', '↓', '↑'})
@@ -51,10 +52,10 @@ class MapGenerator:
         self.town_features = {}
         self.town_clearing = set()
 
-    def generate_level(self, stairs_up_pos=None):
+    def generate_level(self, stairs_up_pos=None, dungeon_level=None):
         """Generate a lower level (simple rectangle or procedural rooms/tunnels)."""
         if USE_SIMPLE_LOWER_LEVELS:
-            return self._generate_simple_level(stairs_up_pos)
+            return self._generate_simple_level(stairs_up_pos, dungeon_level=dungeon_level)
 
         self.monsters = {}
         for _ in range(MAX_GEN_ATTEMPTS):
@@ -63,13 +64,13 @@ class MapGenerator:
                 continue
             self.game_map = game_map
             self.monsters = {}
-            self.spawn_monsters()
+            self.spawn_monsters(dungeon_level=dungeon_level)
             if self._place_and_validate_stairs(stairs_up_pos):
                 return self.game_map, self.monsters
 
         self.game_map = self._carve_rooms_and_tunnels() or self._fallback_dungeon()
         self.monsters = {}
-        self.spawn_monsters()
+        self.spawn_monsters(dungeon_level=dungeon_level)
         self._place_and_validate_stairs(stairs_up_pos, repair=True)
         return self.game_map, self.monsters
 
@@ -515,14 +516,14 @@ class MapGenerator:
                 if random.random() < TREE_SPAWN_RATE:
                     m[y][x] = TREE
 
-    def _generate_simple_level(self, stairs_up_pos=None):
+    def _generate_simple_level(self, stairs_up_pos=None, dungeon_level=None):
         """Classic fixed 20x20 map: wall border, random interior boulders, stairs both ways."""
         self.game_map = [['#' for _ in range(self.map_size)] for _ in range(self.map_size)]
         self.monsters = {}
         for i in range(1, self.map_size - 1):
             for j in range(1, self.map_size - 1):
                 self.game_map[i][j] = '#' if random.random() < BOULDER_PROBABILITY else '.'
-        self.spawn_monsters()
+        self.spawn_monsters(dungeon_level=dungeon_level)
         up_pos = self.place_stair('↑', preferred_pos=stairs_up_pos)
         self.place_stair('↓', avoid_pos=up_pos)
         return self.game_map, self.monsters
@@ -910,14 +911,18 @@ class MapGenerator:
         self.game_map[y][x] = symbol
         return [y, x]
 
-    def spawn_monsters(self):
+    def spawn_monsters(self, dungeon_level=None):
         h, w = self._dims()
         for i in range(h):
             for j in range(w):
                 if self.game_map[i][j] == '.' and random.random() < MONSTER_PROBABILITY:
-                    type_id = pick_spawn_type_id()
-                    type_def = get_monster_type(type_id)
-                    level = assign_monster_level(type_def) if type_def else 1
+                    combatant = pick_spawn_combatant(dungeon_level)
+                    if combatant is not None:
+                        type_id, level = combatant
+                    else:
+                        type_id = pick_spawn_type_id()
+                        type_def = get_monster_type(type_id)
+                        level = assign_monster_level(type_def) if type_def else 1
                     monster_id = f"{type_id}-{i},{j}"
                     monster = Monster.from_type(
                         type_id, [i, j], monster_id=monster_id, level=level,

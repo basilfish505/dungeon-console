@@ -204,7 +204,8 @@ class GameState:
                 self.generate_top_level()
             else:
                 game_map, monsters = self.map_generator.generate_level(
-                    stairs_up_pos=stairs_up_pos
+                    stairs_up_pos=stairs_up_pos,
+                    dungeon_level=level_number,
                 )
                 self.levels[level_number] = (game_map, monsters)
             self.mark_level_dirty(level_number)
