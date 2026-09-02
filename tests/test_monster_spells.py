@@ -10,8 +10,9 @@ from monster import Monster
 from monster_types.registry import get_monster_type
 from monster_types.sheet import DEFAULT_XLSX_PATH, load_monster_sheet
 from player import Player
+from spell_casting import spell_power
 from spell_types.base import SpellTypeDef
-from spell_types.registry import SPELL_TYPES, register_spell_type
+from spell_types.registry import SPELL_TYPES, get_spell_type, register_spell_type
 from world_serial import monster_from_dict, monster_to_dict
 
 
@@ -125,10 +126,13 @@ class MonsterSpellCombatTests(unittest.TestCase):
         self.sock = _SocketIOStub()
         self.cs = CombatSystem(self.gs, self.sock)
         self.hero = Player('Steve', [1, 1])
-        self.hero.hp = 100
-        self.hero.mhp = 100
         self.mon = Monster.from_type('imp', [1, 2], monster_id='imp-c', level=1)
-        self.mon.int = 6  # Magic Bolt power = 5 + 6 = 11
+        self.mon.int = 6
+        bolt = get_spell_type('magic_bolt')
+        self.bolt_damage = spell_power(self.mon, bolt) if bolt else 11
+        # Stay alive so the death handler is not part of this assertion.
+        self.hero.hp = self.bolt_damage + 50
+        self.hero.mhp = self.bolt_damage + 50
         self.gs.players = {'Steve': self.hero}
         battle_id = self.cs.start_combat('Steve', self.mon, emit_game_state=False)
         self.battle = self.cs.battles[battle_id]
@@ -143,7 +147,7 @@ class MonsterSpellCombatTests(unittest.TestCase):
              patch('combat.random.random', return_value=0.0):
             self.cs._handle_monster_turn(self.mon.id, self.battle)
         self.assertEqual(self.mon.mp, mp_before - 2)
-        self.assertEqual(self.hero.hp, hp_before - 11)
+        self.assertEqual(self.hero.hp, hp_before - self.bolt_damage)
         spell_actions = [
             data for (event, data, _room) in self.sock.emitted
             if event == 'combat_update'

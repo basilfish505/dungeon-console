@@ -22,6 +22,8 @@ from monster_elo import (
 )
 from monster_types.base import MonsterTypeDef
 from monster_types.registry import MONSTER_TYPES, register_monster_type
+from spell_types.base import SpellTypeDef
+from spell_types.registry import SPELL_TYPES, register_spell_type
 
 
 class EloMathTests(unittest.TestCase):
@@ -108,7 +110,7 @@ class FightTests(unittest.TestCase):
         try:
             MONSTER_TYPES.clear()
             register_monster_type(MonsterTypeDef(
-                type_id='a', name='A', max_level=1, base_mhp=20,
+                type_id='a', name='A', max_level=1, base_mhp=20, base_mmp=8,
                 base_attributes={'str': 8, 'int': 1, 'wis': 1, 'chr': 1, 'dex': 1, 'agi': 1},
                 spawn_weight=1,
             ))
@@ -116,9 +118,11 @@ class FightTests(unittest.TestCase):
             str_before = mon.str
             mhp_before = mon.mhp
             mon.hp = 3
+            mon.mp = 1
             mon.in_combat = True
             reset_combat_state(mon)
             self.assertEqual(mon.hp, mon.mhp)
+            self.assertEqual(mon.mp, mon.mmp)
             self.assertFalse(mon.in_combat)
             self.assertEqual(mon.str, str_before)
             self.assertEqual(mon.mhp, mhp_before)
@@ -217,6 +221,103 @@ class FightTests(unittest.TestCase):
             MONSTER_TYPES.clear()
             MONSTER_TYPES.update(previous)
 
+    def _register_bolt(self, spell_id, base_power):
+        register_spell_type(SpellTypeDef(
+            spell_id,
+            name='Test Bolt',
+            effect_type='damage',
+            target_mode='single_enemy',
+            mp_cost=2,
+            base_power=base_power,
+            scaling_attribute='int',
+            scaling_factor=0.0,
+            hit_rule='always_hit',
+            spell_range=6,
+        ))
+
+    def test_caster_uses_spell_not_melee(self):
+        previous_types = dict(MONSTER_TYPES)
+        previous_spells = dict(SPELL_TYPES)
+        try:
+            MONSTER_TYPES.clear()
+            self._register_bolt('elo_test_bolt', base_power=40)
+            register_monster_type(MonsterTypeDef(
+                type_id='mage', name='Mage', max_level=1, base_mhp=20,
+                base_mmp=10, spell_ids=['elo_test_bolt'],
+                base_attributes={
+                    'str': 1, 'int': 1, 'wis': 1, 'chr': 1, 'dex': 1, 'agi': 1,
+                },
+                spawn_weight=1,
+            ))
+            register_monster_type(MonsterTypeDef(
+                type_id='dummy', name='Dummy', max_level=1, base_mhp=30,
+                armour=50,
+                base_attributes={
+                    'str': 1, 'int': 1, 'wis': 1, 'chr': 1, 'dex': 1, 'agi': 1,
+                },
+                spawn_weight=1,
+            ))
+            mage = self._make_monster('mage', 1, random.Random(1))
+            dummy = self._make_monster('dummy', 1, random.Random(2))
+            # Melee vs armour 50 deals 1/hit → 30 rounds. Spell is 40 → one hit.
+            with patch('combat_monster.MONSTER_SPELL_CAST_CHANCE', 1.0):
+                score, rounds = simulate_monster_fight(
+                    mage, dummy, first_is_a=True, rng=random.Random(0),
+                )
+            self.assertEqual(score, 1.0)
+            self.assertEqual(rounds, 1)
+            self.assertEqual(mage.mp, mage.mmp)
+        finally:
+            MONSTER_TYPES.clear()
+            MONSTER_TYPES.update(previous_types)
+            SPELL_TYPES.clear()
+            SPELL_TYPES.update(previous_spells)
+
+    def test_out_of_mp_falls_back_to_melee(self):
+        previous_types = dict(MONSTER_TYPES)
+        previous_spells = dict(SPELL_TYPES)
+        try:
+            MONSTER_TYPES.clear()
+            self._register_bolt('elo_test_bolt', base_power=40)
+            register_monster_type(MonsterTypeDef(
+                type_id='mage', name='Mage', max_level=1, base_mhp=20,
+                base_mmp=0, spell_ids=['elo_test_bolt'],
+                base_attributes={
+                    'str': 8, 'int': 1, 'wis': 1, 'chr': 1, 'dex': 1, 'agi': 1,
+                },
+                spawn_weight=1,
+            ))
+            register_monster_type(MonsterTypeDef(
+                type_id='dummy', name='Dummy', max_level=1, base_mhp=5,
+                armour=1,
+                base_attributes={
+                    'str': 1, 'int': 1, 'wis': 1, 'chr': 1, 'dex': 1, 'agi': 1,
+                },
+                spawn_weight=1,
+            ))
+            mage = self._make_monster('mage', 1, random.Random(1))
+            dummy = self._make_monster('dummy', 1, random.Random(2))
+            dummy_hp = dummy.hp
+            with patch('combat_monster.MONSTER_SPELL_CAST_CHANCE', 1.0), \
+                 patch('combat_monster.resolve_attack', return_value={
+                     'hit': True, 'damage': 3, 'hit_chance': 1.0,
+                 }):
+                score, rounds = simulate_monster_fight(
+                    mage, dummy, first_is_a=True, rng=random.Random(0),
+                    max_rounds=1,
+                )
+            self.assertEqual(rounds, 1)
+            # Spell would have dealt 40 and ended the fight; melee 3 leaves dummy alive
+            # after one round (then reset restores HP). Score is a timeout draw.
+            self.assertEqual(score, 0.5)
+            self.assertEqual(dummy.hp, dummy.mhp)
+            self.assertEqual(dummy_hp, dummy.mhp)
+        finally:
+            MONSTER_TYPES.clear()
+            MONSTER_TYPES.update(previous_types)
+            SPELL_TYPES.clear()
+            SPELL_TYPES.update(previous_spells)
+
 
 class TournamentTests(unittest.TestCase):
     def _register_tiny_pool(self):
@@ -274,6 +375,8 @@ class TournamentTests(unittest.TestCase):
             self.assertIn('alpha', data['ratings'])
             self.assertIn('1', data['ratings']['alpha'])
             self.assertIn('elo', data['ratings']['alpha']['1'])
+            self.assertIn('known_spells', data['ratings']['alpha']['1'])
+            self.assertIn('mmp', data['ratings']['alpha']['1'])
             self.assertEqual(len(records), 4)
             min_elo = min(r.elo for r in records)
             self.assertAlmostEqual(min_elo, 0.0, places=6)
