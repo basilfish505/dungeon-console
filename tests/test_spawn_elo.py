@@ -16,6 +16,7 @@ from monster_elo import (
     elo_percentile,
     ladder_midpoint_elo,
     load_elo_ladder,
+    lookup_table_elo,
     pick_ladder_opponent,
     reload_elo_ladder,
 )
@@ -158,31 +159,75 @@ class CalibrateTests(unittest.TestCase):
         monster_elo_mod._ladder_cache_path = None
         monster_elo_mod._ladder_load_warned = False
 
-    def test_seeded_calibration_deterministic_and_preserves_stats(self):
+    def test_zero_fights_assigns_table_elo(self):
         ladder = [
+            _fighter(210, 'elo_spawn_rat', 1),
+            _fighter(440, 'elo_spawn_rat', 2),
+            _fighter(880, 'elo_spawn_rat', 3),
+            _fighter(1200, 'other', 2),
+        ]
+        mon = Monster.from_type('elo_spawn_rat', [0, 0], monster_id='a', level=2, rng=random.Random(1))
+        str_before, mhp_before = mon.str, mon.mhp
+        elo = calibrate_instance_elo(mon, fights=0, ladder=ladder)
+        self.assertEqual(elo, 440.0)
+        self.assertEqual(mon.elo, 440.0)
+        self.assertEqual(mon.str, str_before)
+        self.assertEqual(mon.mhp, mhp_before)
+        self.assertEqual(mon.hp, mon.mhp)
+
+    def test_seeded_calibration_starts_from_table_elo(self):
+        ladder = [
+            _fighter(210, 'elo_spawn_rat', 1),
+            _fighter(440, 'elo_spawn_rat', 2),
             _fighter(800, 'weak', 1, strength=3),
             _fighter(1000, 'mid', 1, strength=8),
             _fighter(1200, 'strong', 1, strength=14),
             _fighter(1400, 'elite', 1, strength=18),
             _fighter(1600, 'boss', 1, strength=22),
         ]
+        start = lookup_table_elo('elo_spawn_rat', 2, ladder=ladder)
+        self.assertEqual(start, 440.0)
+        mid = ladder_midpoint_elo(ladder)
+        self.assertNotEqual(start, mid)
+
         mon_a = Monster.from_type('elo_spawn_rat', [0, 0], monster_id='a', level=2, rng=random.Random(1))
         mon_b = Monster.from_type('elo_spawn_rat', [0, 0], monster_id='b', level=2, rng=random.Random(1))
         str_a, mhp_a = mon_a.str, mon_a.mhp
-        mid = ladder_midpoint_elo(ladder)
         elo_a = calibrate_instance_elo(mon_a, fights=40, rng=random.Random(99), ladder=ladder)
         elo_b = calibrate_instance_elo(mon_b, fights=40, rng=random.Random(99), ladder=ladder)
         self.assertEqual(elo_a, elo_b)
         self.assertEqual(mon_a.str, str_a)
         self.assertEqual(mon_a.mhp, mhp_a)
         self.assertEqual(mon_a.hp, mon_a.mhp)
+        self.assertNotEqual(mon_a.elo, start)
         self.assertNotEqual(mon_a.elo, mid)
+
+    def test_lookup_prefers_exact_type_and_level(self):
+        ladder = [
+            _fighter(100, 'elo_spawn_rat', 1),
+            _fighter(500, 'elo_spawn_rat', 2),
+            _fighter(900, 'other', 2),
+        ]
+        self.assertEqual(lookup_table_elo('elo_spawn_rat', 2, ladder=ladder), 500.0)
+        self.assertEqual(lookup_table_elo('other', 2, ladder=ladder), 900.0)
+
+    def test_lookup_closest_level_for_same_type(self):
+        ladder = [
+            _fighter(100, 'elo_spawn_rat', 1),
+            _fighter(500, 'elo_spawn_rat', 3),
+        ]
+        self.assertEqual(lookup_table_elo('elo_spawn_rat', 2, ladder=ladder), 100.0)
+        self.assertEqual(lookup_table_elo('elo_spawn_rat', 4, ladder=ladder), 500.0)
+
+    def test_unknown_type_uses_fallback(self):
+        ladder = [_fighter(500, 'other', 1)]
+        self.assertEqual(lookup_table_elo('elo_spawn_rat', 1, ladder=ladder), float(INITIAL_ELO))
 
     def test_missing_json_leaves_initial_elo(self):
         with tempfile.TemporaryDirectory() as tmp:
             missing = Path(tmp) / 'nope.json'
             mon = Monster.from_type('elo_spawn_rat', [0, 0], monster_id='m', level=1)
-            elo = calibrate_instance_elo(mon, fights=10, path=missing, ladder=None)
+            elo = calibrate_instance_elo(mon, path=missing, ladder=None)
             self.assertEqual(elo, INITIAL_ELO)
             self.assertEqual(mon.elo, INITIAL_ELO)
 
@@ -192,20 +237,13 @@ class CalibrateTests(unittest.TestCase):
             payload = {
                 'meta': {},
                 'ratings': {
-                    'stub': {
+                    'elo_spawn_rat': {
                         '1': {
-                            'elo': 1000,
-                            'name': 'Stub',
-                            'mhp': 20,
+                            'elo': 321,
+                            'name': 'Elo Spawn Rat',
+                            'mhp': 16,
                             'armour': 1,
-                            'attributes': {'str': 5},
-                        },
-                        '2': {
-                            'elo': 1200,
-                            'name': 'Stub',
-                            'mhp': 25,
-                            'armour': 1,
-                            'attributes': {'str': 10},
+                            'attributes': {'str': 8},
                         },
                     },
                 },
@@ -214,8 +252,9 @@ class CalibrateTests(unittest.TestCase):
             before = path.read_text(encoding='utf-8')
             mtime = path.stat().st_mtime
             mon = Monster.from_type('elo_spawn_rat', [0, 0], monster_id='m', level=1)
-            calibrate_instance_elo(mon, fights=20, path=path, rng=random.Random(3))
+            elo = calibrate_instance_elo(mon, fights=20, path=path, rng=random.Random(3))
             after = path.read_text(encoding='utf-8')
+            self.assertNotEqual(elo, INITIAL_ELO)
             self.assertEqual(before, after)
             self.assertEqual(path.stat().st_mtime, mtime)
 

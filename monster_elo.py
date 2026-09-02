@@ -5,11 +5,12 @@ Developer balancing tool — not run during normal gameplay.
 Run from the project root:
     py monster_elo.py
     py monster_elo.py --seed 12345
-    py monster_elo.py --seed 1 --fights 4 --passes 1
+    py monster_elo.py --seed 1 --best-of 99 --passes 1
 
-Uses real Monster leveling and the same combat-turn intelligence as
-vs players (spells, then melee; abilities when hooked).
-Does not touch the map, UI, XP, loot, or game sessions.
+Round-robin: each type+level plays every other once in a best-of-99 series
+(first to 50). One Elo update per series (tournament K=32). Live player/spawn
+Elo still uses K=32 via combat_elo.py. Spawn starts at the matching
+type+level table rating, then plays calibration fights.
 """
 
 from __future__ import annotations
@@ -31,9 +32,10 @@ PROJECT_ROOT = Path(__file__).resolve().parent
 DEFAULT_OUTPUT_PATH = PROJECT_ROOT / 'monster_elo_ratings.json'
 
 INITIAL_ELO = 3000
-K_FACTOR = 32
-FIGHTS_PER_PAIRING = 20
-TOURNAMENT_PASSES = 3
+K_FACTOR = 32  # live combat + spawn calibration (combat_elo.py)
+TOURNAMENT_K = 32
+SERIES_BEST_OF = 99  # first to 50 wins
+TOURNAMENT_PASSES = 1
 MAX_COMBAT_ROUNDS = 1000
 
 # Spawn-time instance rating (read-only ladder from JSON).
@@ -322,6 +324,41 @@ def shift_ratings_floor_to_zero(records):
     return shift
 
 
+def lookup_table_elo(type_id, level, ladder=None, path=None, fallback=INITIAL_ELO):
+    """
+    Frozen table Elo for a type_id + level.
+
+    Exact type+level match first. If that row is missing but the type exists
+    at other levels, use the closest level. Otherwise ``fallback``.
+    """
+    if ladder is None:
+        ladder = load_elo_ladder(path=path)
+    if not ladder:
+        return float(fallback)
+
+    try:
+        target_level = int(level)
+    except (TypeError, ValueError):
+        target_level = 1
+    key = str(type_id or '')
+
+    exact = None
+    same_type = []
+    for fighter in ladder:
+        if str(fighter.type_id) != key:
+            continue
+        same_type.append(fighter)
+        if int(fighter.level) == target_level:
+            exact = fighter
+            break
+    if exact is not None:
+        return float(exact.elo)
+    if same_type:
+        closest = min(same_type, key=lambda f: abs(int(f.level) - target_level))
+        return float(closest.elo)
+    return float(fallback)
+
+
 def calibrate_instance_elo(
     monster,
     fights=SPAWN_ELO_FIGHTS,
@@ -334,21 +371,27 @@ def calibrate_instance_elo(
     """
     Rate a spawned monster with N headless fights against the frozen ladder.
 
-    Starts at the ladder midpoint Elo (middle rank), then updates with
-    standard Elo math. Does not mutate the JSON or ladder entries' Elo.
+    Starts at the matching type+level table Elo (closest same-type level if
+    that row is missing; INITIAL_ELO if the type is unknown). Then updates
+    with standard Elo math. Does not mutate the JSON or ladder entries' Elo.
     Restores monster HP afterward. Returns the final elo.
     """
     rng = rng or random
     if ladder is None:
         ladder = load_elo_ladder(path=path)
 
+    rating = lookup_table_elo(
+        getattr(monster, 'type_id', None),
+        getattr(monster, 'level', 1),
+        ladder=ladder,
+        path=path,
+        fallback=INITIAL_ELO,
+    )
+
     if not ladder or fights <= 0:
-        rating = ladder_midpoint_elo(ladder, fallback=INITIAL_ELO)
-        monster.elo = rating
+        monster.elo = float(rating)
         reset_combat_state(monster)
         return monster.elo
-
-    rating = ladder_midpoint_elo(ladder, fallback=INITIAL_ELO)
 
     for fight_idx in range(int(fights)):
         opponent = pick_ladder_opponent(ladder, rating, rng=rng, window=window)
@@ -539,17 +582,39 @@ def simulate_monster_fight(
     return 0.5, rounds
 
 
+def series_wins_required(series_best_of: int) -> int:
+    """Wins needed to take a best-of-N series (e.g. 11 for best-of-21)."""
+    try:
+        n = int(series_best_of)
+    except (TypeError, ValueError):
+        n = SERIES_BEST_OF
+    if n < 1:
+        n = 1
+    return (n + 1) // 2
+
+
 def run_pairing(
     rec_a: CombatantRecord,
     rec_b: CombatantRecord,
-    fights: int = FIGHTS_PER_PAIRING,
+    series_best_of: int = SERIES_BEST_OF,
     rng=None,
-    k_factor: float = K_FACTOR,
+    k_factor: float = TOURNAMENT_K,
     max_rounds: int = MAX_COMBAT_ROUNDS,
 ):
-    """Run fights between two records; update Elo after each fight."""
+    """
+    Play one best-of-N series (first to (N+1)//2 wins), then update Elo once.
+
+    Series W/L/D on each record; total_rounds accumulates individual bouts.
+    """
     rng = rng or random
-    for fight_idx in range(fights):
+    wins_required = series_wins_required(series_best_of)
+    wins_a = 0
+    wins_b = 0
+    total_rounds = 0
+
+    for fight_idx in range(int(series_best_of)):
+        if wins_a >= wins_required or wins_b >= wins_required:
+            break
         first_is_a = (fight_idx % 2 == 0)
         score_a, rounds = simulate_monster_fight(
             rec_a.monster,
@@ -558,18 +623,33 @@ def run_pairing(
             rng=rng,
             max_rounds=max_rounds,
         )
-        rec_a.elo, rec_b.elo = update_elo(rec_a.elo, rec_b.elo, score_a, k=k_factor)
-        rec_a.total_rounds += rounds
-        rec_b.total_rounds += rounds
+        total_rounds += rounds
         if score_a >= 1.0:
-            rec_a.wins += 1
-            rec_b.losses += 1
+            wins_a += 1
         elif score_a <= 0.0:
-            rec_a.losses += 1
-            rec_b.wins += 1
-        else:
-            rec_a.draws += 1
-            rec_b.draws += 1
+            wins_b += 1
+
+    if wins_a >= wins_required:
+        series_score_a = 1.0
+    elif wins_b >= wins_required:
+        series_score_a = 0.0
+    else:
+        series_score_a = 0.5
+
+    rec_a.elo, rec_b.elo = update_elo(
+        rec_a.elo, rec_b.elo, series_score_a, k=k_factor,
+    )
+    rec_a.total_rounds += total_rounds
+    rec_b.total_rounds += total_rounds
+    if series_score_a >= 1.0:
+        rec_a.wins += 1
+        rec_b.losses += 1
+    elif series_score_a <= 0.0:
+        rec_a.losses += 1
+        rec_b.wins += 1
+    else:
+        rec_a.draws += 1
+        rec_b.draws += 1
 
 
 def print_elo_rankings(records, file=None):
@@ -592,18 +672,139 @@ def print_elo_rankings(records, file=None):
     return ranked
 
 
+XLSX_RATING_HEADERS = (
+    'Monster Key',
+    'Monster',
+    'Level',
+    'ELO',
+    'Win %',
+    'Wins',
+    'Losses',
+    'Draws',
+    'Fights',
+    'Avg Rounds',
+    'Max HP',
+    'Armour',
+    'Strength',
+    'Dexterity',
+    'Agility',
+    'Accuracy',
+    'Intelligence',
+    'Wisdom',
+    'Charisma',
+)
+
+META_XLSX_KEYS = (
+    'combatant_count',
+    'elo_shift',
+    'series_best_of',
+    'generated_at',
+    'initial_elo',
+    'k_factor',
+    'tournament_k',
+    'max_combat_rounds',
+    'seed',
+    'tournament_passes',
+)
+
+
+def _xlsx_path_for_json(json_path: Path) -> Path:
+    return json_path.with_suffix('.xlsx')
+
+
+def _attr(rec: CombatantRecord, key: str) -> int:
+    try:
+        return int((rec.attributes or {}).get(key, 1))
+    except (TypeError, ValueError):
+        return 1
+
+
+def save_elo_xlsx(records, meta, path):
+    """Write flattened ratings + metadata sheets (same layout as review workbook)."""
+    from openpyxl import Workbook
+    from openpyxl.styles import Alignment, Font, PatternFill
+    from openpyxl.utils import get_column_letter
+
+    path = Path(path)
+    wb = Workbook()
+    header_fill = PatternFill('solid', fgColor='1F4E78')
+    header_font = Font(bold=True, color='FFFFFF', name='Calibri', size=11)
+    center = Alignment(horizontal='center', vertical='center')
+
+    ws = wb.active
+    ws.title = 'Monster Ratings'
+    for col_idx, header in enumerate(XLSX_RATING_HEADERS, 1):
+        cell = ws.cell(1, col_idx, header)
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = center
+
+    ranked = sorted(records, key=lambda r: (-float(r.elo), r.type_id, r.level))
+    for row_idx, rec in enumerate(ranked, 2):
+        values = (
+            rec.type_id,
+            rec.name,
+            rec.level,
+            round(float(rec.elo), 3),
+            round(float(rec.win_pct), 3),
+            rec.wins,
+            rec.losses,
+            rec.draws,
+            rec.fights,
+            round(float(rec.avg_rounds), 3),
+            rec.mhp,
+            rec.armour,
+            _attr(rec, 'str'),
+            _attr(rec, 'dex'),
+            _attr(rec, 'agi'),
+            _attr(rec, 'acc'),
+            _attr(rec, 'int'),
+            _attr(rec, 'wis'),
+            _attr(rec, 'chr'),
+        )
+        for col_idx, value in enumerate(values, 1):
+            ws.cell(row_idx, col_idx, value)
+
+    widths = (14, 18, 8, 12, 10, 8, 8, 8, 8, 12, 10, 10, 12, 12, 10, 10, 14, 10, 12)
+    for col_idx, width in enumerate(widths, 1):
+        ws.column_dimensions[get_column_letter(col_idx)].width = width
+    ws.freeze_panes = 'A2'
+    last_row = max(1, 1 + len(ranked))
+    ws.auto_filter.ref = f'A1:{get_column_letter(len(XLSX_RATING_HEADERS))}{last_row}'
+    ws.row_dimensions[1].height = 22
+
+    meta_ws = wb.create_sheet('Metadata')
+    meta_ws.cell(1, 1, 'Parameter').font = header_font
+    meta_ws.cell(1, 1).fill = header_fill
+    meta_ws.cell(1, 2, 'Value').font = header_font
+    meta_ws.cell(1, 2).fill = header_fill
+    meta_ws.column_dimensions['A'].width = 22
+    meta_ws.column_dimensions['B'].width = 36
+    for row_idx, key in enumerate(META_XLSX_KEYS, 2):
+        meta_ws.cell(row_idx, 1, key)
+        value = (meta or {}).get(key)
+        if value is None:
+            meta_ws.cell(row_idx, 2, None)
+        else:
+            meta_ws.cell(row_idx, 2, value)
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    wb.save(path)
+    return path
+
+
 def save_elo_results(
     records,
     path=None,
     seed=None,
     initial_elo=INITIAL_ELO,
-    k_factor=K_FACTOR,
-    fights_per_pairing=FIGHTS_PER_PAIRING,
+    k_factor=TOURNAMENT_K,
+    series_best_of=SERIES_BEST_OF,
     tournament_passes=TOURNAMENT_PASSES,
     max_combat_rounds=MAX_COMBAT_ROUNDS,
     elo_shift=0.0,
 ):
-    """Write nested type → level → stats JSON for later game consumption."""
+    """Write nested type → level JSON and a flattened .xlsx next to it."""
     path = Path(path) if path else DEFAULT_OUTPUT_PATH
     by_type = {}
     for rec in records:
@@ -631,7 +832,8 @@ def save_elo_results(
             'initial_elo': initial_elo,
             'elo_shift': round(float(elo_shift), 3),
             'k_factor': k_factor,
-            'fights_per_pairing': fights_per_pairing,
+            'tournament_k': k_factor,
+            'series_best_of': int(series_best_of),
             'tournament_passes': tournament_passes,
             'max_combat_rounds': max_combat_rounds,
             'combatant_count': len(records),
@@ -639,14 +841,15 @@ def save_elo_results(
         'ratings': by_type,
     }
     path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding='utf-8')
+    save_elo_xlsx(records, payload['meta'], _xlsx_path_for_json(path))
     return path
 
 
 def run_elo_tournament(
     seed=None,
     initial_elo: float = INITIAL_ELO,
-    k_factor: float = K_FACTOR,
-    fights_per_pairing: int = FIGHTS_PER_PAIRING,
+    k_factor: float = TOURNAMENT_K,
+    series_best_of: int = SERIES_BEST_OF,
     tournament_passes: int = TOURNAMENT_PASSES,
     max_combat_rounds: int = MAX_COMBAT_ROUNDS,
     output_path=None,
@@ -654,13 +857,16 @@ def run_elo_tournament(
     spawn_weight_only: bool = True,
     progress_every: int = 100,
     quiet: bool = False,
+    fights_per_pairing=None,
 ):
     """
-    Build the pool, run multi-pass round-robin, print rankings, save JSON.
+    Build the pool, run round-robin best-of-N series, print rankings, save JSON.
 
-    Same seed reproduces pool generation, pairing order, and fight rolls
-    as closely as the current random architecture allows.
+    One Elo update per series (first to (N+1)//2 wins). Same seed reproduces
+    pool generation, pairing order, and fight rolls when possible.
     """
+    if fights_per_pairing is not None:
+        series_best_of = int(fights_per_pairing)
     rng = random.Random(seed) if seed is not None else random.Random()
     records = build_test_monster_pool(
         rng=rng,
@@ -679,7 +885,8 @@ def run_elo_tournament(
         print('Elo Tournament')
         print(f'Combatants: {n}')
         print(f'Pairings: {pairing_count:,}')
-        print(f'Fights per pairing: {fights_per_pairing}')
+        print(f'Series: best-of {series_best_of} (first to {series_wins_required(series_best_of)})')
+        print(f'Tournament K: {k_factor}')
         print(f'Tournament passes: {tournament_passes}')
         print()
 
@@ -691,7 +898,7 @@ def run_elo_tournament(
             run_pairing(
                 records[i],
                 records[j],
-                fights=fights_per_pairing,
+                series_best_of=series_best_of,
                 rng=rng,
                 k_factor=k_factor,
                 max_rounds=max_combat_rounds,
@@ -715,14 +922,15 @@ def run_elo_tournament(
         seed=seed,
         initial_elo=initial_elo,
         k_factor=k_factor,
-        fights_per_pairing=fights_per_pairing,
+        series_best_of=series_best_of,
         tournament_passes=tournament_passes,
         max_combat_rounds=max_combat_rounds,
         elo_shift=elo_shift,
     )
     if not quiet:
         print(f'\nSaved results to {out}')
-    # Refresh in-process ladder cache so spawn calibration sees the new file.
+        print(f'Saved spreadsheet to {_xlsx_path_for_json(Path(out))}')
+    # Refresh in-process ladder cache so spawn lookups see the new file.
     if out is not None:
         reload_elo_ladder(out)
     return records, ranked, out
@@ -733,10 +941,14 @@ def main(argv=None):
         description='Run a headless monster Elo tournament (balancing tool).',
     )
     parser.add_argument('--seed', type=int, default=None, help='RNG seed for reproducibility')
-    parser.add_argument('--k', type=float, default=K_FACTOR, help=f'Elo K-factor (default {K_FACTOR})')
+    parser.add_argument('--k', type=float, default=TOURNAMENT_K, help=f'Tournament Elo K (default {TOURNAMENT_K}; live combat stays {K_FACTOR})')
     parser.add_argument(
-        '--fights', type=int, default=FIGHTS_PER_PAIRING,
-        help=f'Fights per pairing (default {FIGHTS_PER_PAIRING})',
+        '--best-of', type=int, default=SERIES_BEST_OF, dest='series_best_of',
+        help=f'Best-of series length per pairing (default {SERIES_BEST_OF}, first to {series_wins_required(SERIES_BEST_OF)})',
+    )
+    parser.add_argument(
+        '--fights', type=int, default=None, dest='fights_legacy',
+        help=f'Alias for --best-of (deprecated)',
     )
     parser.add_argument(
         '--passes', type=int, default=TOURNAMENT_PASSES,
@@ -755,11 +967,14 @@ def main(argv=None):
         help='Also include types with spawn_weight == 0 (e.g. shopkeeper)',
     )
     args = parser.parse_args(argv)
+    series_best_of = args.series_best_of
+    if args.fights_legacy is not None:
+        series_best_of = args.fights_legacy
 
     run_elo_tournament(
         seed=args.seed,
         k_factor=args.k,
-        fights_per_pairing=args.fights,
+        series_best_of=series_best_of,
         tournament_passes=args.passes,
         max_combat_rounds=args.max_rounds,
         output_path=args.output,
