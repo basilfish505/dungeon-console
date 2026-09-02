@@ -10,16 +10,21 @@ from unittest.mock import patch
 from monster import Monster
 from monster_elo import (
     CombatantRecord,
+    K_FACTOR,
+    TOURNAMENT_K,
+    XLSX_RATING_HEADERS,
     build_test_monster_pool,
     expected_score,
     reset_combat_state,
     run_elo_tournament,
     run_pairing,
     save_elo_results,
+    series_wins_required,
     shift_ratings_floor_to_zero,
     simulate_monster_fight,
     update_elo,
 )
+from combat_elo import K_FACTOR as LIVE_K_FACTOR
 from monster_types.base import MonsterTypeDef
 from monster_types.registry import MONSTER_TYPES, register_monster_type
 from spell_types.base import SpellTypeDef
@@ -27,6 +32,15 @@ from spell_types.registry import SPELL_TYPES, register_spell_type
 
 
 class EloMathTests(unittest.TestCase):
+    def test_live_combat_k_stays_32(self):
+        self.assertEqual(K_FACTOR, 32)
+        self.assertEqual(LIVE_K_FACTOR, 32)
+        self.assertEqual(TOURNAMENT_K, 32)
+
+    def test_series_wins_required(self):
+        self.assertEqual(series_wins_required(99), 50)
+        self.assertEqual(series_wins_required(21), 11)
+        self.assertEqual(series_wins_required(1), 1)
     def test_expected_score_equal_ratings(self):
         self.assertAlmostEqual(expected_score(1000, 1000), 0.5)
 
@@ -182,7 +196,7 @@ class FightTests(unittest.TestCase):
             MONSTER_TYPES.clear()
             MONSTER_TYPES.update(previous)
 
-    def test_pairing_alternates_first_attacker(self):
+    def test_pairing_series_alternates_first_attacker(self):
         previous = dict(MONSTER_TYPES)
         try:
             MONSTER_TYPES.clear()
@@ -214,9 +228,100 @@ class FightTests(unittest.TestCase):
                 reset_combat_state(mb)
                 return 0.5, 1
 
-            with patch('monster_elo.simulate_monster_fight', side_effect=fake_sim):
-                run_pairing(rec_a, rec_b, fights=4, rng=random.Random(0))
+            with patch('monster_elo.simulate_monster_fight', side_effect=fake_sim), \
+                 patch('monster_elo.update_elo', wraps=update_elo) as mock_elo:
+                run_pairing(rec_a, rec_b, series_best_of=4, rng=random.Random(0))
             self.assertEqual(first_flags, [True, False, True, False])
+            mock_elo.assert_called_once()
+            self.assertAlmostEqual(mock_elo.call_args[0][2], 0.5)
+            self.assertEqual(rec_a.draws, 1)
+            self.assertEqual(rec_b.draws, 1)
+            self.assertEqual(rec_a.wins, 0)
+            self.assertEqual(rec_b.wins, 0)
+        finally:
+            MONSTER_TYPES.clear()
+            MONSTER_TYPES.update(previous)
+
+    def test_series_stops_at_first_to_11(self):
+        previous = dict(MONSTER_TYPES)
+        try:
+            MONSTER_TYPES.clear()
+            register_monster_type(MonsterTypeDef(
+                type_id='p', name='P', max_level=1, base_mhp=20,
+                base_attributes={'str': 8, 'int': 1, 'wis': 1, 'chr': 1, 'dex': 1, 'agi': 1},
+                spawn_weight=1,
+            ))
+            register_monster_type(MonsterTypeDef(
+                type_id='q', name='Q', max_level=1, base_mhp=20,
+                base_attributes={'str': 8, 'int': 1, 'wis': 1, 'chr': 1, 'dex': 1, 'agi': 1},
+                spawn_weight=1,
+            ))
+            rec_a = CombatantRecord(
+                type_id='p', name='P', level=1,
+                monster=self._make_monster('p', 1, random.Random(1)),
+                attributes={}, mhp=20, armour=1,
+            )
+            rec_b = CombatantRecord(
+                type_id='q', name='Q', level=1,
+                monster=self._make_monster('q', 1, random.Random(2)),
+                attributes={}, mhp=20, armour=1,
+            )
+            fight_count = {'n': 0}
+
+            def fake_sim(ma, mb, first_is_a=True, rng=None, max_rounds=1000):
+                fight_count['n'] += 1
+                reset_combat_state(ma)
+                reset_combat_state(mb)
+                return 1.0, 1
+
+            with patch('monster_elo.simulate_monster_fight', side_effect=fake_sim):
+                run_pairing(rec_a, rec_b, series_best_of=21, rng=random.Random(0))
+            self.assertEqual(fight_count['n'], 11)
+            self.assertEqual(rec_a.wins, 1)
+            self.assertEqual(rec_b.losses, 1)
+        finally:
+            MONSTER_TYPES.clear()
+            MONSTER_TYPES.update(previous)
+
+    def test_series_11_10_is_win_for_a(self):
+        previous = dict(MONSTER_TYPES)
+        try:
+            MONSTER_TYPES.clear()
+            register_monster_type(MonsterTypeDef(
+                type_id='p', name='P', max_level=1, base_mhp=20,
+                base_attributes={'str': 8, 'int': 1, 'wis': 1, 'chr': 1, 'dex': 1, 'agi': 1},
+                spawn_weight=1,
+            ))
+            register_monster_type(MonsterTypeDef(
+                type_id='q', name='Q', max_level=1, base_mhp=20,
+                base_attributes={'str': 8, 'int': 1, 'wis': 1, 'chr': 1, 'dex': 1, 'agi': 1},
+                spawn_weight=1,
+            ))
+            rec_a = CombatantRecord(
+                type_id='p', name='P', level=1,
+                monster=self._make_monster('p', 1, random.Random(1)),
+                attributes={}, mhp=20, armour=1, elo=3000.0,
+            )
+            rec_b = CombatantRecord(
+                type_id='q', name='Q', level=1,
+                monster=self._make_monster('q', 1, random.Random(2)),
+                attributes={}, mhp=20, armour=1, elo=3000.0,
+            )
+            outcomes = [1.0] * 11 + [0.0] * 10
+
+            def fake_sim(ma, mb, first_is_a=True, rng=None, max_rounds=1000):
+                reset_combat_state(ma)
+                reset_combat_state(mb)
+                return outcomes.pop(0), 1
+
+            with patch('monster_elo.simulate_monster_fight', side_effect=fake_sim), \
+                 patch('monster_elo.update_elo', wraps=update_elo) as mock_elo:
+                run_pairing(rec_a, rec_b, series_best_of=21, k_factor=4, rng=random.Random(0))
+            self.assertEqual(len(outcomes), 10)
+            mock_elo.assert_called_once()
+            self.assertAlmostEqual(mock_elo.call_args[0][2], 1.0)
+            self.assertEqual(rec_a.wins, 1)
+            self.assertEqual(rec_b.losses, 1)
         finally:
             MONSTER_TYPES.clear()
             MONSTER_TYPES.update(previous)
@@ -341,13 +446,13 @@ class TournamentTests(unittest.TestCase):
                 out_a = Path(tmp) / 'a.json'
                 out_b = Path(tmp) / 'b.json'
                 recs_a, _, _ = run_elo_tournament(
-                    seed=42, fights_per_pairing=4, tournament_passes=2,
+                    seed=42, series_best_of=4, tournament_passes=1,
                     output_path=out_a, quiet=True,
                 )
                 MONSTER_TYPES.clear()
                 self._register_tiny_pool()
                 recs_b, _, _ = run_elo_tournament(
-                    seed=42, fights_per_pairing=4, tournament_passes=2,
+                    seed=42, series_best_of=4, tournament_passes=1,
                     output_path=out_b, quiet=True,
                 )
             map_a = {(r.type_id, r.level): round(r.elo, 6) for r in recs_a}
@@ -365,13 +470,30 @@ class TournamentTests(unittest.TestCase):
             with tempfile.TemporaryDirectory() as tmp:
                 out = Path(tmp) / 'ratings.json'
                 records, _, path = run_elo_tournament(
-                    seed=7, fights_per_pairing=2, tournament_passes=1,
+                    seed=7, series_best_of=3, tournament_passes=1,
                     output_path=out, quiet=True,
                 )
                 data = json.loads(path.read_text(encoding='utf-8'))
+                xlsx_path = path.with_suffix('.xlsx')
+                self.assertTrue(xlsx_path.is_file())
+                from openpyxl import load_workbook
+                wb = load_workbook(xlsx_path, data_only=True)
+                ratings = wb['Monster Ratings']
+                headers = [ratings.cell(1, c).value for c in range(1, 20)]
+                self.assertEqual(tuple(headers), XLSX_RATING_HEADERS)
+                self.assertEqual(ratings.max_row, 5)
+                elos = [ratings.cell(r, 4).value for r in range(2, ratings.max_row + 1)]
+                self.assertEqual(elos, sorted(elos, reverse=True))
+                meta_ws = wb['Metadata']
+                meta_keys = [meta_ws.cell(r, 1).value for r in range(2, meta_ws.max_row + 1)]
+                self.assertIn('combatant_count', meta_keys)
+                self.assertEqual(meta_ws.cell(2, 2).value, 4)
             self.assertIn('meta', data)
             self.assertIn('ratings', data)
             self.assertIn('elo_shift', data['meta'])
+            self.assertEqual(data['meta']['series_best_of'], 3)
+            self.assertEqual(data['meta']['tournament_k'], TOURNAMENT_K)
+            self.assertEqual(data['meta']['tournament_passes'], 1)
             self.assertIn('alpha', data['ratings'])
             self.assertIn('1', data['ratings']['alpha'])
             self.assertIn('elo', data['ratings']['alpha']['1'])

@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-BASE_XP = 25
-XP_EXPONENT = 1.25
+BASE_XP = 50
+XP_EXPONENT = 1.2
 
 
 def xp_required_for_next_level(level: int) -> int:

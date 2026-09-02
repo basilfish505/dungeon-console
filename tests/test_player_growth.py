@@ -189,7 +189,7 @@ class ApplyGrowthTests(unittest.TestCase):
             + ['wis', 'wis', 'wis', 'wis', 'chr']
             + ['agi', 'agi', 'agi', 'acc', 'acc', 'str'],
         )
-        player.award_xp(183, rng=rng)
+        player.award_xp(352, rng=rng)
         self.assertEqual(player.level, 4)
         results = player.last_level_up_results
         self.assertEqual(len(results), 3)
@@ -203,7 +203,7 @@ class ApplyGrowthTests(unittest.TestCase):
 
     def test_duplicate_pending_growth_is_a_no_op(self):
         player = Player('hero', [1, 1])
-        player.award_xp(25, rng=random.Random(1))
+        player.award_xp(50, rng=random.Random(1))
         attrs = copy_attrs(player)
         mhp = player.mhp
         hp = player.hp
@@ -216,7 +216,7 @@ class ApplyGrowthTests(unittest.TestCase):
     def test_starting_attributes_never_change_on_level_up(self):
         player = Player('hero', [1, 1])
         original = copy_attrs(player.starting_attributes)
-        player.award_xp(183, rng=random.Random(3))
+        player.award_xp(352, rng=random.Random(3))
         self.assertEqual(player.starting_attributes, original)
         self.assertGreater(player.level, 1)
 
@@ -265,7 +265,7 @@ class PersistenceTests(unittest.TestCase):
         player.hp = 37
         player.starting_mhp = 50
         rng = random.Random(5)
-        player.award_xp(84, rng=rng)
+        player.award_xp(165, rng=rng)
         snapshot = {
             'level': player.level,
             'attrs': copy_attrs(player),
@@ -295,7 +295,7 @@ class PersistenceTests(unittest.TestCase):
         player.mhp = 60
         player.hp = 40
         player.level = 4
-        player.total_xp = 183
+        player.total_xp = 352
         data = player_to_save_dict(player)
         data.pop('starting_attributes', None)
         data.pop('starting_mhp', None)
@@ -361,7 +361,7 @@ class CombatNotificationIntegrationTests(unittest.TestCase):
             'pending_rewards': {
                 'hero': {
                     'kills': 1,
-                    'xp': 25,
+                    'xp': 50,
                     'pqg': 0,
                     'elo_opponents': [],
                 }

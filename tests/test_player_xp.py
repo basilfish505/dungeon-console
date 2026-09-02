@@ -6,43 +6,31 @@ import unittest
 from player_xp import (
     PQG_VARIANCE,
     PQG_XP_DIVISOR,
-    XP_BASE,
-    XP_ELO_SCALING,
-    XP_REFERENCE_ELO,
     calculate_pqg_from_xp,
     calculate_xp_from_elo,
 )
 
 
 class CalculateXpFromEloTests(unittest.TestCase):
-    def test_constants(self):
-        self.assertEqual(XP_BASE, 100)
-        self.assertEqual(XP_REFERENCE_ELO, 800)
-        self.assertEqual(XP_ELO_SCALING, 600)
-
-    def test_reference_table(self):
+    def test_xp_equals_rounded_elo(self):
         cases = {
-            1000: 126,
-            1500: 224,
-            2000: 400,
-            2500: 713,
-            3000: 1270,
-            3500: 2263,
-            4000: 4032,
-            4500: 7184,
+            0: 0,
+            54.911: 55,
+            301.162: 301,
+            800: 800,
+            1000: 1000,
+            1280.422: 1280,
         }
         for elo, expected in cases.items():
             with self.subTest(elo=elo):
                 self.assertEqual(calculate_xp_from_elo(elo), expected)
 
-    def test_no_minimum_floor(self):
-        # Very low Elo can yield small XP; not clamped to a minimum.
-        low = calculate_xp_from_elo(0)
-        self.assertIsInstance(low, int)
-        self.assertLess(low, 126)
+    def test_negative_elo_clamps_to_zero(self):
+        self.assertEqual(calculate_xp_from_elo(-10), 0)
 
-    def test_invalid_elo_uses_reference(self):
-        self.assertEqual(calculate_xp_from_elo('nope'), 100)
+    def test_invalid_elo_is_zero(self):
+        self.assertEqual(calculate_xp_from_elo('nope'), 0)
+        self.assertEqual(calculate_xp_from_elo(None), 0)
 
 
 class CalculatePqgFromXpTests(unittest.TestCase):

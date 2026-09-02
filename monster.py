@@ -57,8 +57,10 @@ class Monster:
         self.level_hp_bonus = int(hp_bonus)
         self.mhp = mhp
         self.hp = mhp
-        # Combat rating; dungeon spawn calibrates via monster_elo.calibrate_instance_elo.
-        # Keep in sync with monster_elo.INITIAL_ELO (avoid circular import here).
+        # Combat rating; dungeon spawn starts from the type+level table
+        # rating then calibrates via monster_elo.calibrate_instance_elo.
+        # Keep this default in sync with monster_elo.INITIAL_ELO
+        # (avoid circular import here).
         self.elo = 3000
 
         self.ability_ids = list(type_def.ability_ids)

@@ -4,26 +4,17 @@ from __future__ import annotations
 
 import random
 
-XP_BASE = 100
-XP_REFERENCE_ELO = 800
-XP_ELO_SCALING = 600
-
 PQG_XP_DIVISOR = 10
 PQG_VARIANCE = 0.30
 
 
 def calculate_xp_from_elo(elo: float) -> int:
-    """
-    XP reward for defeating a monster with the given Elo rating.
-
-    xp = round(XP_BASE * 2 ** ((elo - XP_REFERENCE_ELO) / XP_ELO_SCALING))
-    """
+    """XP for a kill equals the monster's Elo, rounded. Missing/invalid → 0."""
     try:
         rating = float(elo)
     except (TypeError, ValueError):
-        rating = float(XP_REFERENCE_ELO)
-    raw = XP_BASE * (2.0 ** ((rating - XP_REFERENCE_ELO) / XP_ELO_SCALING))
-    return round(raw)
+        return 0
+    return max(0, round(rating))
 
 
 def calculate_pqg_from_xp(xp, rng=None) -> int:
