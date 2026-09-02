@@ -2,19 +2,23 @@
 
 from __future__ import annotations
 
+MINIMUM_XP = 250
 BASE_XP = 50
 XP_EXPONENT = 1.2
 
 
 def xp_required_for_next_level(level: int) -> int:
-    """XP cost to advance from ``level`` to ``level + 1``."""
+    """XP cost to advance from ``level`` to ``level + 1``.
+
+    round(MINIMUM_XP + BASE_XP * (level - 1) ** XP_EXPONENT)
+    """
     try:
         lvl = int(level)
     except (TypeError, ValueError):
         lvl = 1
     if lvl < 1:
         lvl = 1
-    return round(BASE_XP * (lvl ** XP_EXPONENT))
+    return round(MINIMUM_XP + BASE_XP * ((lvl - 1) ** XP_EXPONENT))
 
 
 def xp_required_to_reach_level(level: int) -> int:

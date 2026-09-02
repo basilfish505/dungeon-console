@@ -141,7 +141,14 @@ const UI = (function() {
             document.getElementById('player-level').textContent = level;
             document.getElementById('player-elo').textContent =
                 player.elo != null ? Math.round(Number(player.elo)) : 0;
-            document.getElementById('player-xp').textContent = player.total_xp ?? player.xp ?? 0;
+            const xpProgress = player.xp_progress || {};
+            const currentXp = xpProgress.xp_progress_this_level;
+            const xpNeeded = xpProgress.xp_required_for_next_level;
+            if (currentXp != null && xpNeeded != null) {
+                document.getElementById('player-xp').textContent = `${currentXp} / ${xpNeeded}`;
+            } else {
+                document.getElementById('player-xp').textContent = player.total_xp ?? player.xp ?? 0;
+            }
             document.getElementById('player-pqg').textContent = player.pqg ?? 0;
             document.getElementById('player-str').textContent = player.str;
             document.getElementById('player-int').textContent = player.int;
