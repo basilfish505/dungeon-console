@@ -14,6 +14,8 @@ from collections import defaultdict
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from werkzeug.security import check_password_hash, generate_password_hash
 
+from character_stats import ATTRIBUTE_KEYS
+
 NAME_MIN_LEN = 3
 NAME_MAX_LEN = 16
 NAME_PATTERN = re.compile(r'^[A-Za-z0-9_-]+$')
@@ -23,6 +25,10 @@ PASSWORD_MAX_LEN = 128
 
 AUTH_TOKEN_SALT = 'permaquest-auth-v1'
 AUTH_TOKEN_MAX_AGE_SECONDS = 30 * 24 * 60 * 60  # 30 days
+
+ROLL_TOKEN_SALT = 'permaquest-roll-v1'
+ROLL_TOKEN_MAX_AGE_SECONDS = 60 * 60  # 1 hour to finish character creation
+ROLL_STAT_KEYS = (*ATTRIBUTE_KEYS, 'mhp', 'mmp')
 
 # In-memory login throttle: name_key -> list of attempt timestamps.
 _LOGIN_ATTEMPTS: dict[str, list[float]] = defaultdict(list)
@@ -115,6 +121,29 @@ def read_auth_token(secret_key: str, token, *, world_id: str | None = None):
     if world_id is not None and str(wid) != str(world_id):
         return None
     return {'player_id': str(pid), 'world_id': str(wid)}
+
+
+def make_roll_token(secret_key: str, stats: dict) -> str:
+    """Sign a starting-stat roll so the browser can hold many rolls at once."""
+    serializer = URLSafeTimedSerializer(str(secret_key), salt=ROLL_TOKEN_SALT)
+    return serializer.dumps({k: int(stats[k]) for k in ROLL_STAT_KEYS})
+
+
+def read_roll_token(secret_key: str, token):
+    """Verify a roll token. Returns the stats dict, or None if invalid/expired."""
+    if not token:
+        return None
+    serializer = URLSafeTimedSerializer(str(secret_key), salt=ROLL_TOKEN_SALT)
+    try:
+        payload = serializer.loads(str(token), max_age=ROLL_TOKEN_MAX_AGE_SECONDS)
+    except (BadSignature, SignatureExpired, TypeError, ValueError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    try:
+        return {k: int(payload[k]) for k in ROLL_STAT_KEYS}
+    except (KeyError, TypeError, ValueError):
+        return None
 
 
 def login_allowed(name_key_value: str) -> bool:

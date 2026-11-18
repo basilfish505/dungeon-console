@@ -50,9 +50,11 @@ from character_auth import (
     clear_login_attempts,
     login_allowed,
     make_auth_token,
+    make_roll_token,
     name_key,
     normalize_name,
     read_auth_token,
+    read_roll_token,
     record_login_attempt,
     validate_name,
     validate_password,
@@ -76,6 +78,9 @@ SHOP_BUILDERS = {
 
 # Constants (map spawn rates live in map_generator.py)
 SECRET_KEY = os.environ.get('SECRET_KEY') or 'dev-only-change-me'
+# Starting-stat shuffles handed to the browser per request (cycled client-side).
+ROLL_BATCH_SIZE = 25
+ROLL_BATCH_MAX = 50
 # Persisted world id exposed to clients as boot_id (see WorldPersistence.initialize).
 SERVER_BOOT_ID = None
 # Keep each game_state payload small (full log was resent on every step).
@@ -1147,12 +1152,37 @@ def _clear_auth_session():
 
 @app.route('/api/character/roll', methods=['POST'])
 def api_character_roll():
-    """Roll (or re-roll) starting stats. No permanent character is created."""
-    stats = roll_starting_stats()
-    session['pending_roll'] = stats
+    """
+    Roll a batch of starting-stat sets. No permanent character is created.
+
+    Each roll carries a signed token, so the browser can cycle through the
+    batch instantly (no round trip per shuffle) and send back only the token
+    of the roll the player accepts. The server never trusts raw stat values.
+    """
+    data = request.get_json(silent=True) or {}
+    try:
+        count = int(data.get('count', ROLL_BATCH_SIZE))
+    except (TypeError, ValueError):
+        count = ROLL_BATCH_SIZE
+    count = max(1, min(ROLL_BATCH_MAX, count))
+
+    rolls = []
+    for _ in range(count):
+        stats = roll_starting_stats()
+        rolls.append({
+            'token': make_roll_token(SECRET_KEY, stats),
+            **_stats_for_client(stats),
+        })
+
+    # Legacy single-roll fields (first roll) + session fallback for old clients.
+    session['pending_roll'] = read_roll_token(SECRET_KEY, rolls[0]['token'])
     session.modified = True
-    payload = _stats_for_client(stats)
-    return jsonify({'ok': True, **payload})
+    return jsonify({
+        'ok': True,
+        'rows': rolls[0]['rows'],
+        'stats': rolls[0]['stats'],
+        'rolls': rolls,
+    })
 
 
 @app.route('/api/character/create', methods=['POST'])
@@ -1171,7 +1201,16 @@ def api_character_create():
     if pass_err:
         return jsonify({'ok': False, 'error': pass_err}), 400
 
-    starting_stats = session.get('pending_roll')
+    roll_token = data.get('roll_token')
+    if roll_token:
+        starting_stats = read_roll_token(SECRET_KEY, roll_token)
+        if starting_stats is None:
+            return jsonify({
+                'ok': False,
+                'error': 'Those stats expired. Go back and shuffle again.',
+            }), 400
+    else:
+        starting_stats = session.get('pending_roll')
     if not isinstance(starting_stats, dict):
         return jsonify({
             'ok': False,

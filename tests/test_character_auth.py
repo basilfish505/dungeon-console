@@ -4,6 +4,7 @@ import os
 import shutil
 import tempfile
 import unittest
+from unittest import mock
 
 import armour_types  # noqa: F401
 import item_types  # noqa: F401
@@ -19,9 +20,12 @@ from character_auth import (
     validate_password,
     verify_password,
     make_auth_token,
+    make_roll_token,
     read_auth_token,
+    read_roll_token,
 )
 from character_stats import ATTRIBUTE_KEYS, attribute_short_label
+import dungeon_crawler
 from dungeon_crawler import GameState, NAME_UNAVAILABLE
 from player import Player, roll_starting_stats
 from store import reset_world_store
@@ -75,6 +79,69 @@ class TokenTests(unittest.TestCase):
         secret = 'test-secret'
         token = make_auth_token(secret, player_id='Grimbold', world_id='world1')
         self.assertIsNone(read_auth_token(secret, token, world_id='world2'))
+
+
+class RollTokenTests(unittest.TestCase):
+    def test_roundtrip(self):
+        stats = roll_starting_stats(rng=__import__('random').Random(10))
+        token = make_roll_token('test-secret', stats)
+        self.assertEqual(read_roll_token('test-secret', token), stats)
+
+    def test_rejects_wrong_secret_and_garbage(self):
+        stats = roll_starting_stats(rng=__import__('random').Random(11))
+        token = make_roll_token('test-secret', stats)
+        self.assertIsNone(read_roll_token('other-secret', token))
+        self.assertIsNone(read_roll_token('test-secret', token + 'x'))
+        self.assertIsNone(read_roll_token('test-secret', 'not-a-token'))
+        self.assertIsNone(read_roll_token('test-secret', None))
+
+    def test_auth_token_is_not_a_roll_token(self):
+        auth = make_auth_token('test-secret', player_id='Grimbold', world_id='w')
+        self.assertIsNone(read_roll_token('test-secret', auth))
+
+    def test_expired_roll_rejected(self):
+        stats = roll_starting_stats(rng=__import__('random').Random(12))
+        token = make_roll_token('test-secret', stats)
+        with mock.patch('character_auth.ROLL_TOKEN_MAX_AGE_SECONDS', -1):
+            self.assertIsNone(read_roll_token('test-secret', token))
+
+
+class RollRouteTests(unittest.TestCase):
+    def setUp(self):
+        self.client = dungeon_crawler.app.test_client()
+
+    def test_roll_returns_batch_of_signed_rolls(self):
+        data = self.client.post('/api/character/roll', json={}).get_json()
+        self.assertTrue(data['ok'])
+        self.assertEqual(len(data['rolls']), dungeon_crawler.ROLL_BATCH_SIZE)
+        for roll in data['rolls']:
+            stats = read_roll_token(dungeon_crawler.SECRET_KEY, roll['token'])
+            self.assertEqual(stats, roll['stats'])
+            for key in ATTRIBUTE_KEYS:
+                self.assertTrue(1 <= stats[key] <= 10)
+            self.assertTrue(300 <= stats['mhp'] <= 500)
+        # Legacy fields mirror the first roll.
+        self.assertEqual(data['stats'], data['rolls'][0]['stats'])
+
+    def test_roll_count_is_clamped(self):
+        data = self.client.post(
+            '/api/character/roll', json={'count': 100000}
+        ).get_json()
+        self.assertEqual(len(data['rolls']), dungeon_crawler.ROLL_BATCH_MAX)
+        data = self.client.post('/api/character/roll', json={'count': 0}).get_json()
+        self.assertEqual(len(data['rolls']), 1)
+
+    def test_create_rejects_tampered_roll_token(self):
+        data = self.client.post('/api/character/roll', json={}).get_json()
+        token = data['rolls'][0]['token']
+        response = self.client.post('/api/character/create', json={
+            'name': 'Cheater',
+            'password': 'secret1',
+            'password_confirm': 'secret1',
+            'roll_token': token[:-2] + ('AA' if token[-2:] != 'AA' else 'BB'),
+        })
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(response.get_json()['ok'])
 
 
 class AttributeLabelTests(unittest.TestCase):

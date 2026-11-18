@@ -111,25 +111,62 @@ const Entry = (function () {
         return { response: response, data: data };
     }
 
+    // The server hands out a batch of signed rolls; shuffling cycles through
+    // them locally (instant) and only refetches when the batch runs low.
+    const ROLL_PREFETCH_LOW_WATER = 3;
+    let rollQueue = [];
+    let currentRoll = null;
+    let rollFetch = null;
+
+    function fetchRollBatch() {
+        if (rollFetch) {
+            return rollFetch;
+        }
+        rollFetch = (async function () {
+            try {
+                const result = await postJson('/api/character/roll', {});
+                if (!result.data || !result.data.ok) {
+                    return (result.data && result.data.error) || 'Could not roll stats.';
+                }
+                const rolls = result.data.rolls || [];
+                if (!rolls.length) {
+                    return 'Could not roll stats.';
+                }
+                rollQueue = rollQueue.concat(rolls);
+                return null;
+            } catch (err) {
+                return 'Could not reach the server.';
+            } finally {
+                rollFetch = null;
+            }
+        })();
+        return rollFetch;
+    }
+
+    function showNextRoll() {
+        currentRoll = rollQueue.shift();
+        acceptedStats = null;
+        renderStats(currentRoll.rows || []);
+        if (rollQueue.length <= ROLL_PREFETCH_LOW_WATER) {
+            fetchRollBatch();
+        }
+    }
+
     async function rollStats() {
         setError('entry-stats-error', '');
-        setBusy(true);
-        try {
-            const result = await postJson('/api/character/roll', {});
-            if (!result.data || !result.data.ok) {
-                setError(
-                    'entry-stats-error',
-                    (result.data && result.data.error) || 'Could not roll stats.'
-                );
-                return;
+        if (!rollQueue.length) {
+            setBusy(true);
+            try {
+                const err = await fetchRollBatch();
+                if (err) {
+                    setError('entry-stats-error', err);
+                    return;
+                }
+            } finally {
+                setBusy(false);
             }
-            acceptedStats = null;
-            renderStats(result.data.rows || []);
-        } catch (err) {
-            setError('entry-stats-error', 'Could not reach the server.');
-        } finally {
-            setBusy(false);
         }
+        showNextRoll();
     }
 
     function enterGame(token, displayName) {
@@ -147,6 +184,8 @@ const Entry = (function () {
 
     async function startNewCharacter() {
         acceptedStats = null;
+        rollQueue = [];
+        currentRoll = null;
         if ($('entry-create-name')) {
             $('entry-create-name').value = '';
         }
@@ -164,8 +203,11 @@ const Entry = (function () {
     }
 
     function acceptStats() {
-        // Server already holds the pending roll in the session cookie.
-        acceptedStats = true;
+        if (!currentRoll) {
+            return;
+        }
+        // Only the signed token of the accepted roll is sent at creation.
+        acceptedStats = currentRoll.token;
         setError('entry-name-error', '');
         showPanel('name');
         const input = $('entry-create-name');
@@ -204,10 +246,20 @@ const Entry = (function () {
                 name: name,
                 password: password,
                 password_confirm: confirm,
+                roll_token: acceptedStats,
             });
             if (!result.data || !result.data.ok) {
                 const err = (result.data && result.data.error) || 'Could not create character.';
-                if (/name/i.test(err) && /unavail|exist|taken|choose|letter/i.test(err)) {
+                if (/expired/i.test(err)) {
+                    // Stale roll batch: drop it and roll a fresh set.
+                    rollQueue = [];
+                    currentRoll = null;
+                    acceptedStats = null;
+                    showPanel('stats');
+                    setBusy(false);
+                    await rollStats();
+                    setError('entry-stats-error', err);
+                } else if (/name/i.test(err) && /unavail|exist|taken|choose|letter/i.test(err)) {
                     setError('entry-name-error', err);
                     showPanel('name');
                 } else {
