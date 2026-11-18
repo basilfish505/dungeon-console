@@ -349,8 +349,12 @@ class WorldPersistence:
     def resume_battle_timers(self) -> None:
         if self.combat_system is None:
             return
-        for battle in self.combat_system.battles.values():
+        for battle in list(self.combat_system.battles.values()):
             if battle.get('status') != 'active':
+                continue
+            # Drop dead players / unresolved monsters before restarting timers
+            # so orphaned battles cannot forfeit-loop forever after a reboot.
+            if self.combat_system.sanitize_battle(battle):
                 continue
             turn_order = battle.get('turn_order') or []
             idx = battle.get('current_turn_index', 0)

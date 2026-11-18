@@ -1303,6 +1303,38 @@ class CombatSystem:
             return 1
         return min(TURN_TIMEOUT_SECONDS, int(math.ceil(remaining)))
 
+    def sanitize_battle(self, battle):
+        """
+        Drop dead/missing actors from a battle and end it if nothing remains
+        to fight. Used on restore and whenever turn flow might otherwise loop
+        forever (empty monsters + lone player forfeiting).
+
+        Returns True if the battle ended (or was already gone).
+        """
+        if not battle or battle.get('status') in ('ended', 'merged'):
+            return True
+
+        battle_id = battle.get('battle_id')
+        living = [
+            pid for pid in list(battle.get('participants') or [])
+            if pid in self.game_state.players
+        ]
+        for pid in list(battle.get('participants') or []):
+            if pid not in living:
+                if self.game_state.active_combats.get(pid) == battle_id:
+                    del self.game_state.active_combats[pid]
+
+        monster_ids = {m.id for m in (battle.get('monsters') or [])}
+        battle['participants'] = living
+        valid = set(living) | monster_ids
+        battle['turn_order'] = [
+            eid for eid in list(battle.get('turn_order') or []) if eid in valid
+        ]
+        if battle['current_turn_index'] >= len(battle['turn_order']):
+            battle['current_turn_index'] = 0
+
+        return self._check_battle_end(battle)
+
     def _turn_timer_expire(self, battle_id, player_id, token):
         """Background task: forfeit turn after timeout if still pending"""
         self.socketio.sleep(TURN_TIMEOUT_SECONDS)
@@ -1310,6 +1342,12 @@ class CombatSystem:
         if not current or current.get('status') != 'active':
             return
         if current.get('turn_token') != token:
+            return
+        if self.sanitize_battle(current):
+            return
+        if player_id not in current.get('participants', []):
+            return
+        if player_id not in self.game_state.players:
             return
         if not current['turn_order']:
             return
@@ -1343,6 +1381,10 @@ class CombatSystem:
     def _forfeit_turn(self, battle, player_id):
         """Skip a player's turn after timeout or disconnect"""
         if battle.get('status') != 'active':
+            return
+        if self.sanitize_battle(battle):
+            return
+        if player_id not in battle.get('participants', []):
             return
 
         display_name = player_id
@@ -1383,7 +1425,10 @@ class CombatSystem:
 
     def _advance_turn(self, battle, fx_hold_seconds=0):
         """Advance to the next turn in the battle"""
+        if self.sanitize_battle(battle):
+            return
         if not battle['turn_order']:
+            self._check_battle_end(battle)
             return
         
         self._cancel_turn_timer(battle)
@@ -1411,6 +1456,8 @@ class CombatSystem:
             if battle['current_turn_index'] >= len(battle['turn_order']):
                  battle['current_turn_index'] = 0
 
+            if self.sanitize_battle(battle):
+                return
             if not battle['turn_order']:
                 self._check_battle_end(battle)
                 return
@@ -1472,6 +1519,11 @@ class CombatSystem:
 
     def _handle_player_turn(self, player_id, battle):
         """Send turn notification to a player and start the forfeit timer"""
+        if self.sanitize_battle(battle):
+            return
+        if player_id not in self.game_state.players:
+            self._advance_turn(battle)
+            return
         # Defend lasts one full round; clear when this player's turn comes again.
         battle.setdefault('defend_status', {})[player_id] = False
         current_player = self.game_state.players[player_id]
@@ -1532,10 +1584,14 @@ class CombatSystem:
             print(f"Monster {monster_id} not found in battle, skipping turn")
             if monster_id in battle['turn_order']:
                 battle['turn_order'].remove(monster_id)
+            if self.sanitize_battle(battle):
+                return
             # Advance to next turn
             self._advance_turn(battle)
             return
         
+        if self.sanitize_battle(battle):
+            return
         if not battle['participants']:
             self._check_battle_end(battle)
             return
@@ -2117,8 +2173,6 @@ class CombatSystem:
         """Handle a player's death in combat. killer_id set for PvP kills."""
         player = self.game_state.players[player_id]
         
-        # Store player position before removal
-        player_position = tuple(player.pos)
         dead_name = player.id
 
         killer_name = None
@@ -2193,10 +2247,8 @@ class CombatSystem:
             if battle['current_turn_index'] >= idx:
                 battle['current_turn_index'] = max(0, battle['current_turn_index'] - 1)
         
-        # Clear the player's tile on their dungeon level (players are overlaid, but keep map clean)
-        game_map, _ = self.game_state.ensure_level(player.dungeon_level)
-        if game_map[player_position[0]][player_position[1]] not in ('#', '↓', '↑'):
-            game_map[player_position[0]][player_position[1]] = '.'
+        # Players are overlaid on the map and never written into it, so the
+        # terrain under the dead player (grass, road, floor, ...) stays as-is.
         
         # Remove player from active combat
         if player_id in self.game_state.active_combats:

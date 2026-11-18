@@ -224,6 +224,46 @@ class CombatDeathEloWiringTests(unittest.TestCase):
         # Victim was removed from the game after Elo applied
         self.assertNotIn('hero', gs.players)
 
+    def test_player_death_leaves_terrain_under_player_unchanged(self):
+        from combat import CombatSystem
+
+        game_map = [['g'] * 5 for _ in range(5)]
+        game_map[1][2] = 'R'
+        gs = type('GS', (), {
+            'players': {},
+            'active_players': {},
+            'active_combats': {},
+            'add_player_message': lambda *a, **k: None,
+            'add_global_message': lambda *a, **k: None,
+            'ensure_level': lambda self, level: (game_map, {}),
+        })()
+        cs = CombatSystem(gs, socketio=type('S', (), {
+            'emit': lambda *a, **k: None,
+            'sleep': lambda *a, **k: None,
+            'start_background_task': lambda fn, *a, **k: None,
+        })())
+
+        for pos in ([1, 1], [1, 2]):
+            expected = game_map[pos[0]][pos[1]]
+            victim = Player('hero', list(pos))
+            mon = Monster.from_type('troll', [3, 3], monster_id='m1', level=1)
+            gs.players = {'hero': victim}
+            gs.active_players = {'hero': True}
+            gs.active_combats = {'hero': 'b1'}
+            battle = {
+                'battle_id': 'b1',
+                'participants': ['hero'],
+                'monsters': [mon],
+                'turn_order': ['hero', mon.id],
+                'current_turn_index': 0,
+                'status': 'active',
+                'defend_status': {},
+                'turn_token': None,
+            }
+            cs.battles = {battle['battle_id']: battle}
+            cs._handle_player_death('hero', battle, killer_monster=mon)
+            self.assertEqual(game_map[pos[0]][pos[1]], expected)
+
     def test_multi_kill_rewards_deferred_until_battle_end(self):
         from unittest.mock import patch
 

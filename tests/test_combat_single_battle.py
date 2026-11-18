@@ -178,6 +178,107 @@ class SingleBattleInvariantTests(unittest.TestCase):
         self.assertEqual(len(cs.battles), 1)
         self.assertEqual(cs.battles[second]['participants'], ['B'])
 
+    def test_sanitize_ends_battle_with_no_monsters_left(self):
+        gs, cs = _system()
+        gs.players = {'aww': Player('aww', [1, 1])}
+        m1 = _troll('m1', [1, 2])
+        battle_id = cs.start_combat('aww', m1, emit_game_state=False)
+        battle = cs.battles[battle_id]
+        battle['monsters'] = []
+        battle['turn_order'] = ['aww', 'm1']
+        battle['current_turn_index'] = 0
+
+        ended = cs.sanitize_battle(battle)
+
+        self.assertTrue(ended)
+        self.assertNotIn(battle_id, cs.battles)
+        self.assertNotIn('aww', gs.active_combats)
+        self.assertFalse(gs.players['aww'].in_combat)
+
+    def test_forfeit_ends_orphan_battle_instead_of_looping(self):
+        gs, cs = _system()
+        player = Player('aww', [1, 1])
+        player.in_combat = True
+        gs.players = {'aww': player}
+        gs.active_combats['aww'] = 'stuck'
+        battle = {
+            'battle_id': 'stuck',
+            'participants': ['aww'],
+            'monsters': [],
+            'turn_order': ['aww', 'ghost-monster'],
+            'current_turn_index': 0,
+            'status': 'active',
+            'defend_status': {},
+            'pending_rewards': {},
+            'alliances': [],
+            'turn_token': 'tok',
+            'turn_deadline': None,
+        }
+        cs.battles['stuck'] = battle
+
+        cs._forfeit_turn(battle, 'aww')
+
+        self.assertNotIn('stuck', cs.battles)
+        self.assertNotIn('aww', gs.active_combats)
+
+    def test_sanitize_drops_dead_participants_and_stale_turn_entries(self):
+        gs, cs = _system()
+        gs.players = {'alive': Player('alive', [1, 1])}
+        m1 = _troll('m1', [1, 2])
+        m1.in_combat = True
+        battle = {
+            'battle_id': 'b1',
+            'participants': ['alive', 'dead'],
+            'monsters': [m1],
+            'turn_order': ['alive', 'dead', 'm1', 'missing'],
+            'current_turn_index': 3,
+            'status': 'active',
+            'defend_status': {},
+            'pending_rewards': {},
+            'alliances': [],
+        }
+        cs.battles['b1'] = battle
+        gs.active_combats = {'alive': 'b1', 'dead': 'b1'}
+
+        ended = cs.sanitize_battle(battle)
+
+        self.assertFalse(ended)
+        self.assertEqual(battle['participants'], ['alive'])
+        self.assertEqual(battle['turn_order'], ['alive', 'm1'])
+        self.assertEqual(battle['current_turn_index'], 0)
+        self.assertNotIn('dead', gs.active_combats)
+        self.assertEqual(gs.active_combats['alive'], 'b1')
+
+    def test_resume_battle_timers_ends_orphan_battle(self):
+        from world_persistence import WorldPersistence
+
+        gs, cs = _system()
+        player = Player('aww', [1, 1])
+        player.in_combat = True
+        gs.players = {'aww': player}
+        gs.active_combats['aww'] = 'orphan'
+        cs.battles['orphan'] = {
+            'battle_id': 'orphan',
+            'participants': ['aww'],
+            'monsters': [],
+            'turn_order': ['aww', 'gone-troll'],
+            'current_turn_index': 0,
+            'status': 'active',
+            'defend_status': {},
+            'pending_rewards': {},
+            'alliances': [],
+        }
+        wp = WorldPersistence(gs, combat_system=cs, socketio=_SocketIOStub())
+        started = []
+        cs._start_turn_timer = lambda *a, **k: started.append('player')
+        cs._schedule_monster_turn = lambda *a, **k: started.append('monster')
+
+        wp.resume_battle_timers()
+
+        self.assertNotIn('orphan', cs.battles)
+        self.assertEqual(started, [])
+        self.assertNotIn('aww', gs.active_combats)
+
 
 class DefendStanceTests(unittest.TestCase):
     def test_defend_stance_survives_failed_block(self):
@@ -200,18 +301,23 @@ class DefendStanceTests(unittest.TestCase):
         gs, cs = _system()
         hero = Player('hero', [1, 1])
         gs.players = {'hero': hero}
+        m1 = _troll('m1', [1, 2])
         battle = {
             'battle_id': 'b1',
             'participants': ['hero'],
-            'monsters': [],
-            'turn_order': ['hero'],
+            'monsters': [m1],
+            'turn_order': ['hero', 'm1'],
             'current_turn_index': 0,
             'status': 'active',
             'defend_status': {'hero': True},
+            'pending_rewards': {},
+            'alliances': [],
             'turn_token': None,
         }
+        cs.battles['b1'] = battle
         cs._handle_player_turn('hero', battle)
         self.assertFalse(battle['defend_status']['hero'])
+        self.assertIn('b1', cs.battles)
 
 
 class KillPauseJoinTests(unittest.TestCase):
