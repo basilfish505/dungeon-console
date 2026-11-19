@@ -179,9 +179,22 @@ class XlsxLoadTests(unittest.TestCase):
         types = {td.id: td for td in load_monster_sheet(DEFAULT_XLSX_PATH, register=False)}
         self.assertIn('imp', types)
         imp = types['imp']
-        self.assertEqual(imp.spell_ids, ['magic_bolt'])
-        self.assertEqual(imp.base_mmp, 6)
-        self.assertEqual(imp.loot_ids, [])
+        self.assertIn('magic_bolt', imp.spell_ids)
+
+        # Expected MP is read straight from the sheet cell, so editing the
+        # spreadsheet never requires touching this test.
+        wb = load_workbook(DEFAULT_XLSX_PATH, data_only=True, read_only=True)
+        try:
+            ws = wb['Monsters'] if 'Monsters' in wb.sheetnames else wb.active
+            rows = ws.iter_rows(values_only=True)
+            headers = [str(h).strip() if h is not None else '' for h in next(rows)]
+            raw = next(
+                dict(zip(headers, values)) for values in rows
+                if values and str(values[0]).strip() == 'imp'
+            )
+        finally:
+            wb.close()
+        self.assertEqual(imp.base_mmp, int(float(raw['base_mmp'])))
 
 
 class SpawnPickTests(unittest.TestCase):

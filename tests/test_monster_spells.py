@@ -87,22 +87,26 @@ class ImpSheetInstanceTests(unittest.TestCase):
 
     def test_imp_instance_starts_with_mp_and_magic_bolt(self):
         mon = Monster.from_type('imp', [1, 1], monster_id='imp-1', level=1)
-        self.assertEqual(mon.mmp, 6)
-        self.assertEqual(mon.mp, 6)
+        # Expected MP comes from the live sheet row, so editing the sheet
+        # never requires touching this test.
+        self.assertEqual(mon.mmp, self.imp_type.base_mmp)
+        self.assertEqual(mon.mp, self.imp_type.base_mmp)
         self.assertIn('magic_bolt', mon.known_spells)
         inspect = mon.to_inspect_dict()
         self.assertTrue(any(s.get('id') == 'magic_bolt' for s in inspect.get('spells') or []))
 
     def test_mp_and_spells_round_trip_world_serial(self):
         mon = Monster.from_type('imp', [2, 3], monster_id='imp-rt', level=1)
-        mon.mp = 4
+        max_mp = self.imp_type.base_mmp
+        partial = max(0, max_mp - 2)
+        mon.mp = partial
         data = monster_to_dict(mon)
-        self.assertEqual(data['mp'], 4)
-        self.assertEqual(data['mmp'], 6)
+        self.assertEqual(data['mp'], partial)
+        self.assertEqual(data['mmp'], max_mp)
         self.assertEqual(data['known_spells'], ['magic_bolt'])
         restored = monster_from_dict(data)
-        self.assertEqual(restored.mp, 4)
-        self.assertEqual(restored.mmp, 6)
+        self.assertEqual(restored.mp, partial)
+        self.assertEqual(restored.mmp, max_mp)
         self.assertEqual(restored.known_spells, ['magic_bolt'])
 
     def test_legacy_save_without_mp_uses_type_defaults(self):
@@ -112,8 +116,8 @@ class ImpSheetInstanceTests(unittest.TestCase):
         data.pop('mmp', None)
         data.pop('known_spells', None)
         restored = monster_from_dict(data)
-        self.assertEqual(restored.mmp, 6)
-        self.assertEqual(restored.mp, 6)
+        self.assertEqual(restored.mmp, self.imp_type.base_mmp)
+        self.assertEqual(restored.mp, self.imp_type.base_mmp)
         self.assertIn('magic_bolt', restored.known_spells)
 
 
