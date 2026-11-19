@@ -261,14 +261,20 @@ const SocketHandler = (function () {
             }
         });
 
-        socket.on('player_died', function () {
+        socket.on('player_died', function (data) {
             logoutOnServer();
             clearJoinedSession();
             if (typeof Entry !== 'undefined' && Entry.setRemembered) {
                 Entry.setRemembered(null, null);
             }
-            UI.handlePlayerDeath();
             socket.disconnect();
+            // Show "Thou art dead" and wait for a key press; the entry screen
+            // (new / returning character) follows. Reconnect for the next login.
+            UI.handlePlayerDeath(data, function () {
+                if (!socket.connected) {
+                    socket.connect();
+                }
+            });
         });
 
         socket.on('character_dead', function (data) {
@@ -278,14 +284,6 @@ const SocketHandler = (function () {
                 Entry.setRemembered(null, null);
             }
             UI.handlePlayerDeath(data);
-            if (typeof UI !== 'undefined' && UI.showLoginScreen) {
-                setTimeout(function () {
-                    UI.showLoginScreen();
-                    if (typeof Entry !== 'undefined' && Entry.showChoice) {
-                        Entry.showChoice();
-                    }
-                }, 4000);
-            }
         });
 
         document.addEventListener('visibilitychange', function () {

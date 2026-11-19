@@ -175,6 +175,26 @@ class CalibrateTests(unittest.TestCase):
         self.assertEqual(mon.mhp, mhp_before)
         self.assertEqual(mon.hp, mon.mhp)
 
+    def test_calibration_never_goes_below_zero(self):
+        """A weak monster that keeps losing is held at MIN_ELO, not driven negative."""
+        ladder = [_fighter(0, 'elo_spawn_rat', 1)] + [
+            _fighter(5 + i, f'brute{i}', 1, strength=60, dexterity=1, acc=30)
+            for i in range(12)
+        ]
+        mon = Monster.from_type('elo_spawn_rat', [0, 0], monster_id='a', level=1, rng=random.Random(1))
+
+        # Without the clamp this scenario sinks well below zero ...
+        with patch.object(monster_elo_mod, 'MIN_ELO', -1e9):
+            unclamped = calibrate_instance_elo(
+                mon, fights=40, rng=random.Random(99), ladder=ladder,
+            )
+        self.assertLess(unclamped, 0.0)
+
+        # ... and with it the final rating is held at zero.
+        elo = calibrate_instance_elo(mon, fights=40, rng=random.Random(99), ladder=ladder)
+        self.assertEqual(elo, 0.0)
+        self.assertEqual(mon.elo, 0.0)
+
     def test_seeded_calibration_starts_from_table_elo(self):
         ladder = [
             _fighter(210, 'elo_spawn_rat', 1),

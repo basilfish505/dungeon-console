@@ -146,6 +146,62 @@ body {
     min-height: 1.2em;
 }
 
+/* Full-screen "Thou art dead" screen; any key or tap continues. */
+.death-screen {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    z-index: 6000;
+    background: #000;
+    cursor: pointer;
+    outline: none;
+}
+
+.death-screen[hidden] {
+    display: none;
+}
+
+.death-panel {
+    width: min(520px, 100%);
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    align-items: center;
+    text-align: center;
+}
+
+.death-title {
+    margin: 0;
+    font-size: clamp(2.2rem, 9vw, 4rem);
+    font-weight: normal;
+    letter-spacing: 0.12em;
+    color: #f33;
+}
+
+.death-detail {
+    margin: 0;
+    font-size: 1.5rem;
+    color: #0f0;
+    min-height: 1.2em;
+}
+
+.death-prompt {
+    margin: 12px 0 0;
+    font-size: 1.4rem;
+    color: #0f0;
+    opacity: 0.85;
+    animation: death-prompt-blink 1.2s steps(2, start) infinite;
+}
+
+@keyframes death-prompt-blink {
+    to {
+        visibility: hidden;
+    }
+}
+
 .game-screen {
     display: grid;
     /* Map takes leftover space; stats size to content and bound the map from below */
@@ -1319,6 +1375,13 @@ body {
     color: #9f9;
     letter-spacing: 0.04em;
     text-transform: uppercase;
+}
+
+.inventory-detail-boost {
+    margin: 4px 0 0;
+    font-size: 0.95rem;
+    color: #8cf;
+    letter-spacing: 0.04em;
 }
 
 .inventory-detail-lit {

@@ -56,6 +56,10 @@ def _row_from_item(item, equipped_ids=None, lit_light_id=None):
         row['consistency_factor'] = getattr(type_def, 'consistency_factor', 3)
     elif cat == CATEGORY_ARMOUR:
         row['armour_value'] = getattr(type_def, 'armour_value', 1)
+        row['slot'] = getattr(type_def, 'slot', 'body')
+        row['other_ability'] = getattr(type_def, 'other_ability', None)
+        from armour_types.traits import clean_rolled_boosts
+        row['boosts'] = clean_rolled_boosts(item.extras.get('boosts'))
     light_ticks = getattr(type_def, 'light_ticks', None)
     if light_ticks is not None:
         row['light_ticks'] = int(light_ticks)
@@ -85,9 +89,20 @@ class Inventory:
                 return item
         return None
 
-    def add(self, type_id, quantity=1, category=CATEGORY_ITEM, instance_id=None):
+    def add(
+        self,
+        type_id,
+        quantity=1,
+        category=CATEGORY_ITEM,
+        instance_id=None,
+        roll_boosts=True,
+    ):
         """
         Place a new instance in the first empty slot.
+
+        Armour whose sheet ``other_ability`` has attribute boosts gets its
+        random boost rolled here (once) and kept in ``extras['boosts']``.
+        Pass ``roll_boosts=False`` when restoring a saved instance.
 
         Stacking is intentionally not implemented yet — each add creates a new
         instance so later stacking/equipment rules can be layered on cleanly.
@@ -112,6 +127,11 @@ class Inventory:
         if cat == CATEGORY_ITEM:
             from items.light import seed_light_extras
             seed_light_extras(inst, type_def)
+        elif cat == CATEGORY_ARMOUR and roll_boosts:
+            from armour_types.traits import roll_boosts as roll_attribute_boosts
+            rolled = roll_attribute_boosts(getattr(type_def, 'attribute_boosts', None))
+            if rolled:
+                inst.extras['boosts'] = rolled
         self._slots[empty] = inst
         return inst
 
@@ -155,6 +175,7 @@ class Inventory:
         equipped_weapon_id=None,
         equipped_armour_id=None,
         lit_light_id=None,
+        equipped_ring_ids=None,
     ):
         """16 entries for the UI; empty slots are None."""
         equipped_ids = set()
@@ -162,6 +183,7 @@ class Inventory:
             equipped_ids.add(equipped_weapon_id)
         if equipped_armour_id:
             equipped_ids.add(equipped_armour_id)
+        equipped_ids.update(i for i in (equipped_ring_ids or ()) if i)
         rows = []
         for item in self._slots:
             rows.append(
@@ -195,6 +217,7 @@ class Inventory:
                     quantity=row.get('quantity', 1),
                     category=cat,
                     instance_id=row.get('instance_id'),
+                    roll_boosts=False,
                 )
                 inst = self.get(row.get('instance_id'))
                 if inst is not None and isinstance(row.get('extras'), dict):

@@ -20,7 +20,7 @@ from items.catalog import (
     resolve_owned_type,
     shop_catalog,
     shop_category,
-    shop_sale_ids,
+    shop_item_category,
 )
 from items.equipment import clear_equipped_if_removed
 from item_types.registry import get_item_type
@@ -76,8 +76,8 @@ def purchase_item(player, item_id, *, shop_id=None):
         return result
 
     item_id = str(item_id or '').strip()
-    sale_ids = shop_sale_ids(sid)
-    if not item_id or item_id not in sale_ids:
+    category = shop_item_category(sid, item_id) if item_id else None
+    if category is None:
         result['message'] = 'That item is not for sale.'
         result['pqg'] = int(getattr(player, 'pqg', 0) or 0)
         return result

@@ -8,6 +8,7 @@ from items.catalog import CATEGORY_ARMOUR, CATEGORY_WEAPON, resolve_owned_type
 UNARMED_WEAPON_BASE_DAMAGE = -2
 UNARMED_CONSISTENCY_FACTOR = 3
 UNARMED_ARMOUR = 1
+RING_SLOT_COUNT = 2
 
 
 def effective_armour_value(player):
@@ -87,9 +88,71 @@ def sync_equipment(player):
         inst = inv.get(a_id) if inv is not None else None
         if inst is None or getattr(inst, 'category', None) != CATEGORY_ARMOUR:
             player.equipped_armour_instance_id = None
-        elif resolve_owned_type(CATEGORY_ARMOUR, inst.type_id) is None:
-            player.equipped_armour_instance_id = None
+        else:
+            type_def = resolve_owned_type(CATEGORY_ARMOUR, inst.type_id)
+            # A ring never occupies the body-armour slot.
+            if type_def is None or getattr(type_def, 'is_ring', False):
+                player.equipped_armour_instance_id = None
+    ring_ids = []
+    for r_id in list(getattr(player, 'equipped_ring_instance_ids', None) or []):
+        if r_id in ring_ids or len(ring_ids) >= RING_SLOT_COUNT:
+            continue
+        inst = inv.get(r_id) if inv is not None else None
+        if inst is None or getattr(inst, 'category', None) != CATEGORY_ARMOUR:
+            continue
+        type_def = resolve_owned_type(CATEGORY_ARMOUR, inst.type_id)
+        if type_def is None or not getattr(type_def, 'is_ring', False):
+            continue
+        ring_ids.append(r_id)
+    player.equipped_ring_instance_ids = ring_ids
     player.armour = effective_armour_value(player)
+    apply_equipment_attribute_bonus(player)
+
+
+def equipped_ring_ids(player):
+    """Instance ids of worn rings (at most RING_SLOT_COUNT)."""
+    return list(getattr(player, 'equipped_ring_instance_ids', None) or [])
+
+
+def equipment_attribute_bonus(player):
+    """Sum of rolled attribute boosts on worn body armour and rings."""
+    from armour_types.traits import clean_rolled_boosts
+
+    inv = getattr(player, 'inventory', None)
+    if inv is None:
+        return {}
+    ids = list(equipped_ring_ids(player))
+    body_id = getattr(player, 'equipped_armour_instance_id', None)
+    if body_id:
+        ids.append(body_id)
+    total = {}
+    for iid in ids:
+        inst = inv.get(iid)
+        if inst is None or getattr(inst, 'category', None) != CATEGORY_ARMOUR:
+            continue
+        for key, amount in clean_rolled_boosts(inst.extras.get('boosts')).items():
+            total[key] = total.get(key, 0) + amount
+    return {key: amount for key, amount in total.items() if amount}
+
+
+def apply_equipment_attribute_bonus(player):
+    """Make player attributes equal base + worn-gear boosts.
+
+    Boosts live on the stored attributes, so every existing reader (combat,
+    spells, inspect, saves) sees them. ``applied_attribute_bonus`` records
+    what is currently included so only the difference is applied, which keeps
+    equip, unequip, level-up growth, and save/load consistent.
+    """
+    if player is None:
+        return
+    desired = equipment_attribute_bonus(player)
+    applied = dict(getattr(player, 'applied_attribute_bonus', None) or {})
+    for key in set(desired) | set(applied):
+        delta = int(desired.get(key, 0)) - int(applied.get(key, 0))
+        if delta:
+            current = int(getattr(player, key, 1) or 0)
+            setattr(player, key, current + delta)
+    player.applied_attribute_bonus = dict(desired)
 
 
 def equip_item(player, instance_id):
@@ -117,6 +180,18 @@ def equip_item(player, instance_id):
     if cat == CATEGORY_WEAPON:
         player.equipped_weapon_instance_id = inst.instance_id
         result['message'] = f'You equip the {name}.'
+    elif getattr(type_def, 'is_ring', False):
+        rings = equipped_ring_ids(player)
+        if inst.instance_id in rings:
+            result['message'] = f'You are already wearing the {name}.'
+            return result
+        if len(rings) >= RING_SLOT_COUNT:
+            result['message'] = (
+                f'You already wear {RING_SLOT_COUNT} rings. Remove one first.'
+            )
+            return result
+        player.equipped_ring_instance_ids = rings + [inst.instance_id]
+        result['message'] = f'You slip on the {name}.'
     else:
         player.equipped_armour_instance_id = inst.instance_id
         result['message'] = f'You don the {name}.'
@@ -140,10 +215,28 @@ def unequip_item(player, instance_id, slot=None):
             slot = 'weapon'
         elif getattr(player, 'equipped_armour_instance_id', None) == instance_id:
             slot = 'armour'
+        elif instance_id in equipped_ring_ids(player):
+            slot = 'ring'
         else:
             inst = player.inventory.get(instance_id)
             if inst is not None:
                 slot = getattr(inst, 'category', None)
+
+    if slot == 'ring' or (instance_id and instance_id in equipped_ring_ids(player)):
+        rings = equipped_ring_ids(player)
+        if instance_id not in rings:
+            result['message'] = 'That ring is not equipped.'
+            return result
+        inst = player.inventory.get(instance_id)
+        type_def = (
+            resolve_owned_type(CATEGORY_ARMOUR, inst.type_id) if inst else None
+        )
+        name = type_def.name if type_def else 'ring'
+        player.equipped_ring_instance_ids = [r for r in rings if r != instance_id]
+        sync_equipment(player)
+        result['ok'] = True
+        result['message'] = f'You remove the {name}.'
+        return result
 
     if slot == 'weapon' or (
         instance_id and getattr(player, 'equipped_weapon_instance_id', None) == instance_id
@@ -199,6 +292,9 @@ def clear_equipped_if_removed(player, instance_id):
         player.equipped_weapon_instance_id = None
     if getattr(player, 'equipped_armour_instance_id', None) == instance_id:
         player.equipped_armour_instance_id = None
+    player.equipped_ring_instance_ids = [
+        r for r in equipped_ring_ids(player) if r != instance_id
+    ]
     sync_equipment(player)
 
 

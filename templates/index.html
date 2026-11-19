@@ -242,6 +242,14 @@
         </div>
     </div>
 
+    <div id="death-screen" class="death-screen" hidden aria-hidden="true" role="alertdialog" aria-labelledby="death-title" tabindex="-1">
+        <div class="death-panel">
+            <h1 id="death-title" class="death-title">THOU ART DEAD</h1>
+            <p id="death-detail" class="death-detail"></p>
+            <p id="death-prompt" class="death-prompt">Press any key to continue</p>
+        </div>
+    </div>
+
     <link rel="preload" as="image" href="{{ url_for('static', filename='tiles/floor.png') }}">
     <link rel="preload" as="image" href="{{ url_for('static', filename='tiles/grass.png') }}">
     <link rel="preload" as="image" href="{{ url_for('static', filename='tiles/tree.png') }}">

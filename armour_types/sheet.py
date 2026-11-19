@@ -17,6 +17,8 @@ COLUMNS = [
     'price_pqg',
     'image',
     'armour_value',
+    'slot',
+    'other_ability',
 ]
 
 HEADER_COMMENTS = {
@@ -26,6 +28,16 @@ HEADER_COMMENTS = {
     'price_pqg': 'Price in PermaQuest Gold (integer). Default 0.',
     'image': 'Sprite path or filename. Blank = /static/armour/sprites/{armour_id}.png',
     'armour_value': 'Damage divisor when equipped. Minimum 1. Default 1.',
+    'slot': (
+        'body (default) = the single body-armour slot; ring = worn on a finger '
+        '(up to 2 rings at once, alongside body armour).'
+    ),
+    'other_ability': (
+        'Special traits. Attribute boost: "attribute: amount", or "attribute: low-high" '
+        'for a random boost rolled when the item is created. '
+        'Attributes: str int wis chr dex agi acc. Separate several with ; '
+        'e.g. str: 1-5   or   dex: 2; acc: 1-3'
+    ),
 }
 
 TEST_ARMOUR = [
@@ -86,14 +98,22 @@ def row_to_typedef(row):
     armour_id = _str_or_none(row.get('armour_id'))
     if not armour_id:
         return None
-    return ArmourTypeDef(
+    type_def = ArmourTypeDef(
         armour_id=armour_id,
         name=_str_or_none(row.get('name')) or armour_id,
         description=_str_or_none(row.get('description')),
         price_pqg=_int(row.get('price_pqg'), 0),
         image=_str_or_none(row.get('image')),
         armour_value=_int(row.get('armour_value'), 1),
+        slot=_str_or_none(row.get('slot')),
+        other_ability=_str_or_none(row.get('other_ability')),
     )
+    for entry in type_def.unrecognised_abilities:
+        print(
+            f'[armour_types] {armour_id}: ignoring unrecognised other_ability '
+            f'entry {entry!r} (use e.g. str: 1-5)'
+        )
+    return type_def
 
 
 def iter_xlsx_rows(path):
@@ -217,6 +237,8 @@ def write_armour_xlsx(path=None, extra_rows=None):
         'price_pqg': 12,
         'image': 22,
         'armour_value': 14,
+        'slot': 10,
+        'other_ability': 30,
     }
     for col_idx, header in enumerate(COLUMNS, 1):
         ws.column_dimensions[get_column_letter(col_idx)].width = widths.get(header, 12)
@@ -232,6 +254,9 @@ def write_armour_xlsx(path=None, extra_rows=None):
         '',
         '1. Fill one row per armour type on the Armour sheet.',
         '2. Required: armour_id. Also fill name, description, price_pqg, and armour_value.',
+        '   slot: leave blank for body armour, or type ring for a ring (wear up to 2).',
+        '   other_ability: special traits, e.g.  str: 1-5  (random +1 to +5 rolled when the item is created),',
+        '   or  dex: 2  (fixed +2). Several traits: separate with ;   Attributes: str int wis chr dex agi acc.',
         '3. Leave image blank to use /static/armour/sprites/{armour_id}.png',
         '4. Save this workbook, then restart the game to reload definitions.',
         '',

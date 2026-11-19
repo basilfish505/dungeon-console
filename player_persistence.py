@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from armour_types.traits import clean_rolled_boosts
 from character_stats import copy_attrs
 from items.equipment import sync_equipment
 from player_growth import ensure_growth_baseline
@@ -34,6 +35,12 @@ def player_to_save_dict(player):
         ),
         'equipped_armour_instance_id': getattr(
             player, 'equipped_armour_instance_id', None
+        ),
+        'equipped_ring_instance_ids': list(
+            getattr(player, 'equipped_ring_instance_ids', None) or []
+        ),
+        'applied_attribute_bonus': dict(
+            getattr(player, 'applied_attribute_bonus', None) or {}
         ),
         'lit_light_instance_id': getattr(player, 'lit_light_instance_id', None),
         'sight_range': float(getattr(player, 'sight_range', 0) or 0),
@@ -84,6 +91,13 @@ def apply_save_dict(player, data):
         inv.load_from_save(data.get('inventory') or [])
     player.equipped_weapon_instance_id = data.get('equipped_weapon_instance_id')
     player.equipped_armour_instance_id = data.get('equipped_armour_instance_id')
+    rings = data.get('equipped_ring_instance_ids')
+    player.equipped_ring_instance_ids = list(rings) if isinstance(rings, list) else []
+    # Saved attributes already include these boosts; sync_equipment below
+    # only applies the difference against current gear.
+    player.applied_attribute_bonus = clean_rolled_boosts(
+        data.get('applied_attribute_bonus')
+    )
     player.lit_light_instance_id = data.get('lit_light_instance_id')
     if 'sight_range' in data:
         try:

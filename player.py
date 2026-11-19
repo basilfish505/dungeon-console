@@ -104,6 +104,10 @@ class Player:
         self.inventory = Inventory()
         self.equipped_weapon_instance_id = None
         self.equipped_armour_instance_id = None
+        self.equipped_ring_instance_ids = []
+        # Attribute boosts from worn gear that are currently included in the
+        # stored attributes (see items.equipment.apply_equipment_attribute_bonus).
+        self.applied_attribute_bonus = {}
         self.lit_light_instance_id = None
         self.known_spells = []
         from items.service import grant_starting_inventory
@@ -232,9 +236,13 @@ class Player:
             'equipped_armour_instance_id': getattr(
                 self, 'equipped_armour_instance_id', None
             ),
+            'equipped_ring_instance_ids': list(
+                getattr(self, 'equipped_ring_instance_ids', None) or []
+            ),
             'inventory': self.inventory.to_client_list(
                 equipped_weapon_id=getattr(self, 'equipped_weapon_instance_id', None),
                 equipped_armour_id=getattr(self, 'equipped_armour_instance_id', None),
+                equipped_ring_ids=getattr(self, 'equipped_ring_instance_ids', None),
                 lit_light_id=getattr(self, 'lit_light_instance_id', None),
             ),
             'spells': _spells_for_client(self),

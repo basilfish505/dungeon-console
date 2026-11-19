@@ -32,6 +32,13 @@ PROJECT_ROOT = Path(__file__).resolve().parent
 DEFAULT_OUTPUT_PATH = PROJECT_ROOT / 'monster_elo_ratings.json'
 
 INITIAL_ELO = 3000
+# No rating (ladder, spawned monster, player) may ever go below this.
+MIN_ELO = 0.0
+# The tournament shifts the saved ladder so its weakest combatant sits here, not
+# at MIN_ELO. Spawn calibration plays extra fights and drifts a few hundred
+# points below a table value for the weakest monsters; this headroom keeps them
+# above MIN_ELO instead of piling up against the clamp.
+LADDER_FLOOR_ELO = 500.0
 K_FACTOR = 32  # live combat + spawn calibration (combat_elo.py)
 TOURNAMENT_K = 32
 SERIES_BEST_OF = 99  # first to 50 wins
@@ -307,21 +314,27 @@ def elo_percentile(rating, ladder=None, path=None):
     return round(100.0 * below / len(ladder), 1)
 
 
-def shift_ratings_floor_to_zero(records):
+def shift_ratings_to_floor(records, floor=LADDER_FLOOR_ELO):
     """
-    Translate all ratings so the lowest is 0. Gaps and order are unchanged.
+    Translate all ratings so the lowest equals ``floor``. Gaps and order are
+    unchanged.
 
     Returns the shift applied (amount added to each rating).
     """
     if not records:
         return 0.0
     min_elo = min(float(rec.elo) for rec in records)
-    shift = -min_elo
+    shift = float(floor) - min_elo
     if shift == 0.0:
         return 0.0
     for rec in records:
         rec.elo = float(rec.elo) + shift
     return shift
+
+
+def shift_ratings_floor_to_zero(records):
+    """Translate all ratings so the lowest is 0 (see shift_ratings_to_floor)."""
+    return shift_ratings_to_floor(records, floor=0.0)
 
 
 def lookup_table_elo(type_id, level, ladder=None, path=None, fallback=INITIAL_ELO):
@@ -389,7 +402,7 @@ def calibrate_instance_elo(
     )
 
     if not ladder or fights <= 0:
-        monster.elo = float(rating)
+        monster.elo = max(MIN_ELO, float(rating))
         reset_combat_state(monster)
         return monster.elo
 
@@ -410,7 +423,7 @@ def calibrate_instance_elo(
         )
         rating, _ignored = update_elo(rating, opponent.elo, score_a, k=k_factor)
 
-    monster.elo = float(rating)
+    monster.elo = max(MIN_ELO, float(rating))
     reset_combat_state(monster)
     return monster.elo
 
@@ -705,6 +718,7 @@ META_XLSX_KEYS = (
     'max_combat_rounds',
     'seed',
     'tournament_passes',
+    'ladder_floor',
 )
 
 
@@ -803,6 +817,7 @@ def save_elo_results(
     tournament_passes=TOURNAMENT_PASSES,
     max_combat_rounds=MAX_COMBAT_ROUNDS,
     elo_shift=0.0,
+    ladder_floor=LADDER_FLOOR_ELO,
 ):
     """Write nested type → level JSON and a flattened .xlsx next to it."""
     path = Path(path) if path else DEFAULT_OUTPUT_PATH
@@ -831,6 +846,7 @@ def save_elo_results(
             'seed': seed,
             'initial_elo': initial_elo,
             'elo_shift': round(float(elo_shift), 3),
+            'ladder_floor': float(ladder_floor),
             'k_factor': k_factor,
             'tournament_k': k_factor,
             'series_best_of': int(series_best_of),
@@ -858,6 +874,7 @@ def run_elo_tournament(
     progress_every: int = 100,
     quiet: bool = False,
     fights_per_pairing=None,
+    ladder_floor: float = LADDER_FLOOR_ELO,
 ):
     """
     Build the pool, run round-robin best-of-N series, print rankings, save JSON.
@@ -908,9 +925,9 @@ def run_elo_tournament(
         if not quiet:
             print()
 
-    elo_shift = shift_ratings_floor_to_zero(records)
+    elo_shift = shift_ratings_to_floor(records, floor=ladder_floor)
     if not quiet and elo_shift:
-        print(f'Shifted all ratings by {elo_shift:+.1f} so minimum Elo is 0.')
+        print(f'Shifted all ratings by {elo_shift:+.1f} so minimum Elo is {ladder_floor:g}.')
         print()
 
     ranked = print_elo_rankings(records) if not quiet else sorted(
@@ -926,6 +943,7 @@ def run_elo_tournament(
         tournament_passes=tournament_passes,
         max_combat_rounds=max_combat_rounds,
         elo_shift=elo_shift,
+        ladder_floor=ladder_floor,
     )
     if not quiet:
         print(f'\nSaved results to {out}')
@@ -963,6 +981,10 @@ def main(argv=None):
         help='JSON output path',
     )
     parser.add_argument(
+        '--floor', type=float, default=LADDER_FLOOR_ELO, dest='ladder_floor',
+        help=f'Elo of the weakest combatant after shifting (default {LADDER_FLOOR_ELO:g})',
+    )
+    parser.add_argument(
         '--include-non-spawn', action='store_true',
         help='Also include types with spawn_weight == 0 (e.g. shopkeeper)',
     )
@@ -979,6 +1001,7 @@ def main(argv=None):
         max_combat_rounds=args.max_rounds,
         output_path=args.output,
         spawn_weight_only=not args.include_non_spawn,
+        ladder_floor=args.ladder_floor,
     )
 
 

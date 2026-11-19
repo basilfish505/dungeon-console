@@ -46,6 +46,13 @@ SHOP_SALE_IDS = {
     SHOP_ARMOUR: ARMOUR_SHOP_IDS,
 }
 
+# Wares a shop sells from a category other than its own (category, type_id).
+SHOP_EXTRA_SALE = {
+    SHOP_ITEMS: (
+        (CATEGORY_ARMOUR, 'ring_of_strength'),
+    ),
+}
+
 
 def normalize_category(category):
     cat = str(category or CATEGORY_ITEM).strip().lower()
@@ -75,14 +82,30 @@ def shop_sale_ids(shop_id):
     return SHOP_SALE_IDS.get(str(shop_id or '').strip(), ())
 
 
-def shop_catalog(shop_id):
-    """List of client dicts for a shop's wares."""
+def shop_sale_entries(shop_id):
+    """(category, type_id) for everything a shop sells, own category first."""
     sid = str(shop_id or '').strip()
     cat = shop_category(sid)
     if cat is None:
         return []
+    entries = [(cat, type_id) for type_id in shop_sale_ids(sid)]
+    entries.extend(SHOP_EXTRA_SALE.get(sid, ()))
+    return entries
+
+
+def shop_item_category(shop_id, type_id):
+    """Category a shop sells ``type_id`` under, or None if not for sale."""
+    wanted = str(type_id or '').strip()
+    for cat, sale_id in shop_sale_entries(shop_id):
+        if sale_id == wanted:
+            return cat
+    return None
+
+
+def shop_catalog(shop_id):
+    """List of client dicts for a shop's wares."""
     out = []
-    for type_id in shop_sale_ids(sid):
+    for cat, type_id in shop_sale_entries(shop_id):
         type_def = resolve_owned_type(cat, type_id)
         if type_def is not None:
             out.append(type_def.to_client_dict())

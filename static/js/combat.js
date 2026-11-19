@@ -1394,7 +1394,8 @@ const Combat = (function () {
         setTimeout(leave, 8000);
     }
 
-    function leaveCombatWindow() {
+    /** Close the combat window and clear battle state (no map refresh). */
+    function resetCombatState(keepViewer) {
         hideOverlay();
         Array.from(dyingCards.keys()).forEach(detachDyingCard);
         dyingMonsters.clear();
@@ -1406,22 +1407,43 @@ const Combat = (function () {
             combatants: [],
             selectedTarget: null,
             pendingSpellPick: null,
-            viewerId: currentBattle.viewerId,
+            viewerId: keepViewer ? currentBattle.viewerId : null,
             selfHp: null,
             selfMhp: null,
             selfMp: null,
             selfMmp: null,
             selfLevel: null,
             selfName: null,
-            selfPortrait: currentBattle.selfPortrait,
+            selfPortrait: keepViewer ? currentBattle.selfPortrait : null,
         };
         clearCombatLog();
         if (elements.roster) elements.roster.innerHTML = '';
         if (elements.selfCard) elements.selfCard.innerHTML = '';
         if (elements.status) elements.status.innerHTML = '';
+    }
+
+    function leaveCombatWindow() {
+        resetCombatState(true);
         // Restoring the mobile pad changes the map pane size; force a fresh
         // viewport sync + paint so monsters aren't left blank until the next move.
         refreshMapAfterCombat();
+    }
+
+    /**
+     * The player died: drop all battle state so it cannot block input for the
+     * next character. Skips the map refresh (the socket is going away).
+     */
+    function resetAfterDeath() {
+        stopCountdown();
+        statusHoldUntil = 0;
+        if (fxHoldTimer) {
+            clearTimeout(fxHoldTimer);
+            fxHoldTimer = null;
+        }
+        fxHoldUntil = 0;
+        pendingTurnNotification = null;
+        pendingSpellDefeats.clear();
+        resetCombatState(false);
     }
 
     function refreshMapAfterCombat() {
@@ -1640,5 +1662,6 @@ const Combat = (function () {
         appendLog: appendCombatLog,
         playSpellCastFx: playSpellCastFx,
         handleEscape: handleEscape,
+        resetAfterDeath: resetAfterDeath,
     };
 })();

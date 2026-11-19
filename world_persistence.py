@@ -320,8 +320,23 @@ class WorldPersistence:
         self._dirty_characters.clear()
         self._dirty_world_meta = False
 
+    @staticmethod
+    def reload_definitions() -> None:
+        """Re-read data files so a new world uses current balance values.
+
+        All five spreadsheets (monsters, spells, items, weapons, armour) and
+        the saved monster Elo ladder are otherwise only read once at server
+        start.
+        """
+        from monster_elo import reload_elo_ladder
+        from sheet_reload import reload_all_sheets
+
+        reload_all_sheets()
+        reload_elo_ladder()
+
     def start_new_world(self) -> str:
         """Admin: retire current world and generate a fresh one."""
+        self.reload_definitions()
         self.store.retire_current_world()
         if self.combat_system is not None:
             self.combat_system.battles = {}

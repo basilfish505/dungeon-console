@@ -232,7 +232,7 @@ class ItemsShopPlayTests(unittest.TestCase):
         self.assertTrue(result['ok'])
         self.assertIn(result['kind'], ('shop', 'npc'))
         ids = [w['item_id'] for w in result['data']['wares']]
-        self.assertEqual(ids, list(STARTER_ITEM_IDS))
+        self.assertEqual(ids, list(STARTER_ITEM_IDS) + ['ring_of_strength'])
         self.assertIn('Welcome', result['data']['greeting'])
 
     def test_bump_npc_starts_combat(self):

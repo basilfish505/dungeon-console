@@ -204,13 +204,49 @@ const UI = (function() {
         }
     }
 
-    // Handle player death
-    function handlePlayerDeath(deathInfo) {
-        if (elements.combatBox) {
-            elements.combatBox.hidden = true;
-            elements.combatBox.setAttribute('aria-hidden', 'true');
-            elements.combatBox.style.display = 'none';
+    /** Ignore key presses right after death so mashing movement keys cannot skip it. */
+    const DEATH_ARM_DELAY_MS = 700;
+    const MODIFIER_KEYS = ['Shift', 'Control', 'Alt', 'Meta', 'AltGraph', 'CapsLock'];
+    let deathScreenActive = false;
+
+    /** Close every battle/menu overlay so none of them blocks the next character. */
+    function closeOverlaysForDeath() {
+        const closers = [
+            function () { Combat.resetAfterDeath(); },
+            function () { InspectUI.hide(); },
+            function () { InspectUI.hideAlert(); },
+            function () { InventoryUI.hide(); },
+            function () { InteractionUI.hide(); },
+        ];
+        closers.forEach(function (close) {
+            try {
+                close();
+            } catch (err) {
+                /* module missing or nothing open */
+            }
+        });
+    }
+
+    /**
+     * Player died (or tried to load a dead character): show "Thou art dead" and
+     * wait for any key / tap, then go back to the new / returning character screen.
+     * onContinue runs just before the entry screen is shown.
+     */
+    function handlePlayerDeath(deathInfo, onContinue) {
+        if (deathScreenActive) {
+            return;
         }
+        const screen = document.getElementById('death-screen');
+        if (!screen) {
+            if (typeof onContinue === 'function') {
+                onContinue();
+            }
+            showLoginScreen();
+            return;
+        }
+        deathScreenActive = true;
+
+        closeOverlaysForDeath();
         if (typeof MapRenderer !== 'undefined' && MapRenderer.clearCanvas) {
             MapRenderer.clearCanvas();
         } else if (elements.mapDisplay) {
@@ -222,17 +258,61 @@ const UI = (function() {
         if (elements.loginForm) {
             elements.loginForm.style.display = 'none';
         }
-        if (elements.gameShell) {
-            elements.gameShell.hidden = false;
+
+        const detail = document.getElementById('death-detail');
+        if (detail) {
+            const killer = deathInfo && deathInfo.killer_name;
+            detail.textContent = killer ? 'Slain by ' + killer + '.' : '';
         }
-        const msg = (deathInfo && deathInfo.message) || 'Thou art dead.';
-        let html = '<div>' + msg + '</div>';
-        if (deathInfo && deathInfo.killer_name) {
-            const kind = deathInfo.killer_kind === 'player' ? 'player' : 'foe';
-            html += '<div>Slain by ' + deathInfo.killer_name + ' (' + kind + ').</div>';
+        screen.hidden = false;
+        screen.setAttribute('aria-hidden', 'false');
+        if (typeof screen.focus === 'function') {
+            screen.focus({ preventScroll: true });
         }
-        html += '<div style="margin-top:1em;opacity:0.85;">Create a new character to begin again.</div>';
-        elements.messageLog.innerHTML = html;
+
+        const armedAt = Date.now() + DEATH_ARM_DELAY_MS;
+
+        function onKeyDown(e) {
+            // Always swallow keys so nothing underneath reacts (movement, etc.)
+            if (e.ctrlKey || e.metaKey || e.altKey) {
+                return; // browser shortcuts (refresh, dev tools) still work
+            }
+            e.preventDefault();
+            e.stopImmediatePropagation();
+            if (e.repeat || MODIFIER_KEYS.indexOf(e.key) !== -1) {
+                return;
+            }
+            if (Date.now() < armedAt) {
+                return;
+            }
+            dismiss();
+        }
+
+        function onClick(e) {
+            e.preventDefault();
+            if (Date.now() < armedAt) {
+                return;
+            }
+            dismiss();
+        }
+
+        function dismiss() {
+            if (!deathScreenActive) {
+                return;
+            }
+            deathScreenActive = false;
+            document.removeEventListener('keydown', onKeyDown, true);
+            screen.removeEventListener('click', onClick);
+            screen.hidden = true;
+            screen.setAttribute('aria-hidden', 'true');
+            if (typeof onContinue === 'function') {
+                onContinue();
+            }
+            showLoginScreen();
+        }
+
+        document.addEventListener('keydown', onKeyDown, true);
+        screen.addEventListener('click', onClick);
     }
 
     // Return public API

@@ -11,6 +11,8 @@ from monster import Monster
 from monster_elo import (
     CombatantRecord,
     K_FACTOR,
+    LADDER_FLOOR_ELO,
+    MIN_ELO,
     TOURNAMENT_K,
     XLSX_RATING_HEADERS,
     build_test_monster_pool,
@@ -21,6 +23,7 @@ from monster_elo import (
     save_elo_results,
     series_wins_required,
     shift_ratings_floor_to_zero,
+    shift_ratings_to_floor,
     simulate_monster_fight,
     update_elo,
 )
@@ -66,6 +69,20 @@ class EloMathTests(unittest.TestCase):
         self.assertEqual(records[0].elo, 0.0)
         self.assertEqual(records[1].elo, 300.0)
         self.assertEqual(records[2].elo, 700.0)
+
+    def test_shift_to_floor_puts_lowest_at_floor(self):
+        class Rec:
+            def __init__(self, elo):
+                self.elo = elo
+
+        records = [Rec(-200.0), Rec(100.0), Rec(500.0)]
+        shift = shift_ratings_to_floor(records, floor=500.0)
+        self.assertEqual(shift, 700.0)
+        self.assertEqual([r.elo for r in records], [500.0, 800.0, 1200.0])
+
+    def test_ladder_floor_leaves_headroom_above_min_elo(self):
+        self.assertEqual(MIN_ELO, 0.0)
+        self.assertGreater(LADDER_FLOOR_ELO, MIN_ELO)
 
 
 class PoolTests(unittest.TestCase):
@@ -501,7 +518,8 @@ class TournamentTests(unittest.TestCase):
             self.assertIn('mmp', data['ratings']['alpha']['1'])
             self.assertEqual(len(records), 4)
             min_elo = min(r.elo for r in records)
-            self.assertAlmostEqual(min_elo, 0.0, places=6)
+            self.assertAlmostEqual(min_elo, LADDER_FLOOR_ELO, places=6)
+            self.assertEqual(data['meta']['ladder_floor'], LADDER_FLOOR_ELO)
         finally:
             MONSTER_TYPES.clear()
             MONSTER_TYPES.update(previous)

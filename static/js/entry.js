@@ -128,7 +128,12 @@ const Entry = (function () {
                 if (!result.data || !result.data.ok) {
                     return (result.data && result.data.error) || 'Could not roll stats.';
                 }
-                const rolls = result.data.rolls || [];
+                let rolls = result.data.rolls || [];
+                if (!rolls.length && result.data.rows) {
+                    // Older server (not restarted yet): a single unsigned roll.
+                    // Creation then falls back to the roll held in the session.
+                    rolls = [{ token: null, rows: result.data.rows, stats: result.data.stats }];
+                }
                 if (!rolls.length) {
                     return 'Could not roll stats.';
                 }
@@ -147,7 +152,9 @@ const Entry = (function () {
         currentRoll = rollQueue.shift();
         acceptedStats = null;
         renderStats(currentRoll.rows || []);
-        if (rollQueue.length <= ROLL_PREFETCH_LOW_WATER) {
+        // Unsigned (legacy) rolls live in the session, so never prefetch past
+        // the one on screen or it would be overwritten.
+        if (currentRoll.token && rollQueue.length <= ROLL_PREFETCH_LOW_WATER) {
             fetchRollBatch();
         }
     }

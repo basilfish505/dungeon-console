@@ -2174,6 +2174,7 @@ class CombatSystem:
         player = self.game_state.players[player_id]
         
         dead_name = player.id
+        death_dungeon_level = player.dungeon_level
 
         killer_name = None
         killer_kind = None
@@ -2288,7 +2289,12 @@ class CombatSystem:
                 'player_id': dead_name,
                 'message': ".... Thou art dead."
             }, room=player_id)
-            self._emit('player_died', room=player_id)
+            self._emit('player_died', {
+                'message': '.... Thou art dead.',
+                'killer_name': killer_name,
+                'killer_kind': killer_kind,
+                'dungeon_level': death_dungeon_level,
+            }, room=player_id)
 
             if current:
                 self._flush_queued_joins(current)

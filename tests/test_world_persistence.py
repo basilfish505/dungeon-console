@@ -120,6 +120,16 @@ class WorldPersistenceTests(unittest.TestCase):
         self.assertNotEqual(old_id, new_id)
         self.assertEqual(self.store.get_current_world_id(), new_id)
 
+    def test_new_world_rereads_all_sheets_and_elo_ladder(self):
+        from unittest.mock import patch
+
+        self.wp.initialize()
+        with patch('sheet_reload.reload_all_sheets') as sheets, \
+                patch('monster_elo.reload_elo_ladder') as ladder:
+            self.wp.start_new_world()
+        sheets.assert_called_once_with()
+        ladder.assert_called_once_with()
+
 
 if __name__ == '__main__':
     unittest.main()

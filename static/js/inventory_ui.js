@@ -656,6 +656,17 @@ const InventoryUI = (function () {
         meta.appendChild(name);
         meta.appendChild(desc);
         meta.appendChild(price);
+        const boosts = item.boosts || {};
+        const boostText = Object.keys(boosts).map(function (key) {
+            const amount = Number(boosts[key]);
+            return key.toUpperCase() + ' ' + (amount > 0 ? '+' : '') + amount;
+        }).join(', ');
+        if (boostText) {
+            const boostEl = document.createElement('p');
+            boostEl.className = 'inventory-detail-boost';
+            boostEl.textContent = boostText;
+            meta.appendChild(boostEl);
+        }
         if (item.light_remaining != null) {
             const fuel = document.createElement('p');
             fuel.className = 'inventory-detail-fuel';

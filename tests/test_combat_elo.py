@@ -30,6 +30,19 @@ class CombatEloHelperTests(unittest.TestCase):
         self.assertGreater(winner.elo, 0)
         self.assertLess(loser.elo, 1000)
 
+    def test_apply_elo_outcome_never_drops_below_zero(self):
+        winner = Player('hero', [1, 1])
+        loser = Monster.from_type('troll', [0, 0], monster_id='t', level=1)
+        winner.elo = 0
+        loser.elo = 0
+
+        new_w, new_l, delta = apply_elo_outcome(winner, loser)
+        # Equal ratings would cost the loser 16; it is held at zero instead.
+        self.assertEqual(new_l, 0.0)
+        self.assertEqual(loser.elo, 0.0)
+        self.assertAlmostEqual(new_w, 16.0)
+        self.assertAlmostEqual(delta, 16.0)
+
     def test_underdog_win_gains_more_than_favorite_win(self):
         underdog = Player('a', [1, 1])
         favorite = Player('b', [1, 2])
@@ -223,6 +236,59 @@ class CombatDeathEloWiringTests(unittest.TestCase):
         self.assertGreater(mon.elo, mon_before)
         # Victim was removed from the game after Elo applied
         self.assertNotIn('hero', gs.players)
+
+    def test_player_died_event_carries_killer_for_death_screen(self):
+        from combat import CombatSystem
+
+        emitted = []
+
+        class _Sock:
+            def emit(self, event, data=None, room=None):
+                emitted.append((event, data, room))
+
+            def sleep(self, *a, **k):
+                pass
+
+            def start_background_task(self, fn, *a, **k):
+                fn(*a, **k)
+
+        gs = type('GS', (), {
+            'players': {},
+            'active_players': {},
+            'active_combats': {},
+            'add_player_message': lambda *a, **k: None,
+            'add_global_message': lambda *a, **k: None,
+            'ensure_level': lambda self, level: ([['.'] * 5 for _ in range(5)], {}),
+        })()
+        cs = CombatSystem(gs, socketio=_Sock())
+
+        victim = Player('hero', [1, 1])
+        victim.dungeon_level = 3
+        mon = Monster.from_type('troll', [2, 2], monster_id='m1', level=1)
+        gs.players = {'hero': victim}
+        gs.active_players = {'hero': True}
+        gs.active_combats = {'hero': 'b1'}
+        battle = {
+            'battle_id': 'b1',
+            'participants': ['hero'],
+            'monsters': [mon],
+            'turn_order': ['hero', mon.id],
+            'current_turn_index': 0,
+            'status': 'active',
+            'defend_status': {},
+            'turn_token': None,
+        }
+        cs.battles = {battle['battle_id']: battle}
+        cs._handle_player_death('hero', battle, killer_monster=mon)
+
+        died = [d for (event, d, room) in emitted if event == 'player_died']
+        self.assertEqual(len(died), 1)
+        self.assertEqual(died[0]['killer_kind'], 'monster')
+        self.assertEqual(died[0]['killer_name'], mon.name)
+        self.assertEqual(died[0]['dungeon_level'], 3)
+        self.assertIn('Thou art dead', died[0]['message'])
+        rooms = [room for (event, _d, room) in emitted if event == 'player_died']
+        self.assertEqual(rooms, ['hero'])
 
     def test_player_death_leaves_terrain_under_player_unchanged(self):
         from combat import CombatSystem
