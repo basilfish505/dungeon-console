@@ -93,6 +93,16 @@ TEST_ITEMS = [
         'price_pqg': 20,
         'image': 'antidote.png',
     },
+    {
+        'item_id': 'scroll_of_town_recall',
+        'name': 'Scroll of Town Recall',
+        'description': (
+            'Read this scroll to return to town from any dungeon level. '
+            'Single use. Can only be read outside battle.'
+        ),
+        'price_pqg': 50,
+        'image': 'scroll_of_town_recall.png',
+    },
 ]
 
 

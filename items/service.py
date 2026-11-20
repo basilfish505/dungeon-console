@@ -33,6 +33,15 @@ STARTER_ITEM_IDS = ITEMS_SHOP_IDS
 # Brand-new players (no save yet) receive these as separate instances.
 STARTING_TORCH_COUNT = 2
 
+SCROLL_OF_TOWN_RECALL_ID = 'scroll_of_town_recall'
+TOWN_RECALL_SUCCESS_MESSAGE = (
+    'The scroll crumbles to dust, and you find yourself back in town.'
+)
+TOWN_RECALL_IN_BATTLE_MESSAGE = (
+    "You can't read a Scroll of Town Recall during battle."
+)
+TOWN_RECALL_ALREADY_IN_TOWN_MESSAGE = "You're already in town."
+
 
 def add_item_to_inventory(player, item_id, quantity=1, category=CATEGORY_ITEM):
     """
@@ -189,6 +198,11 @@ def use_item(player, instance_id, context='exploration', game_state=None):
     if inst.type_id == 'healing_potion':
         return _use_healing_potion(player, instance_id, type_def, result)
 
+    if inst.type_id == SCROLL_OF_TOWN_RECALL_ID:
+        return _use_scroll_of_town_recall(
+            player, instance_id, result, game_state=game_state
+        )
+
     if getattr(type_def, 'permanent_boosts', None):
         return _use_permanent_boost_item(player, instance_id, type_def, result)
 
@@ -204,6 +218,30 @@ def use_item(player, instance_id, context='exploration', game_state=None):
 
 HEALING_POTION_HEAL_MIN = 5
 HEALING_POTION_HEAL_MAX = 8
+
+
+def _player_is_in_battle(player, game_state=None):
+    """True if the player is currently in a battle when the action is processed."""
+    if player is None:
+        return False
+    if getattr(player, 'in_combat', False):
+        return True
+    if game_state is None:
+        return False
+    pid = getattr(player, 'id', None)
+    if not pid:
+        return False
+    return pid in (getattr(game_state, 'active_combats', None) or {})
+
+
+def _player_is_in_town(player):
+    """Town is dungeon level 0 (outdoors or shop interiors)."""
+    if player is None:
+        return False
+    try:
+        return int(getattr(player, 'dungeon_level', 0) or 0) <= 0
+    except (TypeError, ValueError):
+        return False
 
 
 def _use_healing_potion(player, instance_id, type_def, result):
@@ -252,6 +290,41 @@ def _use_permanent_boost_item(player, instance_id, type_def, result, rng=None):
         )
     else:
         result['message'] = f'You consume the {name}, but nothing happens.'
+    return result
+
+
+def _use_scroll_of_town_recall(player, instance_id, result, game_state=None):
+    """Read a Scroll of Town Recall: teleport to town or refuse without consuming."""
+    # Re-check battle status at process time (inventory may have been opened earlier).
+    if _player_is_in_battle(player, game_state):
+        result['ok'] = False
+        result['consumed'] = False
+        result['message'] = TOWN_RECALL_IN_BATTLE_MESSAGE
+        return result
+
+    if _player_is_in_town(player):
+        result['ok'] = False
+        result['consumed'] = False
+        result['message'] = TOWN_RECALL_ALREADY_IN_TOWN_MESSAGE
+        return result
+
+    if game_state is None or not hasattr(game_state, 'recall_player_to_town'):
+        result['ok'] = False
+        result['consumed'] = False
+        result['message'] = 'The scroll fails to take hold.'
+        return result
+
+    if not game_state.recall_player_to_town(player):
+        result['ok'] = False
+        result['consumed'] = False
+        result['message'] = 'The scroll fails to take hold.'
+        return result
+
+    player.inventory.remove(instance_id)
+    result['ok'] = True
+    result['consumed'] = True
+    result['effects'] = {'town_recall': True}
+    result['message'] = TOWN_RECALL_SUCCESS_MESSAGE
     return result
 
 

@@ -64,7 +64,12 @@ class XlsxLoadTests(unittest.TestCase):
                     'bread',
                     'rope',
                     'antidote',
+                    'scroll_of_town_recall',
                 ],
+            )
+            self.assertEqual(
+                ITEM_TYPES['scroll_of_town_recall'].name,
+                'Scroll of Town Recall',
             )
             self.assertEqual(ITEM_TYPES['healing_potion'].price_pqg, 25)
             self.assertEqual(ITEM_TYPES['torch'].name, 'Torch')
