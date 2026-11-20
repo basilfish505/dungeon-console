@@ -428,6 +428,10 @@ def run_monster_round_for_level(
     from monster_respawn import maybe_respawn_monster
     if maybe_respawn_monster(game_state, level_number):
         changed = True
+    # Emptied treasure chests come back on their own cooldown (see treasure_chests).
+    from treasure_chests import maybe_respawn_chests
+    if maybe_respawn_chests(game_state, level_number):
+        changed = True
     if broadcast and socketio is not None:
         game_state.broadcast_active_players(socketio)
     return changed

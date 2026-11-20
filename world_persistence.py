@@ -9,6 +9,7 @@ import uuid
 
 from character_auth import hash_password, name_key, normalize_name
 from store import get_world_store
+from treasure_chests import restore_slots as restore_chest_slots
 from world_serial import (
     battle_from_dict,
     battles_to_list,
@@ -99,6 +100,7 @@ class WorldPersistence:
         gs = self.game_state
         gs.levels = {}
         gs.level_turns = {}
+        gs.level_chests = {}
         gs.players = {}
         gs.active_players = {}
         gs.player_sids = {}
@@ -122,6 +124,10 @@ class WorldPersistence:
             gs.levels[int(level_number)] = (game_map, monsters)
             ts = level_turn_state_from_dict(snap.get('turn_state') or {})
             gs.level_turns[int(level_number)] = ts
+            if int(level_number) > 0:
+                gs.level_chests[int(level_number)] = restore_chest_slots(
+                    game_map, snap.get('ground_items'),
+                )
 
         gs.game_map, gs.monsters = gs.levels[0]
         gs._register_town_shops()
@@ -346,6 +352,7 @@ class WorldPersistence:
         self.game_state.player_messages = {}
         self.game_state.levels = {}
         self.game_state.level_turns = {}
+        self.game_state.level_chests = {}
         self.game_state.generate_top_level()
         world_id = uuid.uuid4().hex
         self.world_id = world_id

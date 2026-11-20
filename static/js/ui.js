@@ -229,6 +229,7 @@ const UI = (function() {
             function () { InventoryUI.hide(); },
             function () { InteractionUI.hide(); },
             function () { LootUI.reset(); },
+            function () { ChestUI.reset(); },
         ];
         closers.forEach(function (close) {
             try {

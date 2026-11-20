@@ -41,11 +41,20 @@ from items.service import (
     use_item as use_item_service,
     discard_item,
     purchase_item,
+    item_action_reply,
     SCROLL_OF_TOWN_RECALL_ID,
 )
 from items.equipment import equip_item, unequip_item
 from items.catalog import SHOP_TO_CATEGORY
 from loot_offers import resolve_offer as resolve_loot_offer
+from treasure_chests import (
+    CHEST_GLYPH,
+    chest_view,
+    claim_from_chest,
+    found_message,
+    slot_for_player,
+    spawn_chests_for_level,
+)
 from player_persistence import save_player
 from world_persistence import WorldPersistence
 from character_auth import (
@@ -136,6 +145,7 @@ class GameState:
         self.manual_pan = {}  # player_id -> True while user is freely panning
         self.stair_steps = {}  # player_id -> (y, x) origin stair just stepped on
         self.level_turns = {}  # dungeon_level -> LevelTurnState
+        self.level_chests = {}  # dungeon_level -> [chest slot dict, ...]
         self.interiors = {}
         self.town_doors = {}  # (y, x) -> interior_id
         self.town_exits = {}  # interior_id -> [y, x] road tile
@@ -215,6 +225,8 @@ class GameState:
                     dungeon_level=level_number,
                 )
                 self.levels[level_number] = (game_map, monsters)
+                # Chests go in after stairs and monsters are final, on bare floor only.
+                self.level_chests[level_number] = spawn_chests_for_level(game_map)
             self.mark_level_dirty(level_number)
         return self.levels[level_number]
 
@@ -497,9 +509,9 @@ class GameState:
 
         monster.pos = [dest[0], dest[1]]
         monsters[new_key] = monster
-        # Preserve stairs if present; otherwise mark monster
+        # Preserve stairs and chests if present; otherwise mark monster
         cell = game_map[dest[0]][dest[1]]
-        if cell not in ('↓', '↑'):
+        if cell not in ('↓', '↑', CHEST_GLYPH):
             game_map[dest[0]][dest[1]] = '&'
         self.mark_level_dirty(level_number)
         return True
@@ -721,6 +733,9 @@ class GameState:
             self.mark_character_dirty(player_id)
             if not getattr(player, 'interior_id', None):
                 self.mark_level_dirty(player.dungeon_level)
+            chest = slot_for_player(self, player)
+            if chest is not None:
+                self.add_player_message(player_id, found_message(chest))
             return True
         return False
 
@@ -1055,6 +1070,9 @@ class GameState:
                 fog.append(row_fog)
 
         player_data = viewer.to_dict() if viewer is not None else None
+        if player_data is not None:
+            # The chest under the viewer (None otherwise); drives the take/leave prompt.
+            player_data['chest'] = chest_view(self, viewer)
         player_messages = self.player_messages.get(current_player_id, []) if current_player_id else []
 
         payload = {
@@ -1794,12 +1812,7 @@ def handle_inventory_action(data):
         save_player(player)
         world_persistence.save_character(player_id)
 
-    emit('item_action_result', {
-        'ok': bool(result.get('ok')),
-        'message': result.get('message'),
-        'consumed': bool(result.get('consumed')),
-        'action': action,
-    })
+    emit('item_action_result', item_action_reply(result, action))
 
 
 @socketio.on('buy_item')
@@ -1859,6 +1872,40 @@ def handle_loot_decision(data):
         'kept': bool(result.get('kept')),
         'full': bool(result.get('full')),
         'offer_id': data.get('offer_id'),
+    })
+
+
+@socketio.on('chest_claim')
+def handle_chest_claim(data):
+    """Take one item or the PQG from the treasure chest the player stands on."""
+    player_id = session.get('player_id')
+    player = game_state.players.get(player_id) if player_id else None
+    if not player:
+        emit('chest_claim_result', {'ok': False, 'message': 'Not logged in.'})
+        return
+    data = data or {}
+    what = str(data.get('what') or '').strip().lower()
+    result = claim_from_chest(
+        game_state, player, data.get('slot_id'), what, data.get('item_id'),
+    )
+    if result.get('ok'):
+        game_state.add_player_message(player_id, result['message'])
+        save_player(player)
+        world_persistence.save_character(player_id)
+        # Others standing on the same chest must see what is left, and the map
+        # changes if the chest is gone.
+        for pid, other in list(game_state.active_players.items()):
+            if pid != player_id and other.dungeon_level == player.dungeon_level:
+                emit('game_state', game_state.get_game_state(pid), room=pid)
+    emit('game_state', game_state.get_game_state(player_id), room=player_id)
+    emit('chest_claim_result', {
+        'ok': bool(result.get('ok')),
+        'message': result.get('message'),
+        'what': what,
+        'item_id': result.get('item_id'),
+        'full': bool(result.get('full')),
+        'emptied': bool(result.get('emptied')),
+        'slot_id': data.get('slot_id'),
     })
 
 

@@ -297,6 +297,55 @@ body {
     background: #110800;
 }
 
+/* Treasure chest take / leave prompt (reuses the loot panel look) */
+.chest-prompt {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    z-index: 5700;
+    background: rgba(0, 0, 0, 0.82);
+}
+
+.chest-prompt[hidden] {
+    display: none;
+}
+
+/* Up to three items, each with its own Take / Leave pair */
+#chest-items {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    width: 100%;
+    max-height: 48vh;
+    overflow-y: auto;
+}
+
+.chest-row {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+}
+
+.chest-row[hidden] {
+    display: none;
+}
+
+.chest-label {
+    font-size: 1.2rem;
+    color: #0f0;
+}
+
+.chest-row-actions {
+    display: flex;
+    gap: 12px;
+    width: 100%;
+}
+
 .loot-more {
     margin: 0;
     min-height: 1.1em;

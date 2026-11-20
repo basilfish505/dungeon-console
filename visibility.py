@@ -22,7 +22,7 @@ OPEN_GROUND = frozenset({'.', GRASS})
 SHOP_SIGN_GLYPHS = frozenset({'i', 'w', 'a'})
 
 PERMANENT_TERRAIN = frozenset(
-    {'#', '.', GRASS, TREE, MOUNTAIN, WALL, '↓', '↑', '+', ',', '=', 'R'} | SHOP_SIGN_GLYPHS
+    {'#', '.', GRASS, TREE, MOUNTAIN, WALL, '↓', '↑', '+', ',', '=', 'R', '$'} | SHOP_SIGN_GLYPHS
 )
 BLOCKING_TERRAIN = frozenset({'#', 'R', MOUNTAIN, WALL} | SHOP_SIGN_GLYPHS)
 IMPASSABLE_TERRAIN = frozenset({'#', 'R', '=', TREE, MOUNTAIN, WALL} | SHOP_SIGN_GLYPHS)

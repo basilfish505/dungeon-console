@@ -82,6 +82,9 @@ const SocketHandler = (function () {
             Entry.setRemembered(null, null);
         }
         returnToEntry();
+        // A new world normally means a new server build, so reload rather than
+        // keep running the scripts this page loaded from the old one.
+        window.location.reload();
     }
 
     /** Re-bind server session after mobile background / socket drop. */
@@ -192,6 +195,15 @@ const SocketHandler = (function () {
             if (typeof LootUI !== 'undefined' && LootUI.setOffers && data.player) {
                 LootUI.setOffers(data.player.pending_loot || []);
             }
+            if (typeof ChestUI !== 'undefined' && ChestUI.setChest && data.player) {
+                ChestUI.setChest(data.player.chest || null);
+            }
+        });
+
+        socket.on('chest_claim_result', function (data) {
+            if (typeof ChestUI !== 'undefined' && ChestUI.handleResult) {
+                ChestUI.handleResult(data);
+            }
         });
 
         socket.on('loot_offers', function (data) {
@@ -225,6 +237,14 @@ const SocketHandler = (function () {
         socket.on('inspect_result', function (data) {
             if (typeof InspectUI !== 'undefined' && InspectUI.show) {
                 InspectUI.show(data);
+            }
+        });
+
+        // Reading a Scroll of Town Recall ends the item menu: back to the map.
+        socket.on('item_action_result', function (data) {
+            if (data && data.ok && data.town_recall
+                && typeof InventoryUI !== 'undefined' && InventoryUI.close) {
+                InventoryUI.close();
             }
         });
 
@@ -390,6 +410,10 @@ const SocketHandler = (function () {
         socket.emit('loot_decision', payload || {});
     }
 
+    function sendChestClaim(payload) {
+        socket.emit('chest_claim', payload || {});
+    }
+
     function sendInteractionChoice(interactionId, choice) {
         if (!interactionId || !choice) {
             return;
@@ -439,6 +463,7 @@ const SocketHandler = (function () {
         inspectCombatant,
         buyItem,
         sendLootDecision,
+        sendChestClaim,
         sendInteractionChoice,
         sendChatMessage,
         endChat,

@@ -325,9 +325,12 @@ def level_snapshot(game_state, level_number: int) -> dict:
         if turn_state is not None
         else {}
     )
+    from treasure_chests import slots_to_list
+    chests = (getattr(game_state, 'level_chests', None) or {}).get(level_number, [])
     return {
         'map': map_to_rows(game_map),
         'monsters': monsters_dict_to_list(monsters),
         'turn_state': ts,
-        'ground_items': [],
+        # Treasure chest slots (contents and respawn progress) ride in this field.
+        'ground_items': slots_to_list(chests),
     }

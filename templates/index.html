@@ -268,6 +268,22 @@
         </div>
     </div>
 
+    <div id="chest-prompt" class="chest-prompt" hidden aria-hidden="true" role="dialog" aria-labelledby="chest-prompt-title" tabindex="-1">
+        <div class="loot-panel">
+            <h2 id="chest-prompt-title" class="loot-title">Treasure Chest</h2>
+            <p id="chest-prompt-text" class="loot-text"></p>
+            <div id="chest-items"></div>
+            <div id="chest-pqg-row" class="chest-row">
+                <span id="chest-pqg-label" class="chest-label"></span>
+                <div class="chest-row-actions">
+                    <button type="button" id="chest-take-pqg" class="loot-btn">Take</button>
+                    <button type="button" id="chest-leave-pqg" class="loot-btn loot-btn-discard">Leave</button>
+                </div>
+            </div>
+            <p id="chest-prompt-note" class="loot-note"></p>
+        </div>
+    </div>
+
     <link rel="preload" as="image" href="{{ url_for('static', filename='tiles/floor.png') }}">
     <link rel="preload" as="image" href="{{ url_for('static', filename='tiles/grass.png') }}">
     <link rel="preload" as="image" href="{{ url_for('static', filename='tiles/tree.png') }}">
@@ -277,6 +293,7 @@
     <link rel="preload" as="image" href="{{ url_for('static', filename='tiles/stairsup.png') }}">
     <link rel="preload" as="image" href="{{ url_for('static', filename='tiles/stairsdown.png') }}">
     <link rel="preload" as="image" href="{{ url_for('static', filename='tiles/door.png') }}">
+    <link rel="preload" as="image" href="{{ url_for('static', filename='tiles/chest.png') }}">
     <link rel="preload" as="image" href="{{ url_for('static', filename='tiles/road.png') }}">
     <link rel="preload" as="image" href="{{ url_for('static', filename='tiles/desk.png') }}">
     <link rel="preload" as="image" href="{{ url_for('static', filename='tiles/roof.png') }}">
@@ -302,6 +319,7 @@
     <script src="{{ asset_url('js/inspect_ui.js') }}"></script>
     <script src="{{ asset_url('js/inventory_ui.js') }}"></script>
     <script src="{{ asset_url('js/loot_ui.js') }}"></script>
+    <script src="{{ asset_url('js/chest_ui.js') }}"></script>
     <script src="{{ asset_url('js/spell_ui.js') }}"></script>
     <script src="{{ asset_url('js/interaction_ui.js') }}"></script>
     <script src="{{ asset_url('js/map_inspect.js') }}"></script>

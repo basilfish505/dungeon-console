@@ -18,6 +18,7 @@ const TileAssets = (function () {
         'i': { key: 'items_shop_sign', url: '/static/tiles/items_shop_sign.png' },
         'w': { key: 'weapon_shop_sign', url: '/static/tiles/weapon_shop_sign.png' },
         'a': { key: 'armour_shop_sign', url: '/static/tiles/armour_shop_sign.png' },
+        '$': { key: 'chest', url: '/static/tiles/chest.png' }, // treasure chest
     };
 
     /** Draw this terrain first (tree/mountain on grass; shop signs on brick). */
@@ -27,6 +28,7 @@ const TileAssets = (function () {
         'i': 'brickwall',
         'w': 'brickwall',
         'a': 'brickwall',
+        '$': 'floor',
     };
 
     /** Cells that sit on walkable floor (draw floor under ASCII). */
@@ -145,7 +147,7 @@ const TileAssets = (function () {
     }
 
     /**
-     * @returns {'boulder'|'brickwall'|'mountain'|'floor'|'grass'|'tree'|'stairsup'|'stairsdown'|'door'|'road'|'desk'|'roof'|'items_shop_sign'|'weapon_shop_sign'|'armour_shop_sign'|null}
+     * @returns {'boulder'|'brickwall'|'mountain'|'floor'|'grass'|'tree'|'stairsup'|'stairsdown'|'door'|'road'|'desk'|'roof'|'items_shop_sign'|'weapon_shop_sign'|'armour_shop_sign'|'chest'|null}
      */
     function terrainKeyForCell(ch) {
         if (!ch) {
@@ -172,7 +174,7 @@ const TileAssets = (function () {
         return ch === '#' || ch === 'W' || ch === 'M' || ch === '.' || ch === 'g' || ch === 'T'
             || ch === '\u2191' || ch === '\u2193'
             || ch === '+' || ch === ',' || ch === '=' || ch === 'R'
-            || ch === 'i' || ch === 'w' || ch === 'a';
+            || ch === 'i' || ch === 'w' || ch === 'a' || ch === '$';
     }
 
     // Start fetch as soon as this script runs (before join / first map paint)

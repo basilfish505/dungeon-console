@@ -337,6 +337,22 @@ def _use_scroll_of_town_recall(player, instance_id, result, game_state=None):
     return result
 
 
+def item_action_reply(result, action):
+    """Payload for the client's ``item_action_result`` event.
+
+    ``town_recall`` is true only when a Scroll of Town Recall was actually
+    read, so the client can close the item menu and return to the map.
+    """
+    effects = result.get('effects') or {}
+    return {
+        'ok': bool(result.get('ok')),
+        'message': result.get('message'),
+        'consumed': bool(result.get('consumed')),
+        'action': action,
+        'town_recall': bool(result.get('ok') and effects.get('town_recall')),
+    }
+
+
 def discard_item(player, instance_id):
     """Destroy an owned instance. Leaves an empty slot (does not compact)."""
     result = {

@@ -190,6 +190,32 @@ class TownRecallServiceTests(unittest.TestCase):
         self.assertIsNotNone(player.inventory.get(second.instance_id))
         self.assertEqual(gs.recall_player_to_town.call_count, 1)
 
+    def test_reply_flags_town_recall_only_when_the_scroll_was_read(self):
+        from items.service import item_action_reply
+
+        read = item_action_reply(
+            {'ok': True, 'consumed': True, 'message': 'x',
+             'effects': {'town_recall': True}},
+            'use',
+        )
+        self.assertTrue(read['town_recall'])
+        self.assertTrue(read['ok'])
+
+        blocked = item_action_reply(
+            {'ok': False, 'consumed': False, 'message': 'no', 'effects': {}},
+            'use',
+        )
+        self.assertFalse(blocked['town_recall'])
+
+        # Other items (a potion, a torch) never close the menu.
+        potion = item_action_reply(
+            {'ok': True, 'consumed': True, 'message': 'y',
+             'effects': {'heal': 5}},
+            'use',
+        )
+        self.assertFalse(potion['town_recall'])
+        self.assertEqual(potion['action'], 'use')
+
     def test_save_dict_includes_town_pos_and_no_scroll_together(self):
         player = Player('hero', [5, 5])
         _drop_starting_scrolls(player)
