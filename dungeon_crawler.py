@@ -41,6 +41,7 @@ from items.service import (
     use_item as use_item_service,
     discard_item,
     purchase_item,
+    SCROLL_OF_TOWN_RECALL_ID,
 )
 from items.equipment import equip_item, unequip_item
 from items.catalog import SHOP_TO_CATEGORY
@@ -323,6 +324,26 @@ class GameState:
         self.manual_pan.pop(player.id, None)
         self.recompute_visibility(player)
         # Viewport size is client-owned; keep it across level changes.
+        return True
+
+    def recall_player_to_town(self, player):
+        """
+        Teleport one player to the usual town stair arrival (level 0 ↓).
+
+        Only that player's position/level/interior change. Other players are
+        left untouched. Marks the character (and affected levels) dirty so a
+        following save writes location and inventory together.
+        """
+        if player is None:
+            return False
+        old_level = int(getattr(player, 'dungeon_level', 0) or 0)
+        old_interior = getattr(player, 'interior_id', None)
+        if not self.place_player_on_stair(player, 0, '↓'):
+            return False
+        self.mark_character_dirty(player.id)
+        if old_interior is None:
+            self.mark_level_dirty(old_level)
+        self.mark_level_dirty(0)
         return True
 
     def recompute_visibility(self, player):
@@ -1706,7 +1727,29 @@ def handle_inventory_action(data):
     persist = False
 
     if action == 'use':
-        if in_combat:
+        owned = player.inventory.get(instance_id)
+        # Town recall always uses the exploration path so battle status is
+        # re-checked at process time and a blocked read never advances a turn.
+        is_town_recall = (
+            owned is not None
+            and getattr(owned, 'type_id', None) == SCROLL_OF_TOWN_RECALL_ID
+        )
+        if is_town_recall:
+            result = use_item_service(
+                player, instance_id, context='exploration', game_state=game_state
+            )
+            if result.get('message'):
+                game_state.add_player_message(player_id, result['message'])
+            effects = result.get('effects') or {}
+            if result.get('ok') and (
+                result.get('consumed') or effects.get('town_recall')
+            ):
+                # Position changed: other connected players must see the move.
+                game_state.broadcast_active_players(socketio)
+                persist = True
+            else:
+                emit('game_state', game_state.get_game_state(player_id), room=player_id)
+        elif in_combat:
             result = combat_system.process_item_use(player_id, instance_id)
             if result.get('ok') and not getattr(player, 'interior_id', None):
                 register_player_turn_action(
