@@ -159,12 +159,15 @@ class ItemsShopPlayTests(unittest.TestCase):
         self.gs.player_messages['hero'] = []
         self.interior, self.npcs = self.gs.interiors[ITEMS_SHOP_ID]
 
-    def test_new_player_join_starts_with_club_and_two_torches_not_full_kit(self):
+    def test_new_player_join_starts_with_club_torches_and_scroll_not_full_kit(self):
         gs = GameState()
         p = gs.add_player('buyer')
         self.assertEqual(p.pqg, 10)
-        self.assertEqual(len(p.inventory), 3)
-        self.assertEqual([i.type_id for i in p.inventory], ['club', 'torch', 'torch'])
+        self.assertEqual(len(p.inventory), 4)
+        self.assertEqual(
+            [i.type_id for i in p.inventory],
+            ['club', 'torch', 'torch', 'scroll_of_town_recall'],
+        )
         self.assertNotEqual(
             sorted(i.type_id for i in p.inventory),
             sorted(STARTER_ITEM_IDS),

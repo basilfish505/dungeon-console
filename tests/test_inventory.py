@@ -46,6 +46,11 @@ class InventoryServiceTests(unittest.TestCase):
             name='Healing Potion',
             price_pqg=25,
         ))
+        register_item_type(ItemTypeDef(
+            item_id='scroll_of_town_recall',
+            name='Scroll of Town Recall',
+            price_pqg=0,
+        ))
         register_weapon_type(WeaponTypeDef(
             weapon_id='club',
             name='Club',
@@ -253,20 +258,23 @@ class InventoryServiceTests(unittest.TestCase):
         self.assertEqual(player.pqg, 10)
         self.assertIn('not for sale', result['message'].lower())
 
-    def test_new_player_starts_with_pqg_club_and_two_torches(self):
+    def test_new_player_starts_with_pqg_club_torches_and_recall_scroll(self):
         player = Player('buyer', [1, 1])
         self.assertEqual(player.pqg, 10)
-        self.assertEqual(len(player.inventory), 3)
+        self.assertEqual(len(player.inventory), 4)
         self.assertEqual(
             [i.type_id for i in player.inventory],
-            ['club', 'torch', 'torch'],
+            ['club', 'torch', 'torch', 'scroll_of_town_recall'],
         )
 
-    def test_grant_starting_inventory_adds_club_and_two_torches(self):
+    def test_grant_starting_inventory_adds_club_torches_and_recall_scroll(self):
         player = FakePlayer()
         granted = grant_starting_inventory(player)
-        self.assertEqual(len(granted), 3)
-        self.assertEqual([i.type_id for i in granted], ['club', 'torch', 'torch'])
+        self.assertEqual(len(granted), 4)
+        self.assertEqual(
+            [i.type_id for i in granted],
+            ['club', 'torch', 'torch', 'scroll_of_town_recall'],
+        )
         self.assertNotEqual(granted[1].instance_id, granted[2].instance_id)
 
 

@@ -23,6 +23,13 @@ def _blank_map(h=7, w=7, fill='.'):
     return [[fill for _ in range(w)] for _ in range(h)]
 
 
+def _drop_starting_scrolls(player):
+    """New players start with a recall scroll; tests that count scrolls drop it."""
+    for item in list(player.inventory):
+        if item.type_id == SCROLL_OF_TOWN_RECALL_ID:
+            player.inventory.remove(item.instance_id)
+
+
 class FakePlayer:
     def __init__(self, player_id='hero', pos=None, dungeon_level=1):
         self.id = player_id
@@ -185,6 +192,7 @@ class TownRecallServiceTests(unittest.TestCase):
 
     def test_save_dict_includes_town_pos_and_no_scroll_together(self):
         player = Player('hero', [5, 5])
+        _drop_starting_scrolls(player)
         player.dungeon_level = 2
         inst = add_item_to_inventory(player, SCROLL_OF_TOWN_RECALL_ID)
         self.assertIsNotNone(inst)
@@ -275,6 +283,7 @@ class TownRecallPlacementTests(unittest.TestCase):
         self._set_level(1, dungeon)
 
         hero = Player('hero', [1, 1])
+        _drop_starting_scrolls(hero)
         hero.dungeon_level = 1
         self.gs.players['hero'] = hero
         self.gs.active_players['hero'] = hero

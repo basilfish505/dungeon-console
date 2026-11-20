@@ -34,6 +34,8 @@ STARTER_ITEM_IDS = ITEMS_SHOP_IDS
 STARTING_TORCH_COUNT = 2
 
 SCROLL_OF_TOWN_RECALL_ID = 'scroll_of_town_recall'
+# New players start with this many scrolls (testing aid; set to 0 to remove).
+STARTING_SCROLL_COUNT = 1
 TOWN_RECALL_SUCCESS_MESSAGE = (
     'The scroll crumbles to dust, and you find yourself back in town.'
 )
@@ -146,13 +148,20 @@ def grant_starter_kit(player):
 
 
 def grant_starting_inventory(player):
-    """Default pack for a new player: club + two separate torches (each with own fuel)."""
+    """Default pack for a new player: club, two separate torches (each with own fuel), and a Scroll of Town Recall."""
     granted = []
     club = add_item_to_inventory(player, 'club', quantity=1, category=CATEGORY_WEAPON)
     if club is not None:
         granted.append(club)
     for _ in range(STARTING_TORCH_COUNT):
         inst = add_item_to_inventory(player, 'torch', quantity=1, category=CATEGORY_ITEM)
+        if inst is not None:
+            granted.append(inst)
+    # Testing: every new player also starts with a Scroll of Town Recall.
+    for _ in range(STARTING_SCROLL_COUNT):
+        inst = add_item_to_inventory(
+            player, SCROLL_OF_TOWN_RECALL_ID, quantity=1, category=CATEGORY_ITEM,
+        )
         if inst is not None:
             granted.append(inst)
     return granted
