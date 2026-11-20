@@ -150,15 +150,26 @@ const UI = (function() {
                 document.getElementById('player-xp').textContent = player.total_xp ?? player.xp ?? 0;
             }
             document.getElementById('player-pqg').textContent = player.pqg ?? 0;
-            document.getElementById('player-str').textContent = player.str;
-            document.getElementById('player-int').textContent = player.int;
-            document.getElementById('player-wis').textContent = player.wis;
-            document.getElementById('player-chr').textContent = player.chr;
-            document.getElementById('player-dex').textContent = player.dex;
+            // Permanent value in its own column; worn-gear boost (e.g. "(+5)")
+            // in a separate column to its right. Stat totals include the boost.
+            const gearBonus = player.attribute_bonus || {};
+            const setAttr = function (key, total) {
+                const bonus = Number(gearBonus[key]) || 0;
+                const numeric = Number(total);
+                document.getElementById('player-' + key).textContent =
+                    (bonus && !Number.isNaN(numeric)) ? numeric - bonus : total;
+                document.getElementById('player-' + key + '-bonus').textContent =
+                    bonus ? '(' + (bonus > 0 ? '+' : '') + bonus + ')' : '';
+            };
+            setAttr('str', player.str);
+            setAttr('int', player.int);
+            setAttr('wis', player.wis);
+            setAttr('chr', player.chr);
+            setAttr('dex', player.dex);
             document.getElementById('player-hp').textContent = player.hp;
             document.getElementById('player-mp').textContent = player.mp;
-            document.getElementById('player-agi').textContent = player.agi;
-            document.getElementById('player-acc').textContent = player.acc ?? player.accuracy ?? '-';
+            setAttr('agi', player.agi);
+            setAttr('acc', player.acc ?? player.accuracy ?? '-');
         }
     }
 
@@ -217,6 +228,7 @@ const UI = (function() {
             function () { InspectUI.hideAlert(); },
             function () { InventoryUI.hide(); },
             function () { InteractionUI.hide(); },
+            function () { LootUI.reset(); },
         ];
         closers.forEach(function (close) {
             try {

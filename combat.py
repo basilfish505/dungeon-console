@@ -10,6 +10,8 @@ from combat_monster import (
     first_castable_monster_spell,
 )
 from combat_elo import apply_elo_outcome
+from loot_offers import add_offer, offer_label, offers_for_client
+from monster_loot import drops_for_monster
 from player_xp import calculate_pqg_from_xp, calculate_xp_from_elo
 from player_persistence import save_player
 from player_growth import format_level_up_messages
@@ -201,6 +203,7 @@ class CombatSystem:
             existing['xp'] += bucket.get('xp', 0)
             existing['pqg'] += bucket.get('pqg', 0)
             existing['elo_opponents'].extend(bucket.get('elo_opponents', []))
+            existing.setdefault('loot', []).extend(bucket.get('loot') or [])
 
         alliances.merge_alliances(target, source)
 
@@ -1937,6 +1940,25 @@ class CombatSystem:
         bucket['xp'] += xp_gain
         bucket['pqg'] += pqg_gain
         bucket['elo_opponents'].append(monster)
+        # Loot: the monster drops whatever it was carrying (rolled at spawn).
+        for dropped in drops_for_monster(monster):
+            bucket.setdefault('loot', []).append(dropped)
+
+    def _offer_loot(self, player_id, player, entry):
+        """Queue a dropped item for keep / discard. Returns its description, or None.
+
+        Nothing enters the pack here: the player answers the prompt first
+        (see loot_offers.resolve_offer and the ``loot_decision`` socket event).
+        """
+        offer = add_offer(player, entry)
+        if offer is None:
+            return None
+        label = offer_label(offer)
+        self.game_state.add_player_message(
+            player_id,
+            f"The {offer['monster_name']} had a {label}.",
+        )
+        return f"The {offer['monster_name']} had a {label}."
 
     def _apply_pending_rewards(self, battle, player_id):
         """
@@ -2016,6 +2038,12 @@ class CombatSystem:
             getattr(killer, 'last_level_up_results', None)
         ):
             self.game_state.add_player_message(player_id, text)
+        found = [
+            line for line in (
+                self._offer_loot(player_id, killer, entry)
+                for entry in (bucket.get('loot') or [])
+            ) if line
+        ]
         if not allied:
             delta_txt = f"+{elo_delta:.0f}" if elo_delta >= 0 else f"{elo_delta:.0f}"
             self.game_state.add_player_message(
@@ -2044,6 +2072,14 @@ class CombatSystem:
             ]
         if pqg_total > 0:
             summary_lines.append(f"You gain {pqg_total} PQG.")
+        summary_lines.extend(found)
+        if found:
+            # The client shows the keep / discard prompt once combat closes.
+            self._emit(
+                'loot_offers',
+                {'offers': offers_for_client(killer)},
+                room=player_id,
+            )
         return ' '.join(summary_lines)
 
     def _apply_alliance_rewards(self, battle, survivors):

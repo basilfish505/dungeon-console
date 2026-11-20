@@ -105,29 +105,33 @@
                     <span class="property-label">PQG:</span>
                     <span class="property-value" id="player-pqg">10</span>
 
-                    <span class="blank-row"></span>
-                    <span class="blank-row"></span>
-                    <span class="blank-row"></span>
-                    <span class="blank-row"></span>
-
+                </div>
+                <!-- Attributes: value column, then a separate column for worn-gear bonuses. -->
+                <div class="properties-grid attributes-grid">
                     <span class="property-label">STR:</span>
                     <span class="property-value" id="player-str">-</span>
+                    <span class="property-value attr-bonus" id="player-str-bonus"></span>
                     <span class="property-label">INT:</span>
                     <span class="property-value" id="player-int">-</span>
+                    <span class="property-value attr-bonus" id="player-int-bonus"></span>
 
                     <span class="property-label">WIS:</span>
                     <span class="property-value" id="player-wis">-</span>
+                    <span class="property-value attr-bonus" id="player-wis-bonus"></span>
                     <span class="property-label">CHR:</span>
                     <span class="property-value" id="player-chr">-</span>
+                    <span class="property-value attr-bonus" id="player-chr-bonus"></span>
 
                     <span class="property-label">DEX:</span>
                     <span class="property-value" id="player-dex">-</span>
+                    <span class="property-value attr-bonus" id="player-dex-bonus"></span>
                     <span class="property-label">AGI:</span>
                     <span class="property-value" id="player-agi">-</span>
+                    <span class="property-value attr-bonus" id="player-agi-bonus"></span>
 
                     <span class="property-label">ACC:</span>
                     <span class="property-value" id="player-acc">-</span>
-                    <span class="blank-row"></span>
+                    <span class="property-value attr-bonus" id="player-acc-bonus"></span>
                 </div>
             </div>
 
@@ -250,6 +254,20 @@
         </div>
     </div>
 
+    <div id="loot-prompt" class="loot-prompt" hidden aria-hidden="true" role="alertdialog" aria-labelledby="loot-prompt-title" tabindex="-1">
+        <div class="loot-panel">
+            <h2 id="loot-prompt-title" class="loot-title">Loot</h2>
+            <img id="loot-prompt-icon" class="loot-icon" alt="">
+            <p id="loot-prompt-text" class="loot-text"></p>
+            <p id="loot-prompt-note" class="loot-note"></p>
+            <div class="loot-actions">
+                <button type="button" id="loot-keep-btn" class="loot-btn">Keep</button>
+                <button type="button" id="loot-discard-btn" class="loot-btn loot-btn-discard">Discard</button>
+            </div>
+            <p id="loot-prompt-more" class="loot-more"></p>
+        </div>
+    </div>
+
     <link rel="preload" as="image" href="{{ url_for('static', filename='tiles/floor.png') }}">
     <link rel="preload" as="image" href="{{ url_for('static', filename='tiles/grass.png') }}">
     <link rel="preload" as="image" href="{{ url_for('static', filename='tiles/tree.png') }}">
@@ -283,6 +301,7 @@
     <script src="{{ asset_url('js/map_renderer.js') }}"></script>
     <script src="{{ asset_url('js/inspect_ui.js') }}"></script>
     <script src="{{ asset_url('js/inventory_ui.js') }}"></script>
+    <script src="{{ asset_url('js/loot_ui.js') }}"></script>
     <script src="{{ asset_url('js/spell_ui.js') }}"></script>
     <script src="{{ asset_url('js/interaction_ui.js') }}"></script>
     <script src="{{ asset_url('js/map_inspect.js') }}"></script>

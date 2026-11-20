@@ -44,6 +44,7 @@ from items.service import (
 )
 from items.equipment import equip_item, unequip_item
 from items.catalog import SHOP_TO_CATEGORY
+from loot_offers import resolve_offer as resolve_loot_offer
 from player_persistence import save_player
 from world_persistence import WorldPersistence
 from character_auth import (
@@ -1790,6 +1791,31 @@ def handle_buy_item(data):
         'item_id': result.get('item_id'),
         'price_pqg': result.get('price_pqg', 0),
         'pqg': result.get('pqg', int(getattr(player, 'pqg', 0) or 0)),
+    })
+
+
+@socketio.on('loot_decision')
+def handle_loot_decision(data):
+    """Keep or discard an item a defeated monster was carrying."""
+    player_id = session.get('player_id')
+    player = game_state.players.get(player_id) if player_id else None
+    if not player:
+        emit('loot_decision_result', {'ok': False, 'message': 'Not logged in.'})
+        return
+    data = data or {}
+    keep = str(data.get('action') or '').strip().lower() == 'keep'
+    result = resolve_loot_offer(player, data.get('offer_id'), keep)
+    if result.get('ok'):
+        game_state.add_player_message(player_id, result['message'])
+        save_player(player)
+        world_persistence.save_character(player_id)
+    emit('game_state', game_state.get_game_state(player_id), room=player_id)
+    emit('loot_decision_result', {
+        'ok': bool(result.get('ok')),
+        'message': result.get('message'),
+        'kept': bool(result.get('kept')),
+        'full': bool(result.get('full')),
+        'offer_id': data.get('offer_id'),
     })
 
 

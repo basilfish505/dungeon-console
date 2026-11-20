@@ -189,6 +189,21 @@ const SocketHandler = (function () {
             if (typeof SpellUI !== 'undefined' && SpellUI.setSpells) {
                 SpellUI.setSpells(data.player && data.player.spells);
             }
+            if (typeof LootUI !== 'undefined' && LootUI.setOffers && data.player) {
+                LootUI.setOffers(data.player.pending_loot || []);
+            }
+        });
+
+        socket.on('loot_offers', function (data) {
+            if (typeof LootUI !== 'undefined' && LootUI.setOffers && data) {
+                LootUI.setOffers(data.offers || []);
+            }
+        });
+
+        socket.on('loot_decision_result', function (data) {
+            if (typeof LootUI !== 'undefined' && LootUI.handleResult) {
+                LootUI.handleResult(data);
+            }
         });
 
         socket.on('combat_update', function (data) {
@@ -371,6 +386,10 @@ const SocketHandler = (function () {
         socket.emit('buy_item', { item_id: itemId });
     }
 
+    function sendLootDecision(payload) {
+        socket.emit('loot_decision', payload || {});
+    }
+
     function sendInteractionChoice(interactionId, choice) {
         if (!interactionId || !choice) {
             return;
@@ -419,6 +438,7 @@ const SocketHandler = (function () {
         inspectMap,
         inspectCombatant,
         buyItem,
+        sendLootDecision,
         sendInteractionChoice,
         sendChatMessage,
         endChat,

@@ -99,6 +99,8 @@ def monster_to_dict(monster: Monster) -> dict:
         'level_bonuses': dict(getattr(monster, 'level_bonuses', {}) or {}),
         'level_hp_bonus': int(getattr(monster, 'level_hp_bonus', 0) or 0),
         'attrs': attrs,
+        # Worn/carried loot. Its attribute boost is already inside ``attrs``.
+        'carried_loot': list(getattr(monster, 'carried_loot', None) or []),
     }
 
 
@@ -139,6 +141,8 @@ def monster_from_dict(data: dict) -> Monster:
     mon.memory_pos = list(mp) if mp is not None else None
     mon.level_bonuses = dict(data.get('level_bonuses') or {})
     mon.level_hp_bonus = int(data.get('level_hp_bonus', 0) or 0)
+    from monster_loot import clean_carried_loots
+    mon.carried_loot = clean_carried_loots(data.get('carried_loot'))
     mon.pos = list(pos)
     return mon
 

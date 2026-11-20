@@ -22,6 +22,7 @@ from items.catalog import (
     shop_category,
     shop_item_category,
 )
+from armour_types.traits import boosted_name
 from items.equipment import clear_equipped_if_removed
 from item_types.registry import get_item_type
 
@@ -120,7 +121,8 @@ def purchase_item(player, item_id, *, shop_id=None):
 
     result['ok'] = True
     result['pqg'] = int(player.pqg)
-    result['message'] = f'You buy the {name} for {price} PQG.'
+    bought = boosted_name(name, (getattr(inst, 'extras', None) or {}).get('boosts'))
+    result['message'] = f'You buy the {bought} for {price} PQG.'
     return result
 
 
@@ -242,6 +244,7 @@ def discard_item(player, instance_id):
         getattr(inst, 'category', CATEGORY_ITEM), inst.type_id
     )
     name = type_def.name if type_def else inst.type_id
+    name = boosted_name(name, (getattr(inst, 'extras', None) or {}).get('boosts'))
     player.inventory.remove(instance_id)
     clear_equipped_if_removed(player, instance_id)
     from items.light import clear_lit_if_removed

@@ -41,6 +41,7 @@ class MonsterTypeDef:
         ability_ids=None,
         spell_ids=None,
         loot_ids=None,
+        loot_chance=None,
         base_mmp=0,
         description=None,
         sprite=None,
@@ -62,6 +63,14 @@ class MonsterTypeDef:
         self.ability_ids = list(ability_ids) if ability_ids else []
         self.spell_ids = list(spell_ids) if spell_ids else []
         self.loot_ids = list(loot_ids) if loot_ids else []
+        # Percent 0-100 that a spawn carries loot; None = use the game default.
+        try:
+            self.loot_chance = (
+                None if loot_chance is None
+                else max(0.0, min(100.0, float(loot_chance)))
+            )
+        except (TypeError, ValueError):
+            self.loot_chance = None
         try:
             self.base_mmp = max(0, int(base_mmp))
         except (TypeError, ValueError):

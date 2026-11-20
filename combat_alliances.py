@@ -174,6 +174,8 @@ class EqualSplitRewardPolicy:
                 'xp': base_xp + (1 if i < rem_xp else 0),
                 'pqg': base_pqg + (1 if i < rem_pqg else 0),
                 'elo_opponents': [],
+                # Items are not split: the player whose kill dropped it keeps it.
+                'loot': list(original.get('loot') or []),
                 # Shared kill total for messaging; kept as total across alliance.
                 'alliance_kills': total_kills,
             }

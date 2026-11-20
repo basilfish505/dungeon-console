@@ -6,7 +6,8 @@ import json
 from pathlib import Path
 
 from armour_types.traits import clean_rolled_boosts
-from character_stats import copy_attrs
+from character_stats import base_attributes, copy_attrs
+from loot_offers import clean_offers
 from items.equipment import sync_equipment
 from player_growth import ensure_growth_baseline
 
@@ -39,9 +40,13 @@ def player_to_save_dict(player):
         'equipped_ring_instance_ids': list(
             getattr(player, 'equipped_ring_instance_ids', None) or []
         ),
+        'equipped_shield_instance_id': getattr(
+            player, 'equipped_shield_instance_id', None
+        ),
         'applied_attribute_bonus': dict(
             getattr(player, 'applied_attribute_bonus', None) or {}
         ),
+        'pending_loot': [dict(o) for o in (getattr(player, 'pending_loot', None) or [])],
         'lit_light_instance_id': getattr(player, 'lit_light_instance_id', None),
         'sight_range': float(getattr(player, 'sight_range', 0) or 0),
         'inventory': inv.to_save_list() if inv is not None else [],
@@ -58,7 +63,7 @@ def player_to_save_dict(player):
         'mp': int(getattr(player, 'mp', 0) or 0),
         'known_spells': list(getattr(player, 'known_spells', None) or []),
         'starting_attributes': copy_attrs(
-            getattr(player, 'starting_attributes', None) or player
+            getattr(player, 'starting_attributes', None) or base_attributes(player)
         ),
         'starting_mhp': int(getattr(player, 'starting_mhp', getattr(player, 'mhp', 1)) or 1),
         'growth_level': int(getattr(player, 'growth_level', getattr(player, 'level', 1)) or 1),
@@ -93,11 +98,13 @@ def apply_save_dict(player, data):
     player.equipped_armour_instance_id = data.get('equipped_armour_instance_id')
     rings = data.get('equipped_ring_instance_ids')
     player.equipped_ring_instance_ids = list(rings) if isinstance(rings, list) else []
+    player.equipped_shield_instance_id = data.get('equipped_shield_instance_id')
     # Saved attributes already include these boosts; sync_equipment below
     # only applies the difference against current gear.
     player.applied_attribute_bonus = clean_rolled_boosts(
         data.get('applied_attribute_bonus')
     )
+    player.pending_loot = clean_offers(data.get('pending_loot'))
     player.lit_light_instance_id = data.get('lit_light_instance_id')
     if 'sight_range' in data:
         try:

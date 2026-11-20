@@ -1,6 +1,7 @@
 """Armour other_ability column: attribute boosters and rings."""
 
 import json
+import random
 import unittest
 
 import armour_types  # noqa: F401
@@ -50,6 +51,9 @@ class _Base(unittest.TestCase):
         p.dex = 8
         p.acc = 6
         p.int = 5
+        p.wis = 7
+        p.chr = 4
+        p.agi = 9
         return p
 
     def give(self, player, type_id):
@@ -223,6 +227,68 @@ class RingBoostTests(_Base):
         self.assertEqual(row['boosts'], ring.extras['boosts'])
 
 
+class DisplayAndGrowthTests(_Base):
+    def test_inspect_and_client_split_base_from_gear_bonus(self):
+        p = self.make_player()
+        ring = self.give(p, 't_fixed_ring')  # int +3
+        equip_item(p, ring.instance_id)
+        rows = {r['key']: r for r in p.to_inspect_dict()['attributes']}
+        self.assertEqual(rows['int'], {
+            'key': 'int', 'label': 'Intelligence', 'value': 8, 'base': 5, 'bonus': 3,
+        })
+        self.assertEqual(rows['str']['bonus'], 0)
+        self.assertEqual(rows['str']['base'], rows['str']['value'])
+        client = p.to_dict()
+        self.assertEqual(client['int'], 8)  # total still used in play
+        self.assertEqual(client['attribute_bonus'], {'int': 3})
+        unequip_item(p, ring.instance_id)
+        self.assertEqual(p.to_dict()['attribute_bonus'], {})
+
+    def test_monster_inspect_has_no_bonus(self):
+        from character_stats import attributes_for_inspect
+
+        class Dummy:
+            str = 4
+
+        row = attributes_for_inspect(Dummy())[0]
+        self.assertEqual((row['value'], row['base'], row['bonus']), (4, 4, 0))
+
+    def test_level_up_distribution_ignores_worn_gear(self):
+        import random
+        from player_growth import capture_new_player_baseline, apply_pending_growth
+
+        def grow(wear_ring):
+            p = self.make_player()
+            capture_new_player_baseline(p)
+            if wear_ring:
+                ring = self.give(p, 't_fixed_ring')
+                equip_item(p, ring.instance_id)
+            p.level = 6
+            results = apply_pending_growth(p, rng=random.Random(7))
+            return p, results
+
+        plain, plain_results = grow(False)
+        ringed, ringed_results = grow(True)
+        self.assertEqual(
+            [r['attribute_increases'] for r in plain_results],
+            [r['attribute_increases'] for r in ringed_results],
+        )
+        self.assertEqual(ringed.starting_attributes, plain.starting_attributes)
+        self.assertEqual(ringed.int, plain.int + 3)
+
+    def test_missing_baseline_snapshot_excludes_gear(self):
+        from player_growth import ensure_growth_baseline
+
+        p = self.make_player()
+        ring = self.give(p, 't_fixed_ring')
+        equip_item(p, ring.instance_id)
+        p.starting_attributes = None
+        ensure_growth_baseline(p, snapshot_if_missing=True)
+        self.assertEqual(p.starting_attributes['int'], 5)
+        data = player_to_save_dict(p)
+        self.assertEqual(data['starting_attributes']['int'], 5)
+
+
 class ItemShopRingTests(unittest.TestCase):
     def test_items_shop_sells_ring_of_strength(self):
         from interiors.items_shop import ITEMS_SHOP_ID
@@ -250,11 +316,27 @@ class ItemShopRingTests(unittest.TestCase):
         self.assertEqual(p.pqg, 5)
         inst = next(i for i in p.inventory if i.type_id == 'ring_of_strength')
         self.assertEqual(inst.category, 'armour')
-        self.assertEqual(inst.extras['boosts'], {'str': 5})
+        boost = inst.extras['boosts']['str']
+        self.assertTrue(1 <= boost <= 10, boost)
+        self.assertEqual(list(inst.extras['boosts']), ['str'])
         self.assertTrue(equip_item(p, inst.instance_id)['ok'])
-        self.assertEqual(p.str, base_str + 5)
+        self.assertEqual(p.str, base_str + boost)
         unequip_item(p, inst.instance_id)
         self.assertEqual(p.str, base_str)
+
+    def test_ring_of_strength_rolls_one_to_ten_evenly(self):
+        from armour_types.registry import get_armour_type
+        from armour_types.traits import roll_boosts
+
+        ring = get_armour_type('ring_of_strength')
+        self.assertEqual(len(ring.attribute_boosts), 1)
+        self.assertEqual((ring.attribute_boosts[0].low, ring.attribute_boosts[0].high), (1, 10))
+        rng = random.Random(2024)
+        counts = {n: 0 for n in range(1, 11)}
+        for _ in range(10000):
+            counts[roll_boosts(ring.attribute_boosts, rng=rng)['str']] += 1
+        for n, seen in counts.items():
+            self.assertTrue(800 <= seen <= 1200, (n, seen))
 
     def test_ring_not_sold_by_weapon_shop(self):
         from interiors.weapon_shop import WEAPON_SHOP_ID

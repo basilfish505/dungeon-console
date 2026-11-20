@@ -75,6 +75,9 @@ class Monster:
         if self.armour < 1:
             self.armour = 1
         self.in_combat = False
+        # Item carried (and worn, if it boosts attributes) -> dropped on defeat.
+        # Set at spawn by monster_loot.equip_spawn_loot; None for most monsters.
+        self.carried_loot = []
 
         aggression = runtime_overrides.pop('aggression', type_def.aggression)
         speed = runtime_overrides.pop('speed', type_def.speed)
@@ -152,8 +155,22 @@ class Monster:
             strength = int(getattr(self, 'str', 1) or 1)
         except (TypeError, ValueError):
             strength = 1
-        from combat_damage import DEFAULT_WEAPON_BASE_DAMAGE
-        mean_damage = int(DEFAULT_WEAPON_BASE_DAMAGE) + strength
+        from monster_loot import monster_weapon_stats
+        weapon_base, _consistency = monster_weapon_stats(self)
+        # Shown as at least 1: combat floors every hit at 1 damage anyway.
+        mean_damage = max(1, int(weapon_base) + strength)
+        equipment = []
+        from items.catalog import resolve_loot_type
+        from monster_loot import clean_carried_loots, describe_loot
+        for entry in clean_carried_loots(getattr(self, 'carried_loot', None)):
+            resolved = resolve_loot_type(entry['type_id'])
+            if resolved:
+                equipment.append({
+                    'type_id': entry['type_id'],
+                    'name': resolved[1].name or entry['type_id'],
+                    'label': describe_loot(resolved[1], entry['boosts']),
+                    'boosts': dict(entry['boosts']),
+                })
         return {
             'kind': 'monster',
             'name': self.name,
@@ -169,6 +186,7 @@ class Monster:
             'armour': int(getattr(self, 'armour', 1) or 1),
             'mean_damage': mean_damage,
             'attributes': attributes_for_inspect(self),
+            'equipment': equipment,
             'abilities': abilities,
             'spells': spells,
             'sprite': self.sprite_url(),

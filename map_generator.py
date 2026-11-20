@@ -5,6 +5,7 @@ from monster import Monster
 from monster_types.registry import get_monster_type, pick_spawn_type_id
 from monster_types.leveling import assign_monster_level
 from monster_elo import calibrate_instance_elo
+from monster_loot import equip_spawn_loot
 from monster_spawn import pick_spawn_combatant
 from interiors.items_shop import ITEMS_SHOP_ID, stamp_items_shop
 from interiors.weapon_shop import WEAPON_SHOP_ID, stamp_weapon_shop
@@ -927,6 +928,8 @@ class MapGenerator:
                     monster = Monster.from_type(
                         type_id, [i, j], monster_id=monster_id, level=level,
                     )
+                    # Roll carried loot first so a worn ring's boost counts in Elo.
+                    equip_spawn_loot(monster)
                     calibrate_instance_elo(monster)
                     self.monsters[(i, j)] = monster
                     self.game_map[i][j] = '&'

@@ -5,6 +5,7 @@ from __future__ import annotations
 import random
 
 from items.equipment import equipped_weapon_stats
+from monster_loot import monster_weapon_stats
 from player import Player
 
 # Bare-hands defaults until equipped weapons supply their own values.
@@ -72,7 +73,8 @@ def resolve_attack(attacker, defender, weapon=None, rng=None):
 def _weapon_stats_for(attacker):
     if isinstance(attacker, Player):
         return equipped_weapon_stats(attacker)
-    return DEFAULT_WEAPON_BASE_DAMAGE, DEFAULT_CONSISTENCY_FACTOR
+    # Monsters wield the weapon they carry (unarmed defaults when none).
+    return monster_weapon_stats(attacker)
 
 
 def calculate_attack_damage(

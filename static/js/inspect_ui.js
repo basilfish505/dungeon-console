@@ -80,9 +80,19 @@ const InspectUI = (function () {
         const attrs = data.attributes || [];
         if (attrs.length) {
             html += '<h4 class="inspect-section">Attributes</h4>';
+            // Worn-gear boosts get their own column to the right of the values.
+            const anyBonus = attrs.some(function (row) { return Number(row.bonus); });
             attrs.forEach(function (row) {
-                html += `<div class="inspect-row"><span class="inspect-label">${escapeHtml(row.label)}</span>` +
-                    `<span class="inspect-value">${escapeHtml(row.value)}</span></div>`;
+                const bonus = Number(row.bonus) || 0;
+                if (!anyBonus) {
+                    html += `<div class="inspect-row"><span class="inspect-label">${escapeHtml(row.label)}</span>` +
+                        `<span class="inspect-value">${escapeHtml(row.value)}</span></div>`;
+                    return;
+                }
+                const bonusText = bonus ? '(' + (bonus > 0 ? '+' : '') + bonus + ')' : '';
+                html += `<div class="inspect-row inspect-row-attr"><span class="inspect-label">${escapeHtml(row.label)}</span>` +
+                    `<span class="inspect-value">${escapeHtml(row.base)}</span>` +
+                    `<span class="inspect-bonus">${escapeHtml(bonusText)}</span></div>`;
             });
         }
         return html;
@@ -110,6 +120,14 @@ const InspectUI = (function () {
                 `<span class="inspect-value">${escapeHtml(data.mean_damage)}</span></div>`;
         }
         html += renderAttrSection(data);
+
+        const equipment = data.equipment || [];
+        if (equipment.length) {
+            html += '<h4 class="inspect-section">Wearing</h4>';
+            equipment.forEach(function (item) {
+                html += `<div class="inspect-row"><span class="inspect-value">${escapeHtml(item.label || item.name || item.type_id)}</span></div>`;
+            });
+        }
 
         const abilities = data.abilities || [];
         if (abilities.length) {

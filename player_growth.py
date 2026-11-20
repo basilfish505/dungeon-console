@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import random
 
-from character_stats import ATTRIBUTE_KEYS, copy_attrs
+from character_stats import ATTRIBUTE_KEYS, base_attributes, copy_attrs
 
 # Eligible keys for automatic level-up allocation. Defaults to every
 # shared character attribute so new ATTRIBUTE_KEYS participate automatically.
@@ -128,7 +128,7 @@ def capture_new_player_baseline(player):
     """Record original starting stats for a newly created character."""
     if player is None:
         return
-    player.starting_attributes = copy_attrs(player)
+    player.starting_attributes = base_attributes(player)
     player.starting_mhp = max(1, _int(getattr(player, 'mhp', 1), 1))
     player.growth_level = max(1, _int(getattr(player, 'level', 1), 1))
     player.last_level_up_results = []
@@ -145,7 +145,8 @@ def ensure_growth_baseline(player, *, snapshot_if_missing=True):
 
     existing = getattr(player, 'starting_attributes', None)
     if not existing and snapshot_if_missing:
-        player.starting_attributes = copy_attrs(player)
+        # Permanent stats only: worn-gear boosts must not feed growth weights.
+        player.starting_attributes = base_attributes(player)
     else:
         merged = {}
         source = existing if isinstance(existing, dict) else copy_attrs(existing)

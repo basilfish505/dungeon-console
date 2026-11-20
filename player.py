@@ -1,6 +1,6 @@
 import random
 
-from character_stats import ATTRIBUTE_KEYS, attributes_for_inspect
+from character_stats import ATTRIBUTE_KEYS, attributes_for_inspect, gear_bonus
 from items.equipment import (
     effective_armour_value,
     equipped_weapon_name,
@@ -8,6 +8,7 @@ from items.equipment import (
     mean_damage_for,
 )
 from items.inventory import Inventory
+from loot_offers import offers_for_client
 from player_growth import (
     apply_pending_growth,
     capture_new_player_baseline,
@@ -105,6 +106,9 @@ class Player:
         self.equipped_weapon_instance_id = None
         self.equipped_armour_instance_id = None
         self.equipped_ring_instance_ids = []
+        self.equipped_shield_instance_id = None
+        # Loot waiting for keep / discard (see loot_offers.py); saved with the character.
+        self.pending_loot = []
         # Attribute boosts from worn gear that are currently included in the
         # stored attributes (see items.equipment.apply_equipment_attribute_bonus).
         self.applied_attribute_bonus = {}
@@ -200,7 +204,8 @@ class Player:
             'weapon_name': equipped_weapon_name(self),
             'weapon_base_damage': int(weapon_base),
             'strength': strength,
-            'mean_damage': int(mean_damage_for(self)),
+            # Shown as at least 1: combat floors every hit at 1 damage anyway.
+            'mean_damage': max(1, int(mean_damage_for(self))),
             'sprite': self.sprite_url(),
             'portrait': self.portrait_url(),
         }
@@ -216,6 +221,9 @@ class Player:
             'pqg': int(getattr(self, 'pqg', 0)),
             'hp': f"{self.hp}/{self.mhp}",
             'mp': f"{self.mp}/{self.mmp}",
+            # Stat values are totals (base + worn gear); attribute_bonus is the
+            # gear part so the UI can show "5 (+5)".
+            'attribute_bonus': gear_bonus(self),
             'str': self.str,
             'int': self.int,
             'wis': self.wis,
@@ -239,10 +247,15 @@ class Player:
             'equipped_ring_instance_ids': list(
                 getattr(self, 'equipped_ring_instance_ids', None) or []
             ),
+            'equipped_shield_instance_id': getattr(
+                self, 'equipped_shield_instance_id', None
+            ),
+            'pending_loot': offers_for_client(self),
             'inventory': self.inventory.to_client_list(
                 equipped_weapon_id=getattr(self, 'equipped_weapon_instance_id', None),
                 equipped_armour_id=getattr(self, 'equipped_armour_instance_id', None),
                 equipped_ring_ids=getattr(self, 'equipped_ring_instance_ids', None),
+                equipped_shield_id=getattr(self, 'equipped_shield_instance_id', None),
                 lit_light_id=getattr(self, 'lit_light_instance_id', None),
             ),
             'spells': _spells_for_client(self),

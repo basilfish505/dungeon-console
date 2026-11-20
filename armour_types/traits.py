@@ -112,3 +112,21 @@ def clean_rolled_boosts(raw):
         if amount:
             out[attribute] = out.get(attribute, 0) + amount
     return out
+
+def boosted_name(name, boosts):
+    """Item name with its rolled boost: 'Ring of Strength +7'.
+
+    One boost reads ``Name +7``; several read ``Name (STR +2, DEX +3)``.
+    No boost leaves the plain name.
+    """
+    cleaned = clean_rolled_boosts(boosts)
+    if not cleaned:
+        return name
+    if len(cleaned) == 1:
+        amount = next(iter(cleaned.values()))
+        return f"{name} {'+' if amount > 0 else ''}{amount}"
+    parts = [
+        f"{key.upper()} {'+' if amount > 0 else ''}{amount}"
+        for key, amount in cleaned.items()
+    ]
+    return f"{name} ({', '.join(parts)})"

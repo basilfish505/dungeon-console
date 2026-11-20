@@ -231,6 +231,12 @@ class MonsterInspectStatsTests(unittest.TestCase):
         self.assertEqual(payload['armour'], 2)
         self.assertEqual(payload['mean_damage'], DEFAULT_WEAPON_BASE_DAMAGE + 7)
 
+    def test_monster_mean_damage_shows_at_least_one(self):
+        mon = Monster.from_type('troll', [0, 0], monster_id='t2', level=1)
+        mon.str = 1  # -2 + 1 = -1 in the formula
+        with patch('monster_elo.elo_percentile', return_value=None):
+            self.assertEqual(mon.to_inspect_dict()['mean_damage'], 1)
+
 
 class SharedCombatFxTests(unittest.TestCase):
     def setUp(self):

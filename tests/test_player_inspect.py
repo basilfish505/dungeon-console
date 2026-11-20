@@ -24,6 +24,12 @@ class PlayerInspectDictTests(unittest.TestCase):
         self.assertEqual(mean_damage_for(p), data['mean_damage'])
         self.assertEqual(len(data['attributes']), 7)
 
+    def test_mean_damage_shows_at_least_one(self):
+        p = Player('hero', [1, 1])
+        p.str = 1  # unarmed -2 + 1 = -1 in the formula
+        self.assertEqual(p.to_inspect_dict()['mean_damage'], 1)
+        self.assertEqual(p.to_inspect_dict()['strength'], 1)
+
     def test_equipped_weapon_updates_mean_damage(self):
         p = Player('hero', [1, 1])
         p.str = 5

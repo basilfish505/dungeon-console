@@ -74,6 +74,22 @@ def resolve_owned_type(category, type_id):
     return get_item_type(tid)
 
 
+def resolve_loot_type(type_id):
+    """Find a loot id across items, weapons, then armour -> (category, type_def).
+
+    The monster sheet lists bare type ids, so the category is discovered here.
+    Returns None when the id matches nothing.
+    """
+    tid = str(type_id or '').strip()
+    if not tid:
+        return None
+    for category in (CATEGORY_ITEM, CATEGORY_WEAPON, CATEGORY_ARMOUR):
+        type_def = resolve_owned_type(category, tid)
+        if type_def is not None:
+            return category, type_def
+    return None
+
+
 def shop_category(shop_id):
     return SHOP_TO_CATEGORY.get(str(shop_id or '').strip(), None)
 

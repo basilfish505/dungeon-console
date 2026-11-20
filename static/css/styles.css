@@ -202,6 +202,109 @@ body {
     }
 }
 
+/* Keep / discard prompt after a monster drops something (under the death screen) */
+.loot-prompt {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    z-index: 5800;
+    background: rgba(0, 0, 0, 0.82);
+}
+
+.loot-prompt[hidden] {
+    display: none;
+}
+
+.loot-panel {
+    width: min(420px, 100%);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    align-items: center;
+    text-align: center;
+    padding: 20px 16px;
+    background: #000;
+    border: 2px solid #0f0;
+    box-sizing: border-box;
+}
+
+.loot-title {
+    margin: 0;
+    font-size: 1.6rem;
+    font-weight: normal;
+    letter-spacing: 0.1em;
+    color: #0f0;
+}
+
+.loot-icon {
+    width: 64px;
+    height: 64px;
+    image-rendering: pixelated;
+    object-fit: contain;
+}
+
+.loot-text {
+    margin: 0;
+    font-size: 1.25rem;
+    color: #0f0;
+}
+
+.loot-note {
+    margin: 0;
+    min-height: 1.2em;
+    font-size: 1.05rem;
+    color: #c90;
+}
+
+.loot-actions {
+    display: flex;
+    gap: 12px;
+    width: 100%;
+}
+
+.loot-btn {
+    flex: 1;
+    font-family: inherit;
+    font-size: 1.2rem;
+    background: #000;
+    color: #0f0;
+    border: 1px solid #0f0;
+    padding: 8px 10px;
+    min-height: 44px;
+    cursor: pointer;
+}
+
+.loot-btn:hover,
+.loot-btn:focus {
+    background: #001100;
+}
+
+.loot-btn:disabled {
+    opacity: 0.5;
+    cursor: default;
+}
+
+.loot-btn-discard {
+    color: #c90;
+    border-color: #c90;
+}
+
+.loot-btn-discard:hover,
+.loot-btn-discard:focus {
+    background: #110800;
+}
+
+.loot-more {
+    margin: 0;
+    min-height: 1.1em;
+    font-size: 0.95rem;
+    color: #0f0;
+    opacity: 0.7;
+}
+
 .game-screen {
     display: grid;
     /* Map takes leftover space; stats size to content and bound the map from below */
@@ -1375,6 +1478,32 @@ body {
     color: #9f9;
     letter-spacing: 0.04em;
     text-transform: uppercase;
+}
+
+/* Gear bonus uses the same green as the value (.property-value / .inspect-value). */
+.attributes-grid {
+    grid-template-columns: repeat(6, max-content);
+    margin-top: 0.7em;
+}
+
+/* Base values line up in their own column; the bonus sits to the right. */
+.attributes-grid .property-value:not(.attr-bonus) {
+    text-align: right;
+}
+
+.attributes-grid .attr-bonus {
+    min-width: 2.4em;
+}
+
+.inspect-row-attr {
+    display: grid;
+    grid-template-columns: 1fr auto 3.2em;
+    align-items: baseline;
+}
+
+.inspect-row-attr .inspect-bonus {
+    color: #00ff00;
+    text-align: left;
 }
 
 .inventory-detail-boost {

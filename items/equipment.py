@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from armour_types.traits import boosted_name
 from items.catalog import CATEGORY_ARMOUR, CATEGORY_WEAPON, resolve_owned_type
 
 # Match combat_damage.DEFAULT_* (avoid circular import).
@@ -11,18 +12,33 @@ UNARMED_ARMOUR = 1
 RING_SLOT_COUNT = 2
 
 
-def effective_armour_value(player):
-    """Equipped armour's armour_value, else 1."""
-    inst = _equipped_instance(player, 'armour')
+def _item_label(inst, base_name):
+    """Name for messages, with the item's rolled boost: 'Ring of Strength +7'."""
+    extras = getattr(inst, 'extras', None) or {}
+    return boosted_name(base_name, extras.get('boosts'))
+
+
+def _armour_value_of(inst):
+    """armour_value of an owned armour instance, or None if unusable."""
     if inst is None:
-        return UNARMED_ARMOUR
+        return None
     type_def = resolve_owned_type(CATEGORY_ARMOUR, inst.type_id)
     if type_def is None:
-        return UNARMED_ARMOUR
+        return None
     try:
         return max(1, int(type_def.armour_value))
     except (TypeError, ValueError):
-        return UNARMED_ARMOUR
+        return None
+
+
+def effective_armour_value(player):
+    """Body armour's armour_value (else 1), plus the shield's armour_value if one is held."""
+    body = _armour_value_of(_equipped_instance(player, 'armour'))
+    total = body if body is not None else UNARMED_ARMOUR
+    shield = _armour_value_of(_equipped_instance(player, 'shield'))
+    if shield is not None:
+        total += shield
+    return total
 
 
 def equipped_weapon_stats(player):
@@ -90,9 +106,23 @@ def sync_equipment(player):
             player.equipped_armour_instance_id = None
         else:
             type_def = resolve_owned_type(CATEGORY_ARMOUR, inst.type_id)
-            # A ring never occupies the body-armour slot.
-            if type_def is None or getattr(type_def, 'is_ring', False):
+            # Rings and shields never occupy the body-armour slot.
+            if (
+                type_def is None
+                or getattr(type_def, 'is_ring', False)
+                or getattr(type_def, 'is_shield', False)
+            ):
                 player.equipped_armour_instance_id = None
+    s_id = getattr(player, 'equipped_shield_instance_id', None)
+    if s_id:
+        inst = inv.get(s_id) if inv is not None else None
+        type_def = (
+            resolve_owned_type(CATEGORY_ARMOUR, inst.type_id)
+            if inst is not None and getattr(inst, 'category', None) == CATEGORY_ARMOUR
+            else None
+        )
+        if type_def is None or not getattr(type_def, 'is_shield', False):
+            player.equipped_shield_instance_id = None
     ring_ids = []
     for r_id in list(getattr(player, 'equipped_ring_instance_ids', None) or []):
         if r_id in ring_ids or len(ring_ids) >= RING_SLOT_COUNT:
@@ -122,9 +152,10 @@ def equipment_attribute_bonus(player):
     if inv is None:
         return {}
     ids = list(equipped_ring_ids(player))
-    body_id = getattr(player, 'equipped_armour_instance_id', None)
-    if body_id:
-        ids.append(body_id)
+    for slot_attr in ('equipped_armour_instance_id', 'equipped_shield_instance_id'):
+        worn_id = getattr(player, slot_attr, None)
+        if worn_id:
+            ids.append(worn_id)
     total = {}
     for iid in ids:
         inst = inv.get(iid)
@@ -176,7 +207,7 @@ def equip_item(player, instance_id):
     if type_def is None:
         result['message'] = 'That item is unknown.'
         return result
-    name = type_def.name or inst.type_id
+    name = _item_label(inst, type_def.name or inst.type_id)
     if cat == CATEGORY_WEAPON:
         player.equipped_weapon_instance_id = inst.instance_id
         result['message'] = f'You equip the {name}.'
@@ -192,6 +223,12 @@ def equip_item(player, instance_id):
             return result
         player.equipped_ring_instance_ids = rings + [inst.instance_id]
         result['message'] = f'You slip on the {name}.'
+    elif getattr(type_def, 'is_shield', False):
+        if getattr(player, 'equipped_shield_instance_id', None) == inst.instance_id:
+            result['message'] = f'You are already carrying the {name}.'
+            return result
+        player.equipped_shield_instance_id = inst.instance_id
+        result['message'] = f'You strap on the {name}.'
     else:
         player.equipped_armour_instance_id = inst.instance_id
         result['message'] = f'You don the {name}.'
@@ -215,6 +252,8 @@ def unequip_item(player, instance_id, slot=None):
             slot = 'weapon'
         elif getattr(player, 'equipped_armour_instance_id', None) == instance_id:
             slot = 'armour'
+        elif getattr(player, 'equipped_shield_instance_id', None) == instance_id:
+            slot = 'shield'
         elif instance_id in equipped_ring_ids(player):
             slot = 'ring'
         else:
@@ -231,11 +270,32 @@ def unequip_item(player, instance_id, slot=None):
         type_def = (
             resolve_owned_type(CATEGORY_ARMOUR, inst.type_id) if inst else None
         )
-        name = type_def.name if type_def else 'ring'
+        name = _item_label(inst, type_def.name if type_def else 'ring')
         player.equipped_ring_instance_ids = [r for r in rings if r != instance_id]
         sync_equipment(player)
         result['ok'] = True
         result['message'] = f'You remove the {name}.'
+        return result
+
+    if slot == 'shield' or (
+        instance_id and getattr(player, 'equipped_shield_instance_id', None) == instance_id
+    ):
+        sid = getattr(player, 'equipped_shield_instance_id', None)
+        if not sid:
+            result['message'] = 'You are not carrying a shield.'
+            return result
+        if instance_id and sid != instance_id:
+            result['message'] = 'That shield is not equipped.'
+            return result
+        inst = player.inventory.get(sid)
+        type_def = (
+            resolve_owned_type(CATEGORY_ARMOUR, inst.type_id) if inst else None
+        )
+        name = _item_label(inst, type_def.name if type_def else 'shield')
+        player.equipped_shield_instance_id = None
+        sync_equipment(player)
+        result['ok'] = True
+        result['message'] = f'You put away the {name}.'
         return result
 
     if slot == 'weapon' or (
@@ -273,7 +333,7 @@ def unequip_item(player, instance_id, slot=None):
         type_def = (
             resolve_owned_type(CATEGORY_ARMOUR, inst.type_id) if inst else None
         )
-        name = type_def.name if type_def else 'armour'
+        name = _item_label(inst, type_def.name if type_def else 'armour')
         player.equipped_armour_instance_id = None
         sync_equipment(player)
         result['ok'] = True
@@ -292,6 +352,8 @@ def clear_equipped_if_removed(player, instance_id):
         player.equipped_weapon_instance_id = None
     if getattr(player, 'equipped_armour_instance_id', None) == instance_id:
         player.equipped_armour_instance_id = None
+    if getattr(player, 'equipped_shield_instance_id', None) == instance_id:
+        player.equipped_shield_instance_id = None
     player.equipped_ring_instance_ids = [
         r for r in equipped_ring_ids(player) if r != instance_id
     ]
@@ -306,6 +368,9 @@ def _equipped_instance(player, slot):
         expected = CATEGORY_WEAPON
     elif slot == 'armour':
         iid = getattr(player, 'equipped_armour_instance_id', None)
+        expected = CATEGORY_ARMOUR
+    elif slot == 'shield':
+        iid = getattr(player, 'equipped_shield_instance_id', None)
         expected = CATEGORY_ARMOUR
     else:
         return None

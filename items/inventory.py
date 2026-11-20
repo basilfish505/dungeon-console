@@ -58,8 +58,10 @@ def _row_from_item(item, equipped_ids=None, lit_light_id=None):
         row['armour_value'] = getattr(type_def, 'armour_value', 1)
         row['slot'] = getattr(type_def, 'slot', 'body')
         row['other_ability'] = getattr(type_def, 'other_ability', None)
-        from armour_types.traits import clean_rolled_boosts
+        from armour_types.traits import boosted_name, clean_rolled_boosts
         row['boosts'] = clean_rolled_boosts(item.extras.get('boosts'))
+        # Shown everywhere the client prints the item: 'Ring of Strength +7'.
+        row['name'] = boosted_name(row['name'], row['boosts'])
     light_ticks = getattr(type_def, 'light_ticks', None)
     if light_ticks is not None:
         row['light_ticks'] = int(light_ticks)
@@ -176,9 +178,12 @@ class Inventory:
         equipped_armour_id=None,
         lit_light_id=None,
         equipped_ring_ids=None,
+        equipped_shield_id=None,
     ):
         """16 entries for the UI; empty slots are None."""
         equipped_ids = set()
+        if equipped_shield_id:
+            equipped_ids.add(equipped_shield_id)
         if equipped_weapon_id:
             equipped_ids.add(equipped_weapon_id)
         if equipped_armour_id:

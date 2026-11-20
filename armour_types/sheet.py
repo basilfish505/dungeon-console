@@ -30,7 +30,8 @@ HEADER_COMMENTS = {
     'armour_value': 'Damage divisor when equipped. Minimum 1. Default 1.',
     'slot': (
         'body (default) = the single body-armour slot; ring = worn on a finger '
-        '(up to 2 rings at once, alongside body armour).'
+        '(up to 2 rings at once, alongside body armour); shield = the single '
+        'shield slot (its armour_value is added to body armour).'
     ),
     'other_ability': (
         'Special traits. Attribute boost: "attribute: amount", or "attribute: low-high" '
@@ -254,7 +255,7 @@ def write_armour_xlsx(path=None, extra_rows=None):
         '',
         '1. Fill one row per armour type on the Armour sheet.',
         '2. Required: armour_id. Also fill name, description, price_pqg, and armour_value.',
-        '   slot: leave blank for body armour, or type ring for a ring (wear up to 2).',
+        '   slot: leave blank for body armour, ring for a ring (wear up to 2), or shield (one; adds to body armour).',
         '   other_ability: special traits, e.g.  str: 1-5  (random +1 to +5 rolled when the item is created),',
         '   or  dex: 2  (fixed +2). Several traits: separate with ;   Attributes: str int wis chr dex agi acc.',
         '3. Leave image blank to use /static/armour/sprites/{armour_id}.png',

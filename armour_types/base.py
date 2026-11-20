@@ -4,11 +4,12 @@ from armour_types.traits import parse_other_ability
 
 SLOT_BODY = 'body'
 SLOT_RING = 'ring'
-SLOTS = (SLOT_BODY, SLOT_RING)
+SLOT_SHIELD = 'shield'
+SLOTS = (SLOT_BODY, SLOT_RING, SLOT_SHIELD)
 
 
 def normalize_slot(value):
-    """'ring' -> ring slot; anything else (blank, typo) -> body armour."""
+    """'ring' / 'shield' -> that slot; anything else (blank, typo) -> body armour."""
     slot = str(value or '').strip().lower()
     return slot if slot in SLOTS else SLOT_BODY
 
@@ -54,6 +55,10 @@ class ArmourTypeDef:
     @property
     def is_ring(self):
         return self.slot == SLOT_RING
+
+    @property
+    def is_shield(self):
+        return self.slot == SLOT_SHIELD
 
     def to_client_dict(self):
         return {

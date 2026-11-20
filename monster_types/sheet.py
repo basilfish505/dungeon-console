@@ -38,6 +38,7 @@ COLUMNS = [
     'sight_range',
     'ability_ids',
     'spells',
+    'loot_chance',
     'loot',
     'base_mmp',
     'sprite',
@@ -74,9 +75,17 @@ HEADER_COMMENTS = {
         'Comma-separated spell ids from spell_types (e.g. magic_bolt), or blank. '
         'Monsters cast known spells in combat when they have enough MP.'
     ),
+    'loot_chance': (
+        'Percent chance (0-100) that each item in the loot column is carried by a '
+        'newly spawned monster. Type 50 for 50%, 100 = always. Blank = 50. '
+        'Every item gets its own roll, so a monster can carry several. '
+        'Ignored when the loot column is blank.'
+    ),
     'loot': (
-        'Comma-separated item type ids the monster may leave when defeated. '
-        'Placeholder for now — drops are not implemented yet.'
+        'Comma-separated item / weapon / armour type ids the monster may carry. '
+        'Each one is rolled separately at loot_chance (no cap). '
+        'Carried rings are worn in battle and the player is offered each item '
+        '(keep or discard) when the monster is defeated.'
     ),
     'base_mmp': 'Starting maximum MP at base level. Default 0 (no mana).',
     'sprite': 'Leave blank for /static/monsters/sprites/{type_id}.png',
@@ -107,6 +116,7 @@ TROLL_EXAMPLE = {
     'sight_range': 20,
     'ability_ids': '',
     'spells': '',
+    'loot_chance': '',
     'loot': '',
     'base_mmp': 0,
     'sprite': '/static/monsters/sprites/troll.png',
@@ -153,6 +163,18 @@ def _str_or_none(value):
     return str(value).strip()
 
 
+def _percent_or_none(value):
+    """Percent 0-100 from a cell ('50', 50, '50%'). Blank/invalid -> None."""
+    if _blank(value):
+        return None
+    text = str(value).strip().rstrip('%').strip()
+    try:
+        percent = float(text)
+    except (TypeError, ValueError):
+        return None
+    return max(0.0, min(100.0, percent))
+
+
 def row_to_typedef(row):
     """Build a MonsterTypeDef from a column->value mapping. None if no type_id."""
     type_id = _str_or_none(row.get('type_id'))
@@ -179,6 +201,7 @@ def row_to_typedef(row):
         ability_ids=parse_id_list(row.get('ability_ids')),
         spell_ids=parse_id_list(row.get('spells')),
         loot_ids=parse_id_list(row.get('loot')),
+        loot_chance=_percent_or_none(row.get('loot_chance')),
         base_mmp=_int(row.get('base_mmp'), 0),
         sprite=_str_or_none(row.get('sprite')),
         portrait=_str_or_none(row.get('portrait')),
@@ -322,6 +345,7 @@ def write_monster_xlsx(path=None, extra_rows=None):
         'armour': 10,
         'ability_ids': 18,
         'spells': 18,
+        'loot_chance': 12,
         'loot': 18,
         'base_mmp': 12,
         'sprite': 36,
@@ -397,6 +421,8 @@ def write_monster_xlsx(path=None, extra_rows=None):
         ('activeness', 'no', '0-10 float', 'Default 5'),
         ('sight_range', 'no', 'int', 'Default 20'),
         ('ability_ids', 'no', 'csv string', 'Blank = none'),
+        ('loot_chance', 'no', '0-100 percent', 'Chance each listed item is carried by a spawn. 100 = always. Blank = 50'),
+        ('loot', 'no', 'csv string', 'Item/weapon/armour ids a monster may carry and drop (each rolled separately). Blank = none'),
         ('sprite', 'no', 'url path', 'Blank = /static/monsters/sprites/{type_id}.png'),
         ('portrait', 'no', 'url path', 'Blank = /static/monsters/portraits/{type_id}.png'),
         ('spawn_weight', 'no', 'float', 'Default 1. 0 = do not random-spawn'),
