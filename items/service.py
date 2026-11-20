@@ -22,7 +22,7 @@ from items.catalog import (
     shop_category,
     shop_item_category,
 )
-from armour_types.traits import boosted_name
+from armour_types.traits import boosted_name, roll_boosts
 from items.equipment import clear_equipped_if_removed
 from item_types.registry import get_item_type
 
@@ -189,6 +189,9 @@ def use_item(player, instance_id, context='exploration', game_state=None):
     if inst.type_id == 'healing_potion':
         return _use_healing_potion(player, instance_id, type_def, result)
 
+    if getattr(type_def, 'permanent_boosts', None):
+        return _use_permanent_boost_item(player, instance_id, type_def, result)
+
     from items.light import is_light_source, light_item
     if is_light_source(inst.type_id):
         return light_item(player, instance_id, game_state=game_state)
@@ -221,6 +224,34 @@ def _use_healing_potion(player, instance_id, type_def, result):
         result['message'] = (
             'You quaffed a Healing Potion, but you are already at full health.'
         )
+    return result
+
+
+def _use_permanent_boost_item(player, instance_id, type_def, result, rng=None):
+    """Consume an item that permanently raises attributes (rolled per use).
+
+    The gain is added to the stored attribute and not to
+    ``applied_attribute_bonus``, so it counts as base (permanent) and never
+    shows in the worn-gear ``(+n)`` figure.
+    """
+    from character_stats import attribute_label
+
+    gains = roll_boosts(type_def.permanent_boosts, rng=rng)
+    for key, amount in gains.items():
+        current = int(getattr(player, key, 1) or 0)
+        setattr(player, key, max(1, current + amount))
+    player.inventory.remove(instance_id)
+    name = type_def.name or type_def.id
+    parts = [f'{attribute_label(key)} +{amount}' for key, amount in gains.items()]
+    result['ok'] = True
+    result['consumed'] = True
+    result['effects'] = {'attribute_gain': dict(gains)}
+    if parts:
+        result['message'] = (
+            f'You consume the {name}. Permanent gain: {", ".join(parts)}.'
+        )
+    else:
+        result['message'] = f'You consume the {name}, but nothing happens.'
     return result
 
 

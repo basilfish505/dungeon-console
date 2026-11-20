@@ -424,6 +424,10 @@ def run_monster_round_for_level(
             game_state, level_number, monster, combat_system, now=now
         ):
             changed = True
+    # A level below its monster density may refill by one (see monster_respawn).
+    from monster_respawn import maybe_respawn_monster
+    if maybe_respawn_monster(game_state, level_number):
+        changed = True
     if broadcast and socketio is not None:
         game_state.broadcast_active_players(socketio)
     return changed

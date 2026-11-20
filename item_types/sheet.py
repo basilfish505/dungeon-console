@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from armour_types.traits import parse_other_ability
 from item_types.base import ItemTypeDef
 from item_types.registry import register_item_type
 
@@ -22,9 +23,14 @@ COLUMNS = [
     'image',
     'light_sight',
     'light_ticks',
+    'permanent_effect',
 ]
 
 HEADER_COMMENTS = {
+    'permanent_effect': (
+        'Consumable that permanently raises an attribute when used, e.g. '
+        '"str: 1-6" (random +1 to +6 each use) or "dex: 2". Blank = none.'
+    ),
     'item_id': 'Stable machine id, lowercase snake_case (e.g. healing_potion). Required.',
     'name': 'Display name shown to players. Required.',
     'description': 'Inspect / inventory flavor text.',
@@ -136,6 +142,9 @@ def row_to_typedef(row):
     item_id = _str_or_none(row.get('item_id'))
     if not item_id:
         return None
+    permanent_boosts, unrecognised = parse_other_ability(row.get('permanent_effect'))
+    for entry in unrecognised:
+        print(f'[item_types] {item_id}: ignoring unrecognised permanent_effect "{entry}"')
     return ItemTypeDef(
         item_id=item_id,
         name=_str_or_none(row.get('name')) or item_id,
@@ -144,6 +153,7 @@ def row_to_typedef(row):
         image=_str_or_none(row.get('image')),
         light_sight=_float_or_none(row.get('light_sight')),
         light_ticks=_int_or_none(row.get('light_ticks')),
+        permanent_boosts=permanent_boosts,
     )
 
 
@@ -273,6 +283,7 @@ def write_item_xlsx(path=None, extra_rows=None):
         'image': 22,
         'light_sight': 12,
         'light_ticks': 12,
+        'permanent_effect': 20,
     }
     for col_idx, header in enumerate(COLUMNS, 1):
         ws.column_dimensions[get_column_letter(col_idx)].width = widths.get(header, 12)
@@ -290,6 +301,7 @@ def write_item_xlsx(path=None, extra_rows=None):
         '2. Required: item_id. Also fill name, description, and price_pqg.',
         '3. Leave image blank to use /static/items/sprites/{item_id}.png',
         '4. Optional light_sight / light_ticks for dungeon light sources.',
+        '   Optional permanent_effect (e.g. str: 1-6) for stat-boosting consumables.',
         '5. Extra columns may be added later; the loader ignores unknown headers.',
         '6. Save this workbook, then restart the game to reload definitions.',
         '',
@@ -318,6 +330,10 @@ def write_item_xlsx(path=None, extra_rows=None):
         ('image', 'no', 'path/filename', 'Blank = default sprite path'),
         ('light_sight', 'no', 'float', 'Dungeon FOV while lit'),
         ('light_ticks', 'no', 'int', 'Fuel duration in turn ticks'),
+        (
+            'permanent_effect', 'no', 'attribute: low-high',
+            'Permanent attribute gain on use, rolled each time (e.g. str: 1-6)',
+        ),
     ]
     for row_idx, values in enumerate(fields, 2):
         for col_idx, value in enumerate(values, 1):

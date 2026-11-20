@@ -45,6 +45,32 @@ _EIGHT = tuple(
 )
 
 
+def build_spawn_monster(position, dungeon_level, monster_id=None, id_from_position=False):
+    """Create one spawned monster for a dungeon floor, ready to place.
+
+    Picks the type and level (Elo band, with the legacy weighted fallback),
+    rolls and wears its loot, then calibrates its Elo. The caller places it on
+    the map. ``id_from_position=True`` gives the original ``type-y,x`` id used
+    at level creation; otherwise ``monster_id`` (or a unique default) is used.
+    """
+    combatant = pick_spawn_combatant(dungeon_level)
+    if combatant is not None:
+        type_id, level = combatant
+    else:
+        type_id = pick_spawn_type_id()
+        type_def = get_monster_type(type_id)
+        level = assign_monster_level(type_def) if type_def else 1
+    if id_from_position and monster_id is None:
+        monster_id = f"{type_id}-{position[0]},{position[1]}"
+    monster = Monster.from_type(
+        type_id, list(position), monster_id=monster_id, level=level,
+    )
+    # Roll carried loot first so a worn ring's boost counts in Elo.
+    equip_spawn_loot(monster)
+    calibrate_instance_elo(monster)
+    return monster
+
+
 class MapGenerator:
     def __init__(self, map_size=MAP_SIZE):
         self.map_size = map_size
@@ -917,20 +943,9 @@ class MapGenerator:
         for i in range(h):
             for j in range(w):
                 if self.game_map[i][j] == '.' and random.random() < MONSTER_PROBABILITY:
-                    combatant = pick_spawn_combatant(dungeon_level)
-                    if combatant is not None:
-                        type_id, level = combatant
-                    else:
-                        type_id = pick_spawn_type_id()
-                        type_def = get_monster_type(type_id)
-                        level = assign_monster_level(type_def) if type_def else 1
-                    monster_id = f"{type_id}-{i},{j}"
-                    monster = Monster.from_type(
-                        type_id, [i, j], monster_id=monster_id, level=level,
+                    monster = build_spawn_monster(
+                        [i, j], dungeon_level, monster_id=None, id_from_position=True,
                     )
-                    # Roll carried loot first so a worn ring's boost counts in Elo.
-                    equip_spawn_loot(monster)
-                    calibrate_instance_elo(monster)
                     self.monsters[(i, j)] = monster
                     self.game_map[i][j] = '&'
 

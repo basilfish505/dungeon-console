@@ -13,8 +13,12 @@ class ItemTypeDef:
         image=None,
         light_sight=None,
         light_ticks=None,
+        permanent_boosts=None,
     ):
         self.id = str(item_id)
+        # Consumables that permanently raise an attribute: a list of
+        # armour_types.traits.AttributeBoost (the amount is rolled on use).
+        self.permanent_boosts = list(permanent_boosts or [])
         self.name = str(name) if name else self.id
         self.description = description if description else None
         try:
@@ -54,4 +58,6 @@ class ItemTypeDef:
             data['light_sight'] = self.light_sight
         if self.light_ticks is not None:
             data['light_ticks'] = self.light_ticks
+        if self.permanent_boosts:
+            data['permanent_boosts'] = [b.to_dict() for b in self.permanent_boosts]
         return data
