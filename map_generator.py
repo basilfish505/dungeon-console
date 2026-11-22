@@ -10,6 +10,7 @@ from monster_spawn import pick_spawn_combatant
 from interiors.items_shop import ITEMS_SHOP_ID, stamp_items_shop
 from interiors.weapon_shop import WEAPON_SHOP_ID, stamp_weapon_shop
 from interiors.armour_shop import ARMOUR_SHOP_ID, stamp_armour_shop
+from interiors.inn import INN_ID, stamp_inn
 from visibility import GRASS, IMPASSABLE_TERRAIN, OPEN_GROUND, TREE
 
 # Constants
@@ -126,6 +127,7 @@ class MapGenerator:
             (ITEMS_SHOP_ID, stamp_items_shop),
             (WEAPON_SHOP_ID, stamp_weapon_shop),
             (ARMOUR_SHOP_ID, stamp_armour_shop),
+            (INN_ID, stamp_inn),
         ):
             self.town_features[shop_id] = stamp_fn(self.game_map, rng=rng)
         # Link shop entrances first, then place stairs out in the clearing

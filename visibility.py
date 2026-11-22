@@ -19,7 +19,7 @@ WALL = 'W'
 OPEN_GROUND = frozenset({'.', GRASS})
 
 # Shop outdoor signs (wall tile beside each store door)
-SHOP_SIGN_GLYPHS = frozenset({'i', 'w', 'a'})
+SHOP_SIGN_GLYPHS = frozenset({'i', 'w', 'a', 'n'})
 
 PERMANENT_TERRAIN = frozenset(
     {'#', '.', GRASS, TREE, MOUNTAIN, WALL, '↓', '↑', '+', ',', '=', 'R', '$'} | SHOP_SIGN_GLYPHS

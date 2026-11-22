@@ -6,6 +6,9 @@ const InspectUI = (function () {
     let bodyEl = null;
     let open = false;
     let alertOpen = false;
+    let resting = false;
+    let restBusy = false;
+    let currentOfferId = null;
 
     function ensureEls() {
         if (overlayEl) {
@@ -39,7 +42,7 @@ const InspectUI = (function () {
     }
 
     function isOpen() {
-        return open || alertOpen;
+        return open || alertOpen || resting;
     }
 
     function escapeHtml(text) {
@@ -186,6 +189,69 @@ const InspectUI = (function () {
         });
     }
 
+    function emitInnStay(offerId) {
+        if (!offerId || !window.socket || restBusy) {
+            return;
+        }
+        restBusy = true;
+        if (bodyEl) {
+            bodyEl.querySelectorAll('.inspect-action-btn').forEach(function (btn) {
+                btn.disabled = true;
+            });
+        }
+        window.socket.emit('inn_stay', { offer_id: offerId });
+    }
+
+    function bindShopActions(container, data) {
+        if (!container) {
+            return;
+        }
+        const offerId = data && data.offer_id ? String(data.offer_id) : null;
+        currentOfferId = offerId;
+        container.querySelectorAll('.inspect-action-btn[data-action-id]').forEach(function (btn) {
+            btn.addEventListener('click', function (e) {
+                e.preventDefault();
+                e.stopPropagation();
+                const actionId = btn.getAttribute('data-action-id');
+                if (actionId === 'leave') {
+                    hide();
+                    return;
+                }
+                if (actionId === 'stay') {
+                    emitInnStay(offerId || currentOfferId);
+                }
+            });
+        });
+    }
+
+    function playRestFade() {
+        const fadeEl = document.getElementById('inn-fade');
+        if (!fadeEl) {
+            resting = false;
+            restBusy = false;
+            return;
+        }
+        resting = true;
+        fadeEl.hidden = false;
+        fadeEl.style.opacity = '0';
+        fadeEl.style.pointerEvents = 'auto';
+        // Force layout so the opacity transition from 0 actually runs.
+        void fadeEl.offsetWidth;
+        requestAnimationFrame(function () {
+            fadeEl.style.opacity = '1';
+            setTimeout(function () {
+                fadeEl.style.opacity = '0';
+                setTimeout(function () {
+                    fadeEl.hidden = true;
+                    fadeEl.style.pointerEvents = 'none';
+                    resting = false;
+                    restBusy = false;
+                    currentOfferId = null;
+                }, 500);
+            }, 500);
+        });
+    }
+
     function renderShop(data) {
         if (!data) {
             return '';
@@ -197,6 +263,17 @@ const InspectUI = (function () {
         const greeting = data.greeting || data.description;
         if (greeting) {
             html += `<p class="inspect-desc">${escapeHtml(greeting)}</p>`;
+        }
+        const actions = data.actions || [];
+        if (actions.length) {
+            html += '<div class="inspect-actions">';
+            actions.forEach(function (action) {
+                const id = action.id || '';
+                const label = action.label || id;
+                html += '<button type="button" class="inspect-action-btn" data-action-id="' +
+                    escapeHtml(id) + '">' + escapeHtml(label) + '</button>';
+            });
+            html += '</div>';
         }
         const wares = data.wares || [];
         if (wares.length) {
@@ -249,8 +326,12 @@ const InspectUI = (function () {
             titleEl.textContent = data.name || kind;
         }
         bodyEl.innerHTML = renderByKind(kind, data);
+        restBusy = false;
         if (kind === 'shop' || kind === 'npc') {
             bindShopBuyClicks(bodyEl);
+            bindShopActions(bodyEl, data);
+        } else {
+            currentOfferId = null;
         }
         overlayEl.hidden = false;
         overlayEl.setAttribute('aria-hidden', 'false');
@@ -267,6 +348,8 @@ const InspectUI = (function () {
         titleEl.textContent = '';
         titleEl.innerHTML = '';
         open = false;
+        currentOfferId = null;
+        restBusy = false;
     }
 
     let alertOverlayEl = null;
@@ -398,5 +481,5 @@ const InspectUI = (function () {
         alertOpen = false;
     }
 
-    return { show, hide, isOpen, showAlert, showConfirm, hideAlert };
+    return { show, hide, isOpen, showAlert, showConfirm, hideAlert, playRestFade };
 })();

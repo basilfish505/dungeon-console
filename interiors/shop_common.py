@@ -31,13 +31,15 @@ SHOP_DISPLAY_NAMES = {
     'items_shop': 'Items Shop',
     'weapon_shop': 'Weapon Shop',
     'armour_shop': 'Armour Shop',
+    'inn': 'Inn',
 }
 
-# Outdoor sign glyphs (one per shop) — sprites in static/tiles/*_shop_sign.png
+# Outdoor sign glyphs (one per shop) — sprites in static/tiles/*_shop_sign.png / inn_sign.png
 SHOP_SIGN_GLYPHS = {
     'items_shop': 'i',
     'weapon_shop': 'w',
     'armour_shop': 'a',
+    'inn': 'n',
 }
 SHOP_SIGN_GLYPH_SET = frozenset(SHOP_SIGN_GLYPHS.values())
 

@@ -12,6 +12,7 @@ from armour_types.sheet import load_armour_sheet, write_armour_xlsx
 from combat_damage import DEFAULT_WEAPON_BASE_DAMAGE, damage_between
 from dungeon_crawler import GameState
 from interiors.armour_shop import ARMOUR_SHOP_ID
+from interiors.inn import INN_ID
 from interiors.items_shop import ITEMS_SHOP_ID
 from interiors.weapon_shop import WEAPON_SHOP_ID
 from items.catalog import shop_catalog
@@ -88,18 +89,20 @@ class ShopCatalogTests(unittest.TestCase):
         self.assertIn(ITEMS_SHOP_ID, gen.town_features)
         self.assertIn(WEAPON_SHOP_ID, gen.town_features)
         self.assertIn(ARMOUR_SHOP_ID, gen.town_features)
+        self.assertIn(INN_ID, gen.town_features)
         doors = {
             tuple(gen.town_features[sid]['door'])
-            for sid in (ITEMS_SHOP_ID, WEAPON_SHOP_ID, ARMOUR_SHOP_ID)
+            for sid in (ITEMS_SHOP_ID, WEAPON_SHOP_ID, ARMOUR_SHOP_ID, INN_ID)
         }
-        self.assertEqual(len(doors), 3)
+        self.assertEqual(len(doors), 4)
 
     def test_game_state_registers_three_interiors(self):
         gs = GameState()
         self.assertIn(ITEMS_SHOP_ID, gs.interiors)
         self.assertIn(WEAPON_SHOP_ID, gs.interiors)
         self.assertIn(ARMOUR_SHOP_ID, gs.interiors)
-        self.assertEqual(len(gs.town_doors), 3)
+        self.assertIn(INN_ID, gs.interiors)
+        self.assertEqual(len(gs.town_doors), 4)
 
 
 class EquipTests(unittest.TestCase):

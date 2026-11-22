@@ -111,6 +111,7 @@ class WorldPersistence:
         gs.manual_pan = {}
         gs.stair_steps = {}
         gs.pending_inspect = {}
+        gs.inn_offers = {}
 
         town_features = meta.get('town_features') or {}
         gs.map_generator.town_features = town_features

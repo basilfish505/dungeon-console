@@ -144,7 +144,7 @@ const MovementController = (function () {
     function isSolidTerrain(ch) {
         // Match server IMPASSABLE_TERRAIN plus void.
         return ch === '#' || ch === ' ' || ch === 'R' || ch === '=' || ch === 'T' || ch === 'M' || ch === 'W'
-            || ch === 'i' || ch === 'w' || ch === 'a';
+            || ch === 'i' || ch === 'w' || ch === 'a' || ch === 'n';
     }
 
     function isOpenFloor(ch) {

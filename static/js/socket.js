@@ -254,6 +254,29 @@ const SocketHandler = (function () {
             }
         });
 
+        socket.on('inn_stay_result', function (data) {
+            if (!data || typeof InspectUI === 'undefined') {
+                return;
+            }
+            if (data.ok) {
+                if (InspectUI.hide) {
+                    InspectUI.hide();
+                }
+                if (InspectUI.playRestFade) {
+                    InspectUI.playRestFade();
+                }
+                return;
+            }
+            if (data.message) {
+                if (InspectUI.hide) {
+                    InspectUI.hide();
+                }
+                if (InspectUI.showAlert) {
+                    InspectUI.showAlert(data.message);
+                }
+            }
+        });
+
         socket.on('cast_spell_result', function (data) {
             if (!data) {
                 return;

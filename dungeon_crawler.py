@@ -79,12 +79,20 @@ from interiors.items_shop import (
 )
 from interiors.weapon_shop import WEAPON_SHOP_ID, build_weapon_shop
 from interiors.armour_shop import ARMOUR_SHOP_ID, build_armour_shop
+from interiors.inn import (
+    INN_ID,
+    STAY_ACTIONS,
+    build_inn,
+    open_stay_offer,
+    stay_at_inn,
+)
 from interiors.shop_common import shop_display_name
 
 SHOP_BUILDERS = {
     ITEMS_SHOP_ID: build_items_shop,
     WEAPON_SHOP_ID: build_weapon_shop,
     ARMOUR_SHOP_ID: build_armour_shop,
+    INN_ID: build_inn,
 }
 
 # Constants (map spawn rates live in map_generator.py)
@@ -150,6 +158,7 @@ class GameState:
         self.town_doors = {}  # (y, x) -> interior_id
         self.town_exits = {}  # interior_id -> [y, x] road tile
         self.pending_inspect = {}
+        self.inn_offers = {}
         if not skip_generate:
             self.generate_top_level()
 
@@ -759,7 +768,12 @@ class GameState:
             return
         if not hasattr(self, 'pending_inspect') or self.pending_inspect is None:
             self.pending_inspect = {}
-        self.pending_inspect[player_id] = npc.to_inspect_result()
+        result = npc.to_inspect_result()
+        if getattr(npc, 'shop_id', None) == INN_ID:
+            data = result.setdefault('data', {})
+            data['actions'] = [dict(action) for action in STAY_ACTIONS]
+            data['offer_id'] = open_stay_offer(self, player_id)
+        self.pending_inspect[player_id] = result
 
     def _find_free_arrival(self, game_map, preferred, monsters, npcs, players, exclude_player_id):
         if game_map is None or preferred is None:
@@ -1848,6 +1862,40 @@ def handle_buy_item(data):
         'price_pqg': result.get('price_pqg', 0),
         'pqg': result.get('pqg', int(getattr(player, 'pqg', 0) or 0)),
     })
+
+
+@socketio.on('inn_stay')
+def handle_inn_stay(data):
+    """Pay 5 PQG at the inn to restore HP and MP for the night."""
+    player_id = session.get('player_id')
+    if not player_id:
+        emit('inn_stay_result', {'ok': False, 'message': 'Not logged in.'})
+        return
+    player = game_state.players.get(player_id)
+    if not player:
+        emit('inn_stay_result', {'ok': False, 'message': 'Not logged in.'})
+        return
+
+    data = data or {}
+    result = stay_at_inn(game_state, player, data.get('offer_id'))
+    if result.get('ok'):
+        if result.get('message'):
+            game_state.add_player_message(player_id, result['message'])
+        save_player(player)
+        world_persistence.save_character(player_id)
+        game_state.mark_character_dirty(player_id)
+    emit('game_state', game_state.get_game_state(player_id), room=player_id)
+    emit('inn_stay_result', {
+        'ok': bool(result.get('ok')),
+        'message': result.get('message'),
+        'charged': bool(result.get('charged')),
+        'pqg': int(getattr(player, 'pqg', 0) or 0),
+        'hp': int(getattr(player, 'hp', 0) or 0),
+        'mhp': int(getattr(player, 'mhp', 0) or 0),
+        'mp': int(getattr(player, 'mp', 0) or 0),
+        'mmp': int(getattr(player, 'mmp', 0) or 0),
+    })
+
 
 
 @socketio.on('loot_decision')

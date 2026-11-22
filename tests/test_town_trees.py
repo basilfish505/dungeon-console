@@ -33,7 +33,7 @@ class TownGrassTreeTests(unittest.TestCase):
         self.assertIn(GRASS, cells)
         self.assertNotIn('.', cells)
         self.assertTrue(all(
-            cell in OPEN_GROUND | {'#', MOUNTAIN, WALL, 'R', '+', ',', '↓', TREE, 'i', 'w', 'a'}
+            cell in OPEN_GROUND | {'#', MOUNTAIN, WALL, 'R', '+', ',', '↓', TREE, 'i', 'w', 'a', 'n'}
             for cell in cells
         ))
 
