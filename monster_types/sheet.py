@@ -45,6 +45,7 @@ COLUMNS = [
     'portrait',
     'spawn_weight',
     'spawn_notes',
+    'weapon',
 ]
 
 HEADER_COMMENTS = {
@@ -70,7 +71,10 @@ HEADER_COMMENTS = {
     'speed': '0-10. 0 never acts; any value above 0 gets one step per world round.',
     'activeness': '0-10. Chance to stay still when idle/neutral = 1 - activeness/10.',
     'sight_range': 'Chebyshev vision distance in tiles. Default 20.',
-    'ability_ids': 'Comma-separated ability ids, or blank. Combat hooks not implemented yet.',
+    'ability_ids': (
+        'Comma-separated ability_id values from abilities.xlsx, or blank. '
+        'An ability only acts in combat once its effect handler is implemented in code.'
+    ),
     'spells': (
         'Comma-separated spell ids from spell_types (e.g. magic_bolt), or blank. '
         'Monsters cast known spells in combat when they have enough MP.'
@@ -92,6 +96,12 @@ HEADER_COMMENTS = {
     'portrait': 'Leave blank for /static/monsters/portraits/{type_id}.png',
     'spawn_weight': 'Relative chance to appear when a monster spawns. 0 = never random-spawn.',
     'spawn_notes': 'Design notes only; not loaded into the game.',
+    'weapon': (
+        'Weapon the monster fights with. A weapon_id from weapon_types.xlsx '
+        '(e.g. short_sword) is always wielded, independent of loot. '
+        'unarmed = bare hands even if it carries (and drops) a weapon. '
+        'Blank = legacy: wields the first weapon in its rolled loot.'
+    ),
 }
 
 TROLL_EXAMPLE = {
@@ -206,6 +216,7 @@ def row_to_typedef(row):
         sprite=_str_or_none(row.get('sprite')),
         portrait=_str_or_none(row.get('portrait')),
         spawn_weight=_float(row.get('spawn_weight'), 1),
+        weapon_id=_str_or_none(row.get('weapon')),
     )
 
 
@@ -268,7 +279,10 @@ def load_default_monster_sheet():
         )
         return []
     try:
-        return load_monster_sheet(DEFAULT_XLSX_PATH)
+        types = load_monster_sheet(DEFAULT_XLSX_PATH)
+        from monster_types.references import report_reference_errors
+        report_reference_errors(DEFAULT_XLSX_PATH)
+        return types
     except ImportError as exc:
         print(
             f'[monster_types] cannot load {DEFAULT_XLSX_PATH}: {exc}. '
@@ -355,6 +369,7 @@ def write_monster_xlsx(path=None, extra_rows=None):
         'sight_range': 13,
         'activeness': 12,
         'aggression': 12,
+        'weapon': 16,
     }
     for col_idx, header in enumerate(COLUMNS, 1):
         ws.column_dimensions[get_column_letter(col_idx)].width = widths.get(header, 10)
@@ -374,12 +389,15 @@ def write_monster_xlsx(path=None, extra_rows=None):
         '2. Required: type_id. Also fill name, description, the six attributes, base_mhp, and armour.',
         '3. armour: damage divisor (1 = full damage taken, 2 = half, etc.). Blank defaults to 1.',
         '4. Leave sprite/portrait blank to use default paths under static/monsters/.',
-        '5. ability_ids: comma-separated list or blank. Abilities are data-only until combat hooks exist.',
+        '5. ability_ids: comma-separated ability_id values from abilities.xlsx, or blank. '
+        'An ability only acts in combat once its effect handler is implemented in code.',
         '6. spawn_weight: relative chance to appear. 0 means the species is registered but never random-spawned.',
         '7. max_level / level_scaling: dungeon spawns pick a random level 1..max_level; '
         f'bonus attribute points = (level - 1) * level_scaling (defaults {DEFAULT_MAX_LEVEL} / {DEFAULT_LEVEL_SCALING}).',
         '8. spawn_notes is for your own comments and is not loaded.',
         '9. Save this workbook, then restart the game. All rows with a type_id are imported together.',
+        '10. weapon: a weapon_id from weapon_types.xlsx is always wielded; unarmed = bare hands '
+        '(loot weapons are still dropped); blank = wield the first weapon in the rolled loot.',
         '',
         'AI field quick guide',
         'aggression 0-10: low flees, ~5 wanders, high chases.',
@@ -420,7 +438,9 @@ def write_monster_xlsx(path=None, extra_rows=None):
         ('speed', 'no', '0-10 float', 'Default 10. Only 0 vs >0 matters today'),
         ('activeness', 'no', '0-10 float', 'Default 5'),
         ('sight_range', 'no', 'int', 'Default 20'),
-        ('ability_ids', 'no', 'csv string', 'Blank = none'),
+        ('ability_ids', 'no', 'csv string', 'ability_id values from abilities.xlsx. Blank = none'),
+        ('spells', 'no', 'csv string', 'spell_id values from spell_types.xlsx (needs base_mmp). Blank = none'),
+        ('weapon', 'no', 'weapon_id / unarmed', 'Blank = wield first carried loot weapon (legacy)'),
         ('loot_chance', 'no', '0-100 percent', 'Chance each listed item is carried by a spawn. 100 = always. Blank = 50'),
         ('loot', 'no', 'csv string', 'Item/weapon/armour ids a monster may carry and drop (each rolled separately). Blank = none'),
         ('sprite', 'no', 'url path', 'Blank = /static/monsters/sprites/{type_id}.png'),

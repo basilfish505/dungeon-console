@@ -102,6 +102,7 @@ class WorldStore(ABC):
         data: dict,
         status: str = 'alive',
         death: dict | None = None,
+        account_id: str | None = None,
     ) -> bool:
         """
         Atomically insert a new character.
@@ -121,14 +122,63 @@ class WorldStore(ABC):
         death: dict | None = None,
         name_key: str | None = None,
         password_hash: str | None = None,
+        account_id: str | None = None,
     ) -> None:
         """
         Upsert character row.
 
-        When name_key or password_hash is None, preserve the existing column
-        value so routine autosaves never clobber credentials.
+        When name_key, password_hash, or account_id is None, preserve the
+        existing column value so routine autosaves never clobber credentials
+        or the durable account link.
         """
 
     @abstractmethod
     def delete_character(self, world_id: str, player_id: str) -> None:
         """Remove character row (rare; tombstones use status=dead)."""
+
+    # ---------------------------------------------------------------- PQG
+
+    @abstractmethod
+    def create_account(self, account_id: str) -> bool:
+        """Insert account if missing. Returns True when a new row was created."""
+
+    @abstractmethod
+    def ensure_pqg_balance(self, account_id: str) -> None:
+        """Ensure a zero balance row exists for the account."""
+
+    @abstractmethod
+    def get_pqg_balance(self, account_id: str) -> int:
+        """Return the cached PQG balance (0 if missing)."""
+
+    @abstractmethod
+    def sum_pqg_ledger(self, account_id: str) -> int:
+        """SUM(amount) for committed ledger rows for this account."""
+
+    @abstractmethod
+    def apply_pqg_ledger_entry(
+        self,
+        *,
+        event_id: str,
+        account_id: str,
+        amount: int,
+        entry_type: str,
+        source: str,
+        idempotency_key: str,
+        source_instance_id: str | None = None,
+        world_id: str | None = None,
+        character_id: str | None = None,
+        dungeon_level: int | None = None,
+        monster_type_id: str | None = None,
+        monster_elo: float | None = None,
+        chest_slot_id: str | None = None,
+        metadata: dict | None = None,
+        status: str = 'committed',
+    ) -> dict:
+        """
+        Insert one ledger row and update the cached balance in one transaction.
+
+        Returns ``{already_applied, balance, event_id}``.
+        Raises ``InsufficientPqgError`` when the debit would go negative.
+        On duplicate ``idempotency_key``, returns ``already_applied=True``
+        without changing the balance.
+        """

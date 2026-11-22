@@ -27,6 +27,7 @@ def player_to_save_dict(player):
     inv = getattr(player, 'inventory', None)
     return {
         'player_id': getattr(player, 'id', None),
+        'account_id': getattr(player, 'account_id', None),
         'pqg': int(getattr(player, 'pqg', 0) or 0),
         'level': int(getattr(player, 'level', 1) or 1),
         'total_xp': int(getattr(player, 'total_xp', 0) or 0),
@@ -78,6 +79,8 @@ def player_to_save_dict(player):
 def apply_save_dict(player, data):
     if player is None or not isinstance(data, dict):
         return False
+    if data.get('account_id'):
+        player.account_id = str(data.get('account_id'))
     for key in (
         'pqg', 'level', 'total_xp', 'elo',
         'str', 'int', 'wis', 'chr', 'dex', 'agi', 'acc',

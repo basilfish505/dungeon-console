@@ -133,10 +133,10 @@ class Monster:
         abilities = []
         for aid in self.ability_ids:
             ability = get_ability(aid)
-            if ability is not None:
-                abilities.append({'id': ability.id, 'name': ability.name})
-            else:
-                abilities.append({'id': str(aid), 'name': str(aid)})
+            if ability is None:
+                continue
+            name = ability.name if ability.functional else f'{ability.name} (inactive)'
+            abilities.append({'id': ability.id, 'name': name, 'functional': ability.functional})
         spells = []
         for sid in getattr(self, 'known_spells', None) or []:
             from spell_types.registry import get_spell_type
@@ -161,7 +161,15 @@ class Monster:
         mean_damage = max(1, int(weapon_base) + strength)
         equipment = []
         from items.catalog import resolve_loot_type
-        from monster_loot import clean_carried_loots, describe_loot
+        from monster_loot import clean_carried_loots, describe_loot, species_weapon_def
+        wielded = species_weapon_def(self)
+        if wielded is not None:
+            equipment.append({
+                'type_id': wielded.id,
+                'name': wielded.name,
+                'label': f'{wielded.name} (wielded)',
+                'boosts': {},
+            })
         for entry in clean_carried_loots(getattr(self, 'carried_loot', None)):
             resolved = resolve_loot_type(entry['type_id'])
             if resolved:

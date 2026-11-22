@@ -20,7 +20,9 @@ from armour_types.traits import boosted_name, clean_rolled_boosts, roll_boosts
 from character_stats import ATTRIBUTE_KEYS
 from items.catalog import CATEGORY_ARMOUR, CATEGORY_WEAPON, resolve_loot_type
 from items.equipment import UNARMED_CONSISTENCY_FACTOR, UNARMED_WEAPON_BASE_DAMAGE
+from monster_types.base import UNARMED_WEAPON_CHOICE
 from monster_types.registry import get_monster_type
+from weapon_types.registry import get_weapon_type
 
 # Chance (0..1) that a listed item is carried when the sheet's loot_chance is blank.
 DEFAULT_LOOT_DROP_CHANCE = 0.5
@@ -108,30 +110,54 @@ def apply_loot_armour(monster, armour_def):
         monster.armour = max(current, value)
 
 
-def monster_weapon_stats(monster):
-    """(base_damage, consistency_factor) from the weapon a monster carries.
+def species_weapon_def(monster):
+    """The weapon_types definition named in the species' ``weapon`` column, or None.
 
-    The first carried weapon is wielded; with none the monster fights
-    unarmed, exactly as before.
+    None for blank (legacy), ``unarmed``, and ids that are not registered
+    (those are reported when the sheet loads).
     """
+    type_def = get_monster_type(getattr(monster, 'type_id', None))
+    weapon_id = getattr(type_def, 'weapon_id', None)
+    if not weapon_id or weapon_id == UNARMED_WEAPON_CHOICE:
+        return None
+    return get_weapon_type(weapon_id)
+
+
+def _weapon_def_stats(weapon_def):
+    try:
+        base = int(weapon_def.base_damage)
+    except (TypeError, ValueError):
+        base = UNARMED_WEAPON_BASE_DAMAGE
+    try:
+        consistency = float(weapon_def.consistency_factor)
+    except (TypeError, ValueError):
+        consistency = UNARMED_CONSISTENCY_FACTOR
+    if consistency <= 0:
+        consistency = UNARMED_CONSISTENCY_FACTOR
+    return base, consistency
+
+
+def monster_weapon_stats(monster):
+    """(base_damage, consistency_factor) of the weapon a monster fights with.
+
+    The species ``weapon`` column decides: a weapon id is always wielded,
+    ``unarmed`` always fights bare-handed (carried weapons are only dropped),
+    and blank keeps the legacy rule of wielding the first carried weapon.
+    """
+    type_def = get_monster_type(getattr(monster, 'type_id', None))
+    weapon_id = getattr(type_def, 'weapon_id', None)
+    if weapon_id == UNARMED_WEAPON_CHOICE:
+        return UNARMED_WEAPON_BASE_DAMAGE, UNARMED_CONSISTENCY_FACTOR
+    weapon_def = species_weapon_def(monster)
+    if weapon_def is not None:
+        return _weapon_def_stats(weapon_def)
     for entry in clean_carried_loots(getattr(monster, 'carried_loot', None)):
         if entry['category'] != CATEGORY_WEAPON:
             continue
         resolved = resolve_loot_type(entry['type_id'])
         if resolved is None:
             continue
-        weapon_def = resolved[1]
-        try:
-            base = int(weapon_def.base_damage)
-        except (TypeError, ValueError):
-            base = UNARMED_WEAPON_BASE_DAMAGE
-        try:
-            consistency = float(weapon_def.consistency_factor)
-        except (TypeError, ValueError):
-            consistency = UNARMED_CONSISTENCY_FACTOR
-        if consistency <= 0:
-            consistency = UNARMED_CONSISTENCY_FACTOR
-        return base, consistency
+        return _weapon_def_stats(resolved[1])
     return UNARMED_WEAPON_BASE_DAMAGE, UNARMED_CONSISTENCY_FACTOR
 
 def apply_loot_boosts(monster, boosts):

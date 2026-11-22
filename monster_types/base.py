@@ -7,6 +7,10 @@ from monster_types.leveling import (
     generate_leveled_stats,
 )
 
+# Sheet value for the weapon column meaning "fights bare-handed even when
+# carrying a weapon" (blank keeps the legacy loot-based behaviour).
+UNARMED_WEAPON_CHOICE = 'unarmed'
+
 
 def apply_level(base_attributes, base_mhp, level, level_scaling=None, rng=None):
     """
@@ -54,9 +58,16 @@ class MonsterTypeDef:
         spawn_weight=1,
         level_scaling=None,
         max_level=None,
+        weapon_id=None,
     ):
         self.id = str(type_id)
         self.name = str(name)
+        # None = legacy (wield the first carried weapon), UNARMED_WEAPON_CHOICE
+        # = always bare hands, otherwise a weapon_types id wielded regardless of loot.
+        weapon = str(weapon_id).strip() if weapon_id else ''
+        if weapon.lower() == UNARMED_WEAPON_CHOICE:
+            weapon = UNARMED_WEAPON_CHOICE
+        self.weapon_id = weapon or None
         self.base_level = max(1, int(base_level))
         self.base_attributes = attrs_from_mapping(base_attributes)
         self.base_mhp = max(1, int(base_mhp))

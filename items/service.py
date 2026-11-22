@@ -64,12 +64,24 @@ def shop_starter_wares():
     return shop_catalog(SHOP_ITEMS)
 
 
-def purchase_item(player, item_id, *, shop_id=None):
+def purchase_item(player, item_id, *, shop_id=None, game_state=None):
     """
     Buy one catalog item for its price_pqg from the given shop.
 
+    Deducts PQG via the durable ledger when a world store is available.
     Returns dict: {ok, message, item_id, price_pqg, pqg}.
     """
+    import uuid
+
+    from pqg_economy import (
+        ENTRY_ADJUSTMENT,
+        SOURCE_SHOP_PURCHASE,
+        attach_account_to_player,
+        credit,
+        debit,
+        sync_player_pqg,
+    )
+
     result = {
         'ok': False,
         'message': 'Cannot buy that item.',
@@ -106,6 +118,10 @@ def purchase_item(player, item_id, *, shop_id=None):
     except (TypeError, ValueError):
         price = 0
 
+    store = _pqg_store(game_state)
+    if store is not None and getattr(player, 'account_id', None):
+        sync_player_pqg(player, store)
+
     try:
         purse = int(getattr(player, 'pqg', 0) or 0)
     except (TypeError, ValueError):
@@ -122,12 +138,53 @@ def purchase_item(player, item_id, *, shop_id=None):
         result['message'] = 'Your pack is full.'
         return result
 
-    player.pqg = purse - price
+    purchase_key = f'shop:{getattr(player, "id", "player")}:{uuid.uuid4().hex}'
+    if store is not None:
+        account_id = attach_account_to_player(store, player, starting_grant=False)
+        world_id = None
+        wp = getattr(game_state, 'world_persistence', None) if game_state else None
+        if wp is not None:
+            world_id = getattr(wp, 'world_id', None)
+        spend = debit(
+            store,
+            account_id,
+            price,
+            source=SOURCE_SHOP_PURCHASE,
+            idempotency_key=purchase_key,
+            source_instance_id=purchase_key,
+            world_id=world_id,
+            character_id=getattr(player, 'id', None),
+            metadata={'item_id': item_id, 'shop_id': sid},
+            player=player,
+        )
+        if not spend.get('ok'):
+            result['message'] = (
+                spend.get('message') or f'You cannot afford the {name}.'
+            )
+            result['pqg'] = int(getattr(player, 'pqg', 0) or 0)
+            return result
+    else:
+        player.pqg = purse - price
+
     inst = add_item_to_inventory(player, item_id, quantity=1, category=category)
     if inst is None:
-        player.pqg = purse
+        if store is not None:
+            credit(
+                store,
+                getattr(player, 'account_id', None),
+                price,
+                source=SOURCE_SHOP_PURCHASE,
+                entry_type=ENTRY_ADJUSTMENT,
+                idempotency_key=f'{purchase_key}:refund',
+                source_instance_id=purchase_key,
+                character_id=getattr(player, 'id', None),
+                metadata={'reason': 'pack_full_refund', 'item_id': item_id},
+                player=player,
+            )
+        else:
+            player.pqg = purse
         result['message'] = 'Your pack is full.'
-        result['pqg'] = purse
+        result['pqg'] = int(getattr(player, 'pqg', 0) or 0)
         return result
 
     result['ok'] = True
@@ -135,6 +192,11 @@ def purchase_item(player, item_id, *, shop_id=None):
     bought = boosted_name(name, (getattr(inst, 'extras', None) or {}).get('boosts'))
     result['message'] = f'You buy the {bought} for {price} PQG.'
     return result
+
+
+def _pqg_store(game_state):
+    wp = getattr(game_state, 'world_persistence', None) if game_state else None
+    return getattr(wp, 'store', None) if wp is not None else None
 
 
 def grant_starter_kit(player):

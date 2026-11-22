@@ -166,6 +166,13 @@ class EqualSplitRewardPolicy:
         base_xp, rem_xp = divmod(total_xp, n)
         base_pqg, rem_pqg = divmod(total_pqg, n)
 
+        # Flatten kill_records so each kill can be split across allies with
+        # per-share ledger keys (kill:{id}:share:{player_id}).
+        all_records = []
+        for bucket in buckets.values():
+            for record in list(bucket.get('kill_records') or []):
+                all_records.append(dict(record))
+
         out = {}
         for i, pid in enumerate(player_ids):
             original = buckets.get(pid) or buckets.get(str(pid)) or {}
@@ -178,7 +185,17 @@ class EqualSplitRewardPolicy:
                 'loot': list(original.get('loot') or []),
                 # Shared kill total for messaging; kept as total across alliance.
                 'alliance_kills': total_kills,
+                'kill_records': [],
             }
+
+        for record in all_records:
+            kill_pqg = int(record.get('pqg', 0) or 0)
+            share_base, rem_share = divmod(kill_pqg, n) if n else (0, 0)
+            for i, pid in enumerate(player_ids):
+                share = share_base + (1 if i < rem_share else 0)
+                shared = dict(record)
+                shared['pqg'] = share
+                out[pid]['kill_records'].append(shared)
         return out
 
 

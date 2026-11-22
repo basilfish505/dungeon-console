@@ -1,7 +1,7 @@
 """Re-read every spreadsheet definition into its live registry.
 
 The game loads monster_types.xlsx, spell_types.xlsx, item_types.xlsx,
-weapon_types.xlsx and armour_types.xlsx once at import. Starting a new world
+weapon_types.xlsx, armour_types.xlsx and abilities.xlsx once at import. Starting a new world
 calls reload_all_sheets() so balance edits apply without restarting the server.
 
 Each sheet is parsed completely before its registry is touched, so a missing,
@@ -39,7 +39,12 @@ def reload_sheet(label, sheet_module, register):
 
 
 def reload_all_sheets():
-    """Reload all five sheets. Returns {label: count or None}."""
+    """Reload every sheet, then report broken monster references.
+
+    Returns {label: count or None}.
+    """
+    from abilities import sheet as ability_sheet
+    from abilities.registry import register_ability
     from armour_types import sheet as armour_sheet
     from armour_types.registry import register_armour_type
     from item_types import sheet as item_sheet
@@ -57,8 +62,12 @@ def reload_all_sheets():
         ('item_types', item_sheet, register_item_type),
         ('weapon_types', weapon_sheet, register_weapon_type),
         ('armour_types', armour_sheet, register_armour_type),
+        ('abilities', ability_sheet, register_ability),
     )
-    return {
+    result = {
         label: reload_sheet(label, module, register)
         for label, module, register in sheets
     }
+    from monster_types.references import report_reference_errors
+    report_reference_errors(monster_sheet.DEFAULT_XLSX_PATH)
+    return result

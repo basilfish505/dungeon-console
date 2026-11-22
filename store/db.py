@@ -158,7 +158,8 @@ class PostgresWorldStore(WorldStore):
                 if status is None:
                     cur.execute(
                         '''
-                        SELECT player_id, data, status, death, name_key, password_hash
+                        SELECT player_id, data, status, death, name_key,
+                               password_hash, account_id
                         FROM characters WHERE world_id = %s
                         ''',
                         (world_id,),
@@ -166,7 +167,8 @@ class PostgresWorldStore(WorldStore):
                 else:
                     cur.execute(
                         '''
-                        SELECT player_id, data, status, death, name_key, password_hash
+                        SELECT player_id, data, status, death, name_key,
+                               password_hash, account_id
                         FROM characters WHERE world_id = %s AND status = %s
                         ''',
                         (world_id, status),
@@ -178,6 +180,7 @@ class PostgresWorldStore(WorldStore):
                         'death': row['death'],
                         'name_key': row.get('name_key'),
                         'password_hash': row.get('password_hash'),
+                        'account_id': row.get('account_id'),
                     }
             return out
         return self._run(_query)
@@ -189,7 +192,8 @@ class PostgresWorldStore(WorldStore):
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
                 cur.execute(
                     '''
-                    SELECT player_id, data, status, death, name_key, password_hash
+                    SELECT player_id, data, status, death, name_key,
+                           password_hash, account_id
                     FROM characters
                     WHERE world_id = %s AND player_id = %s
                     ''',
@@ -205,6 +209,7 @@ class PostgresWorldStore(WorldStore):
                     'death': row['death'],
                     'name_key': row.get('name_key'),
                     'password_hash': row.get('password_hash'),
+                    'account_id': row.get('account_id'),
                 }
         return self._run(_query)
 
@@ -215,7 +220,8 @@ class PostgresWorldStore(WorldStore):
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
                 cur.execute(
                     '''
-                    SELECT player_id, data, status, death, name_key, password_hash
+                    SELECT player_id, data, status, death, name_key,
+                           password_hash, account_id
                     FROM characters
                     WHERE world_id = %s AND name_key = %s
                     LIMIT 1
@@ -232,6 +238,7 @@ class PostgresWorldStore(WorldStore):
                     'death': row['death'],
                     'name_key': row.get('name_key'),
                     'password_hash': row.get('password_hash'),
+                    'account_id': row.get('account_id'),
                 }
         return self._run(_query)
 
@@ -354,6 +361,7 @@ class PostgresWorldStore(WorldStore):
         data: dict,
         status: str = 'alive',
         death: dict | None = None,
+        account_id: str | None = None,
     ) -> bool:
         def _insert(conn):
             with conn.cursor() as cur:
@@ -362,8 +370,8 @@ class PostgresWorldStore(WorldStore):
                     '''
                     INSERT INTO characters
                         (world_id, player_id, data, status, death,
-                         name_key, password_hash, updated_at)
-                    VALUES (%s, %s, %s::jsonb, %s, %s::jsonb, %s, %s, NOW())
+                         name_key, password_hash, account_id, updated_at)
+                    VALUES (%s, %s, %s::jsonb, %s, %s::jsonb, %s, %s, %s, NOW())
                     ON CONFLICT DO NOTHING
                     ''',
                     (
@@ -374,6 +382,7 @@ class PostgresWorldStore(WorldStore):
                         json.dumps(death) if death is not None else None,
                         name_key,
                         password_hash,
+                        account_id,
                     ),
                 )
                 return cur.rowcount == 1
@@ -389,6 +398,7 @@ class PostgresWorldStore(WorldStore):
         death: dict | None = None,
         name_key: str | None = None,
         password_hash: str | None = None,
+        account_id: str | None = None,
     ) -> None:
         def _save(conn):
             with conn.cursor() as cur:
@@ -396,8 +406,8 @@ class PostgresWorldStore(WorldStore):
                     '''
                     INSERT INTO characters
                         (world_id, player_id, data, status, death,
-                         name_key, password_hash, updated_at)
-                    VALUES (%s, %s, %s::jsonb, %s, %s::jsonb, %s, %s, NOW())
+                         name_key, password_hash, account_id, updated_at)
+                    VALUES (%s, %s, %s::jsonb, %s, %s::jsonb, %s, %s, %s, NOW())
                     ON CONFLICT (world_id, player_id) DO UPDATE SET
                         data = EXCLUDED.data,
                         status = EXCLUDED.status,
@@ -405,6 +415,9 @@ class PostgresWorldStore(WorldStore):
                         name_key = COALESCE(EXCLUDED.name_key, characters.name_key),
                         password_hash = COALESCE(
                             EXCLUDED.password_hash, characters.password_hash
+                        ),
+                        account_id = COALESCE(
+                            EXCLUDED.account_id, characters.account_id
                         ),
                         updated_at = NOW()
                     ''',
@@ -416,6 +429,7 @@ class PostgresWorldStore(WorldStore):
                         json.dumps(death) if death is not None else None,
                         name_key,
                         password_hash,
+                        account_id,
                     ),
                 )
         self._run(_save)
@@ -428,3 +442,181 @@ class PostgresWorldStore(WorldStore):
                     (world_id, player_id),
                 )
         self._run(_delete)
+
+    def create_account(self, account_id: str) -> bool:
+        def _insert(conn):
+            with conn.cursor() as cur:
+                cur.execute(
+                    '''
+                    INSERT INTO accounts (account_id)
+                    VALUES (%s)
+                    ON CONFLICT (account_id) DO NOTHING
+                    ''',
+                    (account_id,),
+                )
+                return cur.rowcount == 1
+        return self._run(_insert)
+
+    def ensure_pqg_balance(self, account_id: str) -> None:
+        def _ensure(conn):
+            with conn.cursor() as cur:
+                cur.execute(
+                    '''
+                    INSERT INTO pqg_balances (account_id, balance)
+                    VALUES (%s, 0)
+                    ON CONFLICT (account_id) DO NOTHING
+                    ''',
+                    (account_id,),
+                )
+        self._run(_ensure)
+
+    def get_pqg_balance(self, account_id: str) -> int:
+        def _query(conn):
+            with conn.cursor() as cur:
+                cur.execute(
+                    'SELECT balance FROM pqg_balances WHERE account_id = %s',
+                    (account_id,),
+                )
+                row = cur.fetchone()
+                if not row:
+                    return 0
+                return int(row[0] or 0)
+        return self._run(_query)
+
+    def sum_pqg_ledger(self, account_id: str) -> int:
+        def _query(conn):
+            with conn.cursor() as cur:
+                cur.execute(
+                    '''
+                    SELECT COALESCE(SUM(amount), 0)
+                    FROM pqg_ledger
+                    WHERE account_id = %s AND status = 'committed'
+                    ''',
+                    (account_id,),
+                )
+                row = cur.fetchone()
+                return int(row[0] or 0) if row else 0
+        return self._run(_query)
+
+    def apply_pqg_ledger_entry(
+        self,
+        *,
+        event_id: str,
+        account_id: str,
+        amount: int,
+        entry_type: str,
+        source: str,
+        idempotency_key: str,
+        source_instance_id: str | None = None,
+        world_id: str | None = None,
+        character_id: str | None = None,
+        dungeon_level: int | None = None,
+        monster_type_id: str | None = None,
+        monster_elo: float | None = None,
+        chest_slot_id: str | None = None,
+        metadata: dict | None = None,
+        status: str = 'committed',
+    ) -> dict:
+        from pqg_economy import InsufficientPqgError
+
+        def _apply(conn):
+            with conn.cursor() as cur:
+                # Ensure parent rows exist inside this transaction.
+                cur.execute(
+                    '''
+                    INSERT INTO accounts (account_id)
+                    VALUES (%s)
+                    ON CONFLICT (account_id) DO NOTHING
+                    ''',
+                    (account_id,),
+                )
+                cur.execute(
+                    '''
+                    INSERT INTO pqg_balances (account_id, balance)
+                    VALUES (%s, 0)
+                    ON CONFLICT (account_id) DO NOTHING
+                    ''',
+                    (account_id,),
+                )
+                cur.execute(
+                    '''
+                    SELECT event_id FROM pqg_ledger
+                    WHERE idempotency_key = %s
+                    ''',
+                    (idempotency_key,),
+                )
+                existing = cur.fetchone()
+                if existing:
+                    cur.execute(
+                        'SELECT balance FROM pqg_balances WHERE account_id = %s',
+                        (account_id,),
+                    )
+                    bal_row = cur.fetchone()
+                    return {
+                        'already_applied': True,
+                        'balance': int(bal_row[0] or 0) if bal_row else 0,
+                        'event_id': existing[0],
+                    }
+
+                cur.execute(
+                    '''
+                    SELECT balance FROM pqg_balances
+                    WHERE account_id = %s
+                    FOR UPDATE
+                    ''',
+                    (account_id,),
+                )
+                bal_row = cur.fetchone()
+                if not bal_row:
+                    raise InsufficientPqgError('Account balance missing.')
+                new_balance = int(bal_row[0] or 0) + int(amount)
+                if new_balance < 0:
+                    raise InsufficientPqgError('Insufficient PQG.')
+                cur.execute(
+                    '''
+                    UPDATE pqg_balances
+                    SET balance = %s, updated_at = NOW()
+                    WHERE account_id = %s
+                    ''',
+                    (new_balance, account_id),
+                )
+
+                cur.execute(
+                    '''
+                    INSERT INTO pqg_ledger (
+                        event_id, account_id, amount, entry_type, source,
+                        source_instance_id, world_id, character_id, dungeon_level,
+                        monster_type_id, monster_elo, chest_slot_id,
+                        idempotency_key, balance_after, status, metadata
+                    ) VALUES (
+                        %s, %s, %s, %s, %s,
+                        %s, %s, %s, %s,
+                        %s, %s, %s,
+                        %s, %s, %s, %s::jsonb
+                    )
+                    ''',
+                    (
+                        event_id,
+                        account_id,
+                        int(amount),
+                        entry_type,
+                        source,
+                        source_instance_id,
+                        world_id,
+                        character_id,
+                        dungeon_level,
+                        monster_type_id,
+                        monster_elo,
+                        chest_slot_id,
+                        idempotency_key,
+                        new_balance,
+                        status,
+                        json.dumps(metadata or {}),
+                    ),
+                )
+                return {
+                    'already_applied': False,
+                    'balance': new_balance,
+                    'event_id': event_id,
+                }
+        return self._run(_apply)

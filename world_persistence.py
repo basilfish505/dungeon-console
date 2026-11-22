@@ -8,6 +8,11 @@ import signal
 import uuid
 
 from character_auth import hash_password, name_key, normalize_name
+from pqg_economy import (
+    attach_account_to_player,
+    migrate_world_characters,
+    sync_player_pqg,
+)
 from store import get_world_store
 from treasure_chests import restore_slots as restore_chest_slots
 from world_serial import (
@@ -73,6 +78,7 @@ class WorldPersistence:
             elif self._restore_world(world_id):
                 self.world_id = world_id
                 self.game_state.world_id = world_id
+                self._migrate_pqg_accounts()
                 return world_id
 
         world_id = uuid.uuid4().hex
@@ -90,8 +96,39 @@ class WorldPersistence:
         for level_number in list(self.game_state.levels.keys()):
             self.mark_level_dirty(level_number)
         self.save_all()
+        self._migrate_pqg_accounts()
         print(f'Created new world {world_id} (epoch {WORLD_EPOCH})')
         return world_id
+
+    def _migrate_pqg_accounts(self) -> None:
+        """Seed durable PQG accounts/balances from existing character blobs."""
+        if not self.world_id:
+            return
+        try:
+            stats = migrate_world_characters(self.store, self.world_id)
+        except Exception as exc:
+            print(f'[pqg] migration failed for world {self.world_id}: {exc}')
+            return
+        # Refresh in-memory players so account_id / balance stay aligned.
+        for player_id, player in list(self.game_state.players.items()):
+            row = self.store.get_character(self.world_id, player_id)
+            if row and row.get('account_id'):
+                player.account_id = row['account_id']
+            elif getattr(player, 'account_id', None):
+                pass
+            else:
+                data_aid = (row or {}).get('data', {}).get('account_id')
+                if data_aid:
+                    player.account_id = data_aid
+            if getattr(player, 'account_id', None):
+                sync_player_pqg(player, self.store)
+        created = stats.get('accounts_created', 0)
+        seeded = stats.get('seeded', 0)
+        if created or seeded:
+            print(
+                f'[pqg] migration world={self.world_id}: '
+                f'accounts_created={created} seeded={seeded}'
+            )
 
     def _restore_world(self, world_id: str) -> bool:
         meta = self.store.load_world_meta(world_id)
@@ -137,6 +174,9 @@ class WorldPersistence:
         for player_id, row in characters.items():
             data = row.get('data') or {}
             player = player_from_world_dict(player_id, data)
+            account_id = row.get('account_id') or data.get('account_id')
+            if account_id:
+                player.account_id = str(account_id)
             gs.players[player_id] = player
             msgs = data.get('messages') or []
             gs.player_messages[player_id] = list(msgs)
@@ -182,6 +222,10 @@ class WorldPersistence:
         key = name_key(display)
         if not key:
             return False
+        # Durable PQG account + starter grant (uses current player.pqg as amount).
+        account_id = attach_account_to_player(
+            self.store, player, starting_grant=True,
+        )
         gs = self.game_state
         msgs = gs.player_messages.get(player.id, [])
         payload = player_to_world_dict(player, messages=msgs)
@@ -192,6 +236,7 @@ class WorldPersistence:
             password_hash=hash_password(password),
             data=payload,
             status='alive',
+            account_id=account_id,
         )
         if ok:
             self._dirty_characters.discard(display)
@@ -272,6 +317,7 @@ class WorldPersistence:
             data=payload,
             status='alive',
             name_key=name_key(player_id),
+            account_id=getattr(player, 'account_id', None),
         )
         self._dirty_characters.discard(player_id)
 

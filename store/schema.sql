@@ -39,3 +39,50 @@ ALTER TABLE characters ADD COLUMN IF NOT EXISTS password_hash TEXT;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_characters_name_key
     ON characters (world_id, name_key)
     WHERE name_key IS NOT NULL;
+
+-- Link characters to a durable account that survives world resets.
+ALTER TABLE characters ADD COLUMN IF NOT EXISTS account_id TEXT;
+
+-- ----------------------------------------------------------------- PQG economy
+-- These tables are intentionally NOT referenced from worlds with ON DELETE
+-- CASCADE. A world wipe must never destroy PQG balances.
+
+CREATE TABLE IF NOT EXISTS accounts (
+    account_id TEXT PRIMARY KEY,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS pqg_balances (
+    account_id TEXT PRIMARY KEY REFERENCES accounts(account_id) ON DELETE RESTRICT,
+    balance BIGINT NOT NULL DEFAULT 0 CHECK (balance >= 0),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS pqg_ledger (
+    event_id TEXT PRIMARY KEY,
+    account_id TEXT NOT NULL REFERENCES accounts(account_id) ON DELETE RESTRICT,
+    amount BIGINT NOT NULL,
+    entry_type TEXT NOT NULL,
+    source TEXT NOT NULL,
+    source_instance_id TEXT,
+    world_id TEXT,
+    character_id TEXT,
+    dungeon_level INTEGER,
+    monster_type_id TEXT,
+    monster_elo DOUBLE PRECISION,
+    chest_slot_id TEXT,
+    idempotency_key TEXT NOT NULL,
+    balance_after BIGINT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'committed',
+    metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_pqg_ledger_idempotency
+    ON pqg_ledger (idempotency_key);
+
+CREATE INDEX IF NOT EXISTS idx_pqg_ledger_account_created
+    ON pqg_ledger (account_id, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_pqg_ledger_source_instance
+    ON pqg_ledger (source, source_instance_id);

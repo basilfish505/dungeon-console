@@ -1926,23 +1926,129 @@ class CombatSystem:
         return {'ok': False}
 
     def _record_monster_kill_reward(self, battle, killer_id, monster):
-        """Accumulate XP/PQG/Elo rewards until the battle ends."""
+        """Accumulate XP/PQG/Elo rewards until the battle ends.
+
+        Each kill gets a server-minted ``kill_id`` so PQG issuance is
+        independently idempotent (Proof of Killing).
+        """
         pending = battle.setdefault('pending_rewards', {})
         bucket = pending.setdefault(killer_id, {
             'kills': 0,
             'xp': 0,
             'pqg': 0,
             'elo_opponents': [],
+            'kill_records': [],
         })
         xp_gain = calculate_xp_from_elo(getattr(monster, 'elo', None))
         pqg_gain = calculate_pqg_from_xp(xp_gain)
+        kill_id = uuid.uuid4().hex
         bucket['kills'] += 1
         bucket['xp'] += xp_gain
         bucket['pqg'] += pqg_gain
         bucket['elo_opponents'].append(monster)
+        bucket.setdefault('kill_records', []).append({
+            'kill_id': kill_id,
+            'xp': int(xp_gain),
+            'pqg': int(pqg_gain),
+            'monster_id': getattr(monster, 'id', None),
+            'monster_type_id': (
+                getattr(monster, 'type_id', None)
+                or getattr(monster, 'id', None)
+            ),
+            'monster_elo': float(getattr(monster, 'elo', 0) or 0),
+            'dungeon_level': int(
+                getattr(
+                    self.game_state.players.get(killer_id),
+                    'dungeon_level',
+                    0,
+                ) or 0
+            ),
+        })
         # Loot: the monster drops whatever it was carrying (rolled at spawn).
         for dropped in drops_for_monster(monster):
             bucket.setdefault('loot', []).append(dropped)
+
+    def _credit_kill_pqg(self, killer, bucket, *, allied=False):
+        """Write ledger issuance rows for each kill_record. Returns PQG credited."""
+        from pqg_economy import (
+            SOURCE_MONSTER_KILL,
+            attach_account_to_player,
+            credit,
+            kill_idempotency_key,
+        )
+
+        wp = getattr(self.game_state, 'world_persistence', None)
+        store = getattr(wp, 'store', None) if wp is not None else None
+        records = list(bucket.get('kill_records') or [])
+        if store is None:
+            # Tests / headless paths without a world store keep the old behaviour.
+            total = int(bucket.get('pqg', 0) or 0)
+            if total > 0:
+                killer.pqg = int(getattr(killer, 'pqg', 0) or 0) + total
+            return total if total > 0 else 0
+
+        account_id = attach_account_to_player(store, killer, starting_grant=False)
+        world_id = getattr(wp, 'world_id', None) or getattr(
+            self.game_state, 'world_id', None
+        )
+        credited = 0
+        if not records:
+            # Legacy bucket without per-kill records: single composite key.
+            total = int(bucket.get('pqg', 0) or 0)
+            if total <= 0:
+                return 0
+            key = (
+                f'legacy_kill:{world_id}:{killer.id}:'
+                f'{bucket.get("alliance_kills", bucket.get("kills", 0))}:'
+                f'{total}:{"ally" if allied else "solo"}'
+            )
+            result = credit(
+                store,
+                account_id,
+                total,
+                source=SOURCE_MONSTER_KILL,
+                idempotency_key=key,
+                source_instance_id=key,
+                world_id=world_id,
+                character_id=killer.id,
+                dungeon_level=int(getattr(killer, 'dungeon_level', 0) or 0),
+                player=killer,
+            )
+            return int(result.get('amount') or 0) if result.get('ok') else 0
+
+        for record in records:
+            amount = int(record.get('pqg', 0) or 0)
+            if amount <= 0:
+                continue
+            kill_id = str(record.get('kill_id') or '').strip()
+            if not kill_id:
+                continue
+            share_id = killer.id if allied else None
+            key = kill_idempotency_key(kill_id, share_player_id=share_id)
+            result = credit(
+                store,
+                account_id,
+                amount,
+                source=SOURCE_MONSTER_KILL,
+                idempotency_key=key,
+                source_instance_id=kill_id,
+                world_id=world_id,
+                character_id=killer.id,
+                dungeon_level=record.get('dungeon_level'),
+                monster_type_id=record.get('monster_type_id'),
+                monster_elo=record.get('monster_elo'),
+                metadata={
+                    'monster_id': record.get('monster_id'),
+                    'allied': bool(allied),
+                },
+                player=killer,
+            )
+            if result.get('ok') and not result.get('already_applied'):
+                credited += amount
+            elif result.get('already_applied'):
+                # Still count toward messaging so UI matches wallet.
+                credited += amount
+        return credited
 
     def _offer_loot(self, player_id, player, entry):
         """Queue a dropped item for keep / discard. Returns its description, or None.
@@ -1990,8 +2096,11 @@ class CombatSystem:
 
         if xp_total > 0:
             killer.award_xp(xp_total)
-        if pqg_total > 0:
-            killer.pqg = int(getattr(killer, 'pqg', 0) or 0) + pqg_total
+
+        # PQG via durable ledger (one issuance per kill_id, or per share).
+        pqg_credited = self._credit_kill_pqg(killer, bucket, allied=allied)
+        if pqg_credited is not None:
+            pqg_total = int(pqg_credited)
 
         elo_delta = 0.0
         elo_after = float(getattr(killer, 'elo', 0) or 0)

@@ -153,6 +153,8 @@ def new_slot(y, x, rng=None):
         'pqg': int(pqg),
         'active': True,
         'next_check_round': None,
+        # Bumped on every respawn so ledger keys stay unique across recycles.
+        'claim_seq': 0,
     }
 
 
@@ -321,7 +323,11 @@ def claim_from_chest(game_state, player, slot_id, what, item_id=None):
         if amount <= 0:
             result['message'] = 'That is already gone.'
             return result
-        player.pqg = int(getattr(player, 'pqg', 0) or 0) + amount
+        credited = _credit_chest_pqg(game_state, player, slot, amount, level)
+        if not credited.get('ok'):
+            result['message'] = credited.get('message') or 'Could not claim PQG.'
+            return result
+        # Clear the slot even on already_applied so crash-replay cannot re-offer.
         slot['pqg'] = 0
         result.update(ok=True, message=f'You take {amount} PQG.')
     else:
@@ -333,6 +339,43 @@ def claim_from_chest(game_state, player, slot_id, what, item_id=None):
         result['emptied'] = True
     game_state.mark_level_dirty(level)
     return result
+
+
+def _credit_chest_pqg(game_state, player, slot, amount, level):
+    """Credit chest PQG through the durable ledger when a store is available."""
+    from pqg_economy import (
+        SOURCE_LOOT_CHEST,
+        attach_account_to_player,
+        chest_idempotency_key,
+        credit,
+    )
+
+    wp = getattr(game_state, 'world_persistence', None)
+    store = getattr(wp, 'store', None) if wp is not None else None
+    if store is None:
+        player.pqg = int(getattr(player, 'pqg', 0) or 0) + int(amount)
+        return {'ok': True}
+
+    account_id = attach_account_to_player(store, player, starting_grant=False)
+    world_id = getattr(wp, 'world_id', None) or getattr(game_state, 'world_id', None)
+    claim_seq = int(slot.get('claim_seq', 0) or 0)
+    key = chest_idempotency_key(
+        world_id, level, slot.get('slot_id'), claim_seq, what='pqg',
+    )
+    return credit(
+        store,
+        account_id,
+        amount,
+        source=SOURCE_LOOT_CHEST,
+        idempotency_key=key,
+        source_instance_id=str(slot.get('slot_id') or ''),
+        world_id=world_id,
+        character_id=getattr(player, 'id', None),
+        dungeon_level=level,
+        chest_slot_id=str(slot.get('slot_id') or ''),
+        metadata={'claim_seq': claim_seq},
+        player=player,
+    )
 
 
 # ---------------------------------------------------------------- respawning
@@ -375,7 +418,11 @@ def maybe_respawn_chests(game_state, level_number, rng=None, current_round=None)
         y, x = source.choice(candidates)  # any valid tile, not the old one
         candidates = [t for t in candidates if t != (y, x)]
         items, pqg = roll_chest_contents(source)
-        slot.update(y=y, x=x, items=items, pqg=int(pqg), active=True, next_check_round=None)
+        next_seq = int(slot.get('claim_seq', 0) or 0) + 1
+        slot.update(
+            y=y, x=x, items=items, pqg=int(pqg), active=True,
+            next_check_round=None, claim_seq=next_seq,
+        )
         game_map[y][x] = CHEST_GLYPH
         appeared = True
 
@@ -442,6 +489,7 @@ def clean_slots(raw):
                 None if entry.get('next_check_round') is None
                 else _int(entry.get('next_check_round'))
             ),
+            'claim_seq': max(0, _int(entry.get('claim_seq'))),
         })
     return out
 

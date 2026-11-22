@@ -64,6 +64,18 @@ def stay_at_inn(game_state, player, offer_id):
     if not offer_id or stored is None or str(offer_id) != str(stored):
         return result
 
+    from pqg_economy import (
+        SOURCE_INN_STAY,
+        attach_account_to_player,
+        debit,
+        sync_player_pqg,
+    )
+
+    wp = getattr(game_state, 'world_persistence', None)
+    store = getattr(wp, 'store', None) if wp is not None else None
+    if store is not None and getattr(player, 'account_id', None):
+        sync_player_pqg(player, store)
+
     purse = int(getattr(player, 'pqg', 0) or 0)
     if purse < INN_PRICE_PQG:
         result['message'] = SORRY_MESSAGE
@@ -72,7 +84,29 @@ def stay_at_inn(game_state, player, offer_id):
     # Consume the offer before mutating stats so a second tap cannot charge again.
     offers.pop(player_id, None)
 
-    player.pqg = purse - INN_PRICE_PQG
+    if store is not None:
+        account_id = attach_account_to_player(store, player, starting_grant=False)
+        world_id = getattr(wp, 'world_id', None) if wp is not None else None
+        spend = debit(
+            store,
+            account_id,
+            INN_PRICE_PQG,
+            source=SOURCE_INN_STAY,
+            idempotency_key=f'inn:{offer_id}',
+            source_instance_id=str(offer_id),
+            world_id=world_id,
+            character_id=player_id,
+            metadata={'offer_id': str(offer_id)},
+            player=player,
+        )
+        if not spend.get('ok'):
+            # Re-offer so the player can try again after topping up.
+            offers[player_id] = offer_id
+            result['message'] = spend.get('message') or SORRY_MESSAGE
+            return result
+    else:
+        player.pqg = purse - INN_PRICE_PQG
+
     mhp = max(1, int(getattr(player, 'mhp', 1) or 1))
     mmp = max(0, int(getattr(player, 'mmp', 0) or 0))
     player.hp = mhp

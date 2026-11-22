@@ -1850,7 +1850,9 @@ def handle_buy_item(data):
         return
 
     data = data or {}
-    result = purchase_item(player, data.get('item_id'), shop_id=shop_id)
+    result = purchase_item(
+        player, data.get('item_id'), shop_id=shop_id, game_state=game_state,
+    )
     if result.get('ok'):
         save_player(player)
         world_persistence.save_character(player_id)

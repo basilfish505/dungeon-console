@@ -4,8 +4,8 @@ Live combat (CombatSystem._handle_monster_turn) and the headless Elo
 tournament both call these helpers so casters, and later abilities, rank
 the same way they fight players.
 
-Ability combat hooks are not implemented yet (ability_ids are data-only);
-try_monster_ability is the single place to add them.
+Abilities come from abilities.xlsx; try_monster_ability runs only those whose
+effect handler is implemented (no handler has an implementation yet).
 """
 
 from __future__ import annotations
@@ -13,6 +13,8 @@ from __future__ import annotations
 import random
 
 import spell_types  # noqa: F401 — load spell_types.xlsx into the registry
+from abilities.handlers import get_handler
+from abilities.registry import get_ability
 from combat_damage import resolve_attack
 from spell_casting import (
     can_cast,
@@ -45,9 +47,17 @@ def try_monster_ability(monster, target, rng=None):
     """
     Use a registered combat ability if one is ready.
 
-    Returns an ability object when one fires, else None.
+    Only abilities whose effect handler is implemented in code are tried
+    (abilities.handlers); spreadsheet rows naming a planned handler are skipped.
+    Returns the handler's result when one fires, else None.
     """
-    _ = monster, target, rng
+    for ability_id in getattr(monster, 'ability_ids', None) or []:
+        ability = get_ability(ability_id)
+        if ability is None or not ability.functional:
+            continue
+        result = get_handler(ability.handler).run(monster, target, ability, rng)
+        if result is not None:
+            return result
     return None
 
 

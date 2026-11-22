@@ -93,6 +93,9 @@ class Player:
         self.total_xp = 0
         self.elo = 1000
         self.pqg = 10
+        # Durable PQG account id (set on create / restore). Balance lives in
+        # the ledger; this field is the link and player.pqg is a display cache.
+        self.account_id = None
         _apply_starting_stats(self, starting_stats or roll_starting_stats())
         # Damage divisor in combat_damage; 1 = no reduction until gear exists.
         self.armour = 1

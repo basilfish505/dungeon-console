@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -19,11 +20,18 @@ class FileWorldStore(WorldStore):
         self.root.mkdir(parents=True, exist_ok=True)
         (self.root / 'levels').mkdir(exist_ok=True)
         (self.root / 'characters').mkdir(exist_ok=True)
+        # Best-effort serialization for PQG ledger writes in local/dev.
+        # Not a substitute for Postgres row locks in production.
+        self._pqg_lock = threading.Lock()
 
     def ensure_schema(self) -> None:
         self.root.mkdir(parents=True, exist_ok=True)
         (self.root / 'levels').mkdir(exist_ok=True)
         (self.root / 'characters').mkdir(exist_ok=True)
+        (self.root / 'accounts').mkdir(exist_ok=True)
+        (self.root / 'pqg_balances').mkdir(exist_ok=True)
+        (self.root / 'pqg_ledger').mkdir(exist_ok=True)
+        (self.root / 'pqg_idempotency').mkdir(exist_ok=True)
 
     def _current_path(self) -> Path:
         return self.root / 'current_world.json'
@@ -112,12 +120,14 @@ class FileWorldStore(WorldStore):
             row_status = row.get('status') or 'alive'
             if status is not None and row_status != status:
                 continue
+            data = row.get('data') or {}
             out[str(pid)] = {
-                'data': row.get('data') or {},
+                'data': data,
                 'status': row_status,
                 'death': row.get('death'),
                 'name_key': row.get('name_key') or make_name_key(pid),
                 'password_hash': row.get('password_hash'),
+                'account_id': row.get('account_id') or data.get('account_id'),
             }
         return out
 
@@ -132,13 +142,15 @@ class FileWorldStore(WorldStore):
         except (OSError, json.JSONDecodeError):
             return None
         pid = row.get('player_id') or player_id
+        data = row.get('data') or {}
         return {
             'player_id': str(pid),
-            'data': row.get('data') or {},
+            'data': data,
             'status': row.get('status') or 'alive',
             'death': row.get('death'),
             'name_key': row.get('name_key') or make_name_key(pid),
             'password_hash': row.get('password_hash'),
+            'account_id': row.get('account_id') or data.get('account_id'),
         }
 
     def find_character_by_name_key(
@@ -158,13 +170,15 @@ class FileWorldStore(WorldStore):
         stored_key = row.get('name_key') or make_name_key(pid)
         if stored_key != name_key:
             return None
+        data = row.get('data') or {}
         return {
             'player_id': str(pid),
-            'data': row.get('data') or {},
+            'data': data,
             'status': row.get('status') or 'alive',
             'death': row.get('death'),
             'name_key': stored_key,
             'password_hash': row.get('password_hash'),
+            'account_id': row.get('account_id') or data.get('account_id'),
         }
 
     def create_world(
@@ -258,6 +272,7 @@ class FileWorldStore(WorldStore):
         data: dict,
         status: str = 'alive',
         death: dict | None = None,
+        account_id: str | None = None,
     ) -> bool:
         chars_dir = self.root / 'characters' / world_id
         chars_dir.mkdir(parents=True, exist_ok=True)
@@ -270,6 +285,7 @@ class FileWorldStore(WorldStore):
             'death': death,
             'name_key': name_key,
             'password_hash': password_hash,
+            'account_id': account_id,
         }
         try:
             with path.open('x', encoding='utf-8') as fh:
@@ -288,6 +304,7 @@ class FileWorldStore(WorldStore):
         death: dict | None = None,
         name_key: str | None = None,
         password_hash: str | None = None,
+        account_id: str | None = None,
     ) -> None:
         chars_dir = self.root / 'characters' / world_id
         chars_dir.mkdir(parents=True, exist_ok=True)
@@ -308,6 +325,11 @@ class FileWorldStore(WorldStore):
             if password_hash is not None
             else existing.get('password_hash')
         )
+        resolved_account = (
+            account_id
+            if account_id is not None
+            else existing.get('account_id')
+        )
         payload = {
             'player_id': existing.get('player_id') or player_id,
             'data': data,
@@ -315,6 +337,7 @@ class FileWorldStore(WorldStore):
             'death': death if death is not None else existing.get('death'),
             'name_key': resolved_key,
             'password_hash': resolved_hash,
+            'account_id': resolved_account,
         }
         path.write_text(json.dumps(payload, indent=2), encoding='utf-8')
 
@@ -322,6 +345,158 @@ class FileWorldStore(WorldStore):
         path = self._char_path(world_id, player_id)
         if path.is_file():
             path.unlink()
+
+    def create_account(self, account_id: str) -> bool:
+        path = self.root / 'accounts' / f'{_safe_id(account_id)}.json'
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if path.is_file():
+            return False
+        path.write_text(
+            json.dumps({'account_id': account_id}, indent=2),
+            encoding='utf-8',
+        )
+        return True
+
+    def ensure_pqg_balance(self, account_id: str) -> None:
+        path = self.root / 'pqg_balances' / f'{_safe_id(account_id)}.json'
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if path.is_file():
+            return
+        path.write_text(
+            json.dumps({'account_id': account_id, 'balance': 0}, indent=2),
+            encoding='utf-8',
+        )
+
+    def get_pqg_balance(self, account_id: str) -> int:
+        path = self.root / 'pqg_balances' / f'{_safe_id(account_id)}.json'
+        if not path.is_file():
+            return 0
+        try:
+            row = json.loads(path.read_text(encoding='utf-8'))
+        except (OSError, json.JSONDecodeError):
+            return 0
+        try:
+            return int(row.get('balance', 0) or 0)
+        except (TypeError, ValueError):
+            return 0
+
+    def sum_pqg_ledger(self, account_id: str) -> int:
+        total = 0
+        ledger_dir = self.root / 'pqg_ledger'
+        if not ledger_dir.is_dir():
+            return 0
+        for path in ledger_dir.glob('*.json'):
+            try:
+                row = json.loads(path.read_text(encoding='utf-8'))
+            except (OSError, json.JSONDecodeError):
+                continue
+            if str(row.get('account_id') or '') != str(account_id):
+                continue
+            if (row.get('status') or 'committed') != 'committed':
+                continue
+            try:
+                total += int(row.get('amount', 0) or 0)
+            except (TypeError, ValueError):
+                continue
+        return total
+
+    def apply_pqg_ledger_entry(
+        self,
+        *,
+        event_id: str,
+        account_id: str,
+        amount: int,
+        entry_type: str,
+        source: str,
+        idempotency_key: str,
+        source_instance_id: str | None = None,
+        world_id: str | None = None,
+        character_id: str | None = None,
+        dungeon_level: int | None = None,
+        monster_type_id: str | None = None,
+        monster_elo: float | None = None,
+        chest_slot_id: str | None = None,
+        metadata: dict | None = None,
+        status: str = 'committed',
+    ) -> dict:
+        from pqg_economy import InsufficientPqgError
+
+        with self._pqg_lock:
+            self.create_account(account_id)
+            self.ensure_pqg_balance(account_id)
+
+            idem_path = (
+                self.root / 'pqg_idempotency' / f'{_safe_id(idempotency_key)}.json'
+            )
+            idem_path.parent.mkdir(parents=True, exist_ok=True)
+            if idem_path.is_file():
+                try:
+                    existing = json.loads(idem_path.read_text(encoding='utf-8'))
+                except (OSError, json.JSONDecodeError):
+                    existing = {}
+                return {
+                    'already_applied': True,
+                    'balance': self.get_pqg_balance(account_id),
+                    'event_id': existing.get('event_id'),
+                }
+
+            balance_path = (
+                self.root / 'pqg_balances' / f'{_safe_id(account_id)}.json'
+            )
+            current = self.get_pqg_balance(account_id)
+            new_balance = current + int(amount)
+            if new_balance < 0:
+                raise InsufficientPqgError('Insufficient PQG.')
+
+            # Exclusive create of the idempotency marker is the race guard.
+            marker = {'event_id': event_id, 'idempotency_key': idempotency_key}
+            try:
+                with idem_path.open('x', encoding='utf-8') as fh:
+                    fh.write(json.dumps(marker, indent=2))
+            except FileExistsError:
+                try:
+                    existing = json.loads(idem_path.read_text(encoding='utf-8'))
+                except (OSError, json.JSONDecodeError):
+                    existing = {}
+                return {
+                    'already_applied': True,
+                    'balance': self.get_pqg_balance(account_id),
+                    'event_id': existing.get('event_id'),
+                }
+
+            balance_path.write_text(
+                json.dumps(
+                    {'account_id': account_id, 'balance': new_balance},
+                    indent=2,
+                ),
+                encoding='utf-8',
+            )
+            entry = {
+                'event_id': event_id,
+                'account_id': account_id,
+                'amount': int(amount),
+                'entry_type': entry_type,
+                'source': source,
+                'source_instance_id': source_instance_id,
+                'world_id': world_id,
+                'character_id': character_id,
+                'dungeon_level': dungeon_level,
+                'monster_type_id': monster_type_id,
+                'monster_elo': monster_elo,
+                'chest_slot_id': chest_slot_id,
+                'idempotency_key': idempotency_key,
+                'balance_after': new_balance,
+                'status': status,
+                'metadata': metadata or {},
+            }
+            (self.root / 'pqg_ledger' / f'{_safe_id(event_id)}.json').write_text(
+                json.dumps(entry, indent=2), encoding='utf-8'
+            )
+            return {
+                'already_applied': False,
+                'balance': new_balance,
+                'event_id': event_id,
+            }
 
 
 def _safe_id(player_id: str) -> str:

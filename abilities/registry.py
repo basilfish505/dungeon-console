@@ -1,4 +1,4 @@
-"""Global ability registry — empty until abilities are implemented."""
+"""Global ability registry, filled from abilities.xlsx (see abilities.sheet)."""
 
 from abilities.base import Ability
 
